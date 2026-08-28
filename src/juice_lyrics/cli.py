@@ -705,6 +705,7 @@ from .state import load_state as _load_state, save_state as _save_state, sha256_
 from .rmpc.integration import patch_rmpc_config as _patch_rmpc_config, rmpc_running as _rmpc_running, notify_rmpc_index as _notify_rmpc_index
 from .services.library_status import get_library_status
 from .services.catalogue import get_song_details, search_catalogue
+from .services.acquisition_queue import get_queue_snapshot
 
 
 def search_api(settings: Settings, title: str, refresh: bool = False) -> list[dict[str, Any]]:
@@ -1313,15 +1314,15 @@ def command_acquire_manifest(args: argparse.Namespace, settings: Settings, use_c
 
 def command_acquire_jobs(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
     store = JobStore()
-    jobs = store.list()
-    if not jobs:
+    snapshot = get_queue_snapshot(store.path)
+    if not snapshot.jobs:
         print("No acquisition jobs.")
         return 0
     print_header("Acquisition jobs", use_color)
-    for job in jobs:
-        print(f"  {job.job_id} — {job.state.value} — {len(job.items)} item(s)")
-        for entry in job.items:
-            print(f"      {entry.state.value:<14} {entry.item.title} → {entry.item.destination}")
+    for job in snapshot.jobs:
+        print(f"  {job.job_id} — {job.stored_state} — {job.total_item_count} item(s)")
+        for item in job.items:
+            print(f"      {item.stored_state:<14} {item.title} → {item.destination}")
     return 0
 
 
