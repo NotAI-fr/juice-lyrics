@@ -703,6 +703,7 @@ from .library.scanner import find_mp3s as _find_mp3s
 from .backup.manager import make_backup_root as _make_backup_root, backup_file as _backup_file, write_manifest as _write_manifest, restore_backup as _restore_backup
 from .state import load_state as _load_state, save_state as _save_state, sha256_file as _sha256_file
 from .rmpc.integration import patch_rmpc_config as _patch_rmpc_config, rmpc_running as _rmpc_running, notify_rmpc_index as _notify_rmpc_index
+from .services.library_status import get_library_status
 
 
 def search_api(settings: Settings, title: str, refresh: bool = False) -> list[dict[str, Any]]:
@@ -803,35 +804,22 @@ def command_sync(args: argparse.Namespace, settings: Settings, use_color: bool) 
 
 
 def command_status(settings: Settings, use_color: bool) -> int:
-    files = find_mp3s(settings)
-    state = load_state()
-    synced = plain = missing = stale = 0
-    lrc = 0
-    for path in files:
-        valid, msg = verify_file(path)
-        if valid:
-            if msg.startswith("SYLT"):
-                synced += 1
-            else:
-                plain += 1
-        else:
-            missing += 1
-        rel = str(path.relative_to(settings.music_dir))
-        entry = state.get("files", {}).get(rel)
-        if not entry or entry.get("sha256") != sha256_file(path):
-            stale += 1
-        if entry and entry.get("lrc") and Path(entry["lrc"]).is_file():
-            lrc += 1
+    status = get_library_status(
+        settings,
+        state_file=STATE_FILE,
+        backup_dir=BACKUP_DIR,
+        verifier=verify_file,
+    )
     print_header("Library Status", use_color)
-    print(f"Library:              {settings.music_dir}")
-    print(f"MP3 files:            {len(files)}")
-    print(f"Embedded synced:      {synced}")
-    print(f"Embedded plain:       {plain}")
-    print(f"Missing/invalid:      {missing}")
-    print(f"rmpc LRC files:       {lrc}")
-    print(f"New/changed for sync: {stale}")
-    print(f"Backups:              {len([p for p in BACKUP_DIR.iterdir() if p.is_dir()]) if BACKUP_DIR.exists() else 0}")
-    return 1 if missing else 0
+    print(f"Library:              {status.library_path}")
+    print(f"MP3 files:            {status.track_count}")
+    print(f"Embedded synced:      {status.embedded_synced_count}")
+    print(f"Embedded plain:       {status.embedded_plain_count}")
+    print(f"Missing/invalid:      {status.missing_or_invalid_count}")
+    print(f"rmpc LRC files:       {status.rmpc_lrc_count}")
+    print(f"New/changed for sync: {status.new_or_changed_count}")
+    print(f"Backups:              {status.backup_count}")
+    return 1 if status.missing_or_invalid_count else 0
 
 
 def command_scan(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
