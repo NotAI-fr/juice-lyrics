@@ -704,6 +704,7 @@ from .backup.manager import make_backup_root as _make_backup_root, backup_file a
 from .state import load_state as _load_state, save_state as _save_state, sha256_file as _sha256_file
 from .rmpc.integration import patch_rmpc_config as _patch_rmpc_config, rmpc_running as _rmpc_running, notify_rmpc_index as _notify_rmpc_index
 from .services.library_status import get_library_status
+from .services.catalogue import get_song_details, search_catalogue
 
 
 def search_api(settings: Settings, title: str, refresh: bool = False) -> list[dict[str, Any]]:
@@ -851,8 +852,14 @@ def command_scan(args: argparse.Namespace, settings: Settings, use_color: bool) 
 
 
 def command_search(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    data = search_api_advanced(settings, args.query, args.category, args.era, args.refresh)
-    results = data.get("results", [])
+    results = search_catalogue(
+        settings,
+        args.query,
+        category=args.category,
+        era=args.era,
+        refresh=args.refresh,
+        searcher=search_api_advanced,
+    )
     print_header(f'Juice WRLD API Search: "{args.query}"', use_color)
     if args.category or args.era:
         filters = []
@@ -862,47 +869,36 @@ def command_search(args: argparse.Namespace, settings: Settings, use_color: bool
     if not results:
         print("No results.")
         return 0
-    for idx, song in enumerate(results, 1):
-        synced = bool(str(song.get("synced_lyrics") or "").strip())
-        plain = bool(str(song.get("lyrics") or "").strip())
-        lyrics = "SYNCED" if synced else ("PLAIN" if plain else "NONE")
-        path = str(song.get("path") or "")
-        era_val = song.get("era")
-        era_str = era_val.get("name", "") if isinstance(era_val, dict) else str(era_val or "")
-        print(f"{idx:>2}. {song.get('name', 'Unknown')}  [{song.get('category', '?')}]  [{lyrics}]")
-        print(f"    id={song.get('id')}  era={era_str}  length={song.get('length') or '?'}")
-        if path:
-            print(f"    {path}")
+    for song in results:
+        print(f"{song.selection_index:>2}. {song.title or 'Unknown'}  [{song.category or '?'}]  [{song.lyrics.value.upper()}]")
+        print(f"    id={song.song_id}  era={song.era or ''}  length={song.length or '?'}")
+        if song.media_path:
+            print(f"    {song.media_path}")
     return 0
 
 
 def command_info(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    results = search_api(settings, args.query, refresh=args.refresh)
-    if not results:
+    details = get_song_details(
+        settings,
+        args.query,
+        selection_index=args.index,
+        refresh=args.refresh,
+        searcher=search_api,
+        details_fetcher=get_song,
+    )
+    if details is None:
         print("No results.")
         return 1
-    candidate = results[0]
-    if args.index:
-        if args.index < 1 or args.index > len(results):
-            raise RuntimeError("--index is outside the result list")
-        candidate = results[args.index - 1]
-    if candidate.get("id"):
-        try:
-            candidate = get_song(settings, int(candidate["id"]))
-        except Exception:
-            pass
-    print_header(str(candidate.get("name", "Song")), use_color)
-    era_val = candidate.get("era")
-    era_str = era_val.get("name", "") if isinstance(era_val, dict) else str(era_val or "")
+    print_header(details.title or "Song", use_color)
     fields = [
-        ("ID", candidate.get("id")),
-        ("Category", candidate.get("category")),
-        ("Era", era_str),
-        ("Length", candidate.get("length")),
-        ("Artist", candidate.get("credited_artists")),
-        ("Producers", candidate.get("producers")),
-        ("Path", candidate.get("path")),
-        ("Lyrics", "synced" if candidate.get("synced_lyrics") else ("plain" if candidate.get("lyrics") else "none")),
+        ("ID", details.song_id),
+        ("Category", details.category),
+        ("Era", details.era),
+        ("Length", details.length),
+        ("Artist", ", ".join(details.artists)),
+        ("Producers", ", ".join(details.producers)),
+        ("Path", details.media_path),
+        ("Lyrics", details.lyrics.value),
     ]
     for key, value in fields:
         if value not in (None, ""):
