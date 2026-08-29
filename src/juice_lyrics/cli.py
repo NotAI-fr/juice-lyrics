@@ -706,6 +706,13 @@ from .rmpc.integration import patch_rmpc_config as _patch_rmpc_config, rmpc_runn
 from .services.library_status import get_library_status
 from .services.catalogue import get_song_details, search_catalogue
 from .services.acquisition_queue import get_queue_snapshot
+from .services.library_sync import (
+    LibrarySyncOptions,
+    MatchOutcome,
+    SyncEventKind,
+    execute_library_sync,
+    plan_library_sync,
+)
 
 
 def search_api(settings: Settings, title: str, refresh: bool = False) -> list[dict[str, Any]]:
@@ -792,17 +799,82 @@ def command_setup(args: argparse.Namespace, settings: Settings, use_color: bool)
 
 
 def command_sync(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    files = find_mp3s(settings)
     rmpc_enabled = args.no_rmpc is False
-    if rmpc_enabled and shutil.which("rmpc") is not None and DEFAULT_RMPC_CONFIG.exists():
-        DEFAULT_RMPC_LYRICS_DIR.mkdir(parents=True, exist_ok=True)
-        # Ensure the config points at our folder, but do not rewrite it on every sync.
-        text = DEFAULT_RMPC_CONFIG.read_text(encoding="utf-8")
-        if str(DEFAULT_RMPC_LYRICS_DIR) not in text:
-            patch_rmpc_config(DEFAULT_RMPC_CONFIG, DEFAULT_RMPC_LYRICS_DIR)
-    elif rmpc_enabled:
+    if rmpc_enabled and not (shutil.which("rmpc") is not None and DEFAULT_RMPC_CONFIG.exists()):
         rmpc_enabled = False
-    return embed_batch(settings, files, use_color, args.refresh, args.dry_run, args.yes, rmpc_enabled)
+    options = LibrarySyncOptions.from_settings(
+        settings,
+        dry_run=args.dry_run,
+        refresh=args.refresh,
+        rmpc_enabled=rmpc_enabled,
+        lyrics_dir=DEFAULT_RMPC_LYRICS_DIR if rmpc_enabled else None,
+        rmpc_config_path=DEFAULT_RMPC_CONFIG if rmpc_enabled else None,
+        state_file=STATE_FILE,
+    )
+
+    def scan_progress(event):
+        if event.kind is SyncEventKind.TRACK_INSPECTED and event.path is not None:
+            suffix = " (unchanged)" if event.message == "unchanged" else ""
+            print(f"\rScanning: [{event.index:>2}/{event.total}] {event.path.name:<42}{suffix}", end="", flush=True)
+        elif event.kind is SyncEventKind.TRACK_FAILED and event.path is not None:
+            print()
+            print(colorize(f"✗ {event.path.name} — {event.message}", RED, use_color))
+
+    plan = plan_library_sync(options, progress=scan_progress)
+    if plan.total_files:
+        print("\r" + " " * 100 + "\r", end="")
+    print_header("Library Sync", use_color)
+    print(f"Changed/new:     {plan.changed_or_new_files}")
+    print(f"Unchanged:       {plan.unchanged_files}")
+    print(f"Ready:           {plan.ready_files}")
+    print(f"  Synced:        {plan.synced_files}")
+    print(f"  Plain fallback: {plan.plain_files}")
+    if rmpc_enabled:
+        print(f"rmpc LRC ready:  {plan.synced_files}")
+    print(f"Unresolved:      {plan.unresolved_files}")
+    print(f"No lyrics:       {plan.no_lyrics_files}")
+    unresolved = [track for track in plan.tracks if track.outcome is MatchOutcome.UNRESOLVED]
+    no_lyrics = [track for track in plan.tracks if track.outcome is MatchOutcome.NO_LYRICS]
+    if unresolved:
+        print(colorize("Unresolved:", YELLOW, use_color))
+        for track in unresolved:
+            print(f"  - {track.path.name}")
+    if no_lyrics:
+        print(colorize("No lyrics:", YELLOW, use_color))
+        for track in no_lyrics:
+            print(f"  - {track.path.name}")
+    if args.dry_run:
+        print(colorize("\nDry run: no files changed.", CYAN, use_color))
+        return 0
+    if not plan.ready_files:
+        execute_library_sync(plan)
+        print("Nothing needs updating.")
+        return 0
+    if not args.yes:
+        if not sys.stdin.isatty():
+            print("Non-interactive mode: use --yes to confirm synchronization.")
+            return 2
+        if input(f"Apply lyrics to {plan.ready_files} changed/new MP3(s)? [y/N] ").strip().lower() not in {"y", "yes"}:
+            print("Cancelled. No files changed.")
+            return 0
+
+    def execution_progress(event):
+        if event.kind is SyncEventKind.TRACK_COMPLETED and event.path is not None:
+            print(colorize(f"✓ {event.path.name}", GREEN, use_color) + f" → {event.message}")
+        elif event.kind is SyncEventKind.TRACK_FAILED and event.path is not None:
+            print(colorize(f"✗ {event.path.name} — {event.message}", RED, use_color))
+
+    result = execute_library_sync(plan, progress=execution_progress)
+    print()
+    print(colorize("Sync complete", BOLD, use_color))
+    print(f"  Updated:        {result.updated_files}")
+    print(f"  Unchanged:      {plan.unchanged_files}")
+    print(f"  rmpc LRC files: {result.lrc_files_generated}")
+    if result.rmpc_notifications:
+        print(f"  rmpc notified:  {result.rmpc_notifications}")
+    print(f"  Errors:         {result.processing_failed_files}")
+    print(f"  Backup:         {result.backup_path}")
+    return 1 if result.processing_failed_files else 0
 
 
 def command_status(settings: Settings, use_color: bool) -> int:
