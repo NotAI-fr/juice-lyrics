@@ -15,6 +15,9 @@ def make_backup_root(): ensure_data_dirs(); root=BACKUP_DIR/datetime.now().strft
 def backup_file(path:Path,root:Path,base:Path)->Path:
     dest=root/path.relative_to(base); dest.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(path,dest); return dest
 
+def restore_file(backup:Path,destination:Path)->None:
+    destination.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(backup,destination)
+
 def write_manifest(root:Path, entries:list[dict[str,Any]]):
     (root/"manifest.json").write_text(json.dumps({"created":now_iso(),"files":entries},indent=2,ensure_ascii=False),encoding="utf-8")
 
