@@ -62,6 +62,9 @@ juice-lyrics tui
 
 This milestone provides a dashboard and navigation placeholders only. It does
 not download media, sync lyrics, edit settings, or modify the local library.
+It uses Textual's ANSI-color mode and ANSI palette names rather than a bundled
+theme. Exact terminal-background transparency can still vary with Textual's
+alternate-screen rendering and the terminal emulator.
 
 ## Source of truth and Git workflow
 

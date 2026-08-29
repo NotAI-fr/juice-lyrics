@@ -7,7 +7,8 @@ from textual.app import App
 from textual.binding import Binding
 from textual.widgets import Button
 
-from ..services import LibraryStatus, QueueSnapshot, get_library_status, get_queue_snapshot
+from ..services.acquisition_queue import QueueSnapshot, get_queue_snapshot
+from ..services.library_status import LibraryStatus, get_library_status
 from .screens.dashboard import DashboardScreen
 from .screens.placeholder import PlaceholderScreen
 
@@ -38,37 +39,43 @@ class JuiceLyricsApp(App[None]):
     }
 
     #brand {
-        height: 3;
-        padding: 0 2;
+        height: 2;
+        padding: 0 1;
         text-style: bold;
-        border-bottom: solid ansi_blue;
+        border-bottom: solid ansi_cyan;
     }
 
     #primary-navigation {
         height: 3;
-        padding: 0 1;
+        padding: 0;
         align-horizontal: center;
     }
 
-    #primary-navigation Button {
+    #primary-navigation NavigationButton {
         min-width: 12;
         height: 3;
         margin: 0 1;
         background: transparent;
+        color: ansi_default;
         border: none;
     }
 
-    #primary-navigation Button:hover,
-    #primary-navigation Button:focus,
-    #primary-navigation Button.-active {
-        background: ansi_blue;
-        color: ansi_bright_white;
-        text-style: bold;
+    #primary-navigation NavigationButton:hover {
+        background: transparent;
+        color: ansi_default;
+        text-style: underline;
+    }
+
+    #primary-navigation NavigationButton.-active,
+    #primary-navigation NavigationButton.-active:hover {
+        background: ansi_default;
+        color: ansi_default;
+        text-style: bold reverse;
     }
 
     #screen-content {
         height: 1fr;
-        padding: 1 2;
+        padding: 0 2 1 2;
     }
 
     #screen-title {
@@ -84,7 +91,7 @@ class JuiceLyricsApp(App[None]):
     }
 
     .dashboard-panel {
-        border: round ansi_blue;
+        border: round ansi_cyan;
         padding: 1 2;
         height: auto;
         min-height: 12;
@@ -101,7 +108,7 @@ class JuiceLyricsApp(App[None]):
     }
 
     #placeholder-panel {
-        border: round ansi_blue;
+        border: round ansi_cyan;
         padding: 2 3;
         height: auto;
         max-width: 72;
@@ -110,10 +117,11 @@ class JuiceLyricsApp(App[None]):
     #status-footer {
         height: 2;
         padding: 0 2;
-        border-top: solid ansi_blue;
+        border-top: solid ansi_cyan;
+        text-style: dim;
     }
 
-    Screen.-narrow #primary-navigation Button {
+    Screen.-narrow #primary-navigation NavigationButton {
         min-width: 7;
         margin: 0;
     }
@@ -135,7 +143,7 @@ class JuiceLyricsApp(App[None]):
         library_status_provider: LibraryStatusProvider = get_library_status,
         queue_snapshot_provider: QueueSnapshotProvider = get_queue_snapshot,
     ) -> None:
-        super().__init__()
+        super().__init__(ansi_color=True)
         self.settings = settings
         self.library_status_provider = library_status_provider
         self.queue_snapshot_provider = queue_snapshot_provider
@@ -180,7 +188,7 @@ class JuiceLyricsApp(App[None]):
             self.notify(f"{self.screen.title or 'This section'} has no data to refresh yet.")
 
     def action_show_help(self) -> None:
-        self.notify("1–5 navigate  •  Tab changes focus  •  r refreshes Dashboard  •  q quits", timeout=5)
+        self.notify("1–5 switch sections  •  r refreshes Dashboard  •  q quits", timeout=5)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id and event.button.id.startswith("nav-"):

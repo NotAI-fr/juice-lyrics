@@ -1,6 +1,8 @@
 import asyncio
 from pathlib import Path
+import re
 import sys
+from threading import Event
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -147,16 +149,132 @@ def test_keyboard_navigation_reaches_all_placeholder_screens(tmp_path):
     asyncio.run(scenario())
 
 
-def test_navigation_buttons_are_keyboard_focusable(tmp_path):
+def test_navigation_buttons_are_excluded_from_tab_focus(tmp_path):
     async def scenario():
         app = _app(tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
             await pilot.press("tab")
-            assert app.focused is not None
-            assert app.focused.id and app.focused.id.startswith("nav-")
+            assert app.focused is None
+            assert all(not button.can_focus for button in app.query("#primary-navigation Button"))
 
     asyncio.run(scenario())
+
+
+def test_click_navigation_switches_and_active_indicator_follows_screen(tmp_path):
+    async def scenario():
+        app = _app(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.query_one("#nav-dashboard").has_class("-active")
+            await pilot.click("#nav-browse")
+            await pilot.pause()
+            assert app.screen.id == "screen-browse"
+            assert app.query_one("#nav-browse").has_class("-active")
+            assert not app.query_one("#nav-dashboard").has_class("-active")
+            assert app.focused is None
+
+    asyncio.run(scenario())
+
+
+def test_initial_shell_and_navigation_are_responsive_during_slow_load(tmp_path):
+    started = Event()
+    release = Event()
+
+    def slow_library(settings):
+        started.set()
+        assert release.wait(timeout=5)
+        return _library_status(tmp_path)
+
+    async def scenario():
+        app = _app(tmp_path, library=slow_library)
+        async with app.run_test() as pilot:
+            await asyncio.to_thread(started.wait, 2)
+            assert "Loading library status" in _rendered(app, "#library-data")
+            assert app.screen.id == "screen-dashboard"
+
+            await pilot.press("2")
+            await pilot.pause()
+            assert app.screen.id == "screen-browse"
+            await pilot.press("1")
+            await pilot.pause()
+            assert app.screen.id == "screen-dashboard"
+
+            worker = app.screen._refresh_worker
+            assert worker is not None and not worker.is_finished
+            release.set()
+            await worker.wait()
+            await pilot.pause()
+            assert "MP3 tracks           4" in _rendered(app, "#library-data")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+
+
+def test_refresh_uses_background_worker_and_supersedes_loading_state(tmp_path):
+    refresh_started = Event()
+    release = Event()
+    calls = 0
+
+    def library(settings):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            refresh_started.set()
+            assert release.wait(timeout=5)
+        return _library_status(tmp_path, track_count=calls)
+
+    async def scenario():
+        app = _app(tmp_path, library=library)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert "MP3 tracks           1" in _rendered(app, "#library-data")
+            await pilot.press("r")
+            await asyncio.to_thread(refresh_started.wait, 2)
+            assert "Loading library status" in _rendered(app, "#library-data")
+            await pilot.press("r")
+            current_worker = app.screen._refresh_worker
+            assert current_worker is not None
+            await current_worker.wait()
+            await pilot.pause()
+            assert "MP3 tracks           3" in _rendered(app, "#library-data")
+            await pilot.press("4")
+            await pilot.pause()
+            assert app.screen.id == "screen-downloads"
+            await pilot.press("1")
+            release.set()
+            await pilot.pause()
+            assert "MP3 tracks           3" in _rendered(app, "#library-data")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+
+
+def test_q_exits_while_dashboard_provider_is_still_loading(tmp_path):
+    started = Event()
+    release = Event()
+
+    def slow_library(settings):
+        started.set()
+        release.wait(timeout=5)
+        return _library_status(tmp_path)
+
+    async def scenario():
+        app = _app(tmp_path, library=slow_library)
+        async with app.run_test() as pilot:
+            await asyncio.to_thread(started.wait, 2)
+            await pilot.press("q")
+            assert not app.is_running
+            release.set()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
 
 
 def test_service_exceptions_are_visible_and_navigation_survives(tmp_path):
@@ -241,3 +359,15 @@ def test_narrow_terminal_uses_single_column_dashboard(tmp_path):
             assert app.screen.id == "screen-settings"
 
     asyncio.run(scenario())
+
+
+def test_ansi_mode_and_tui_styles_avoid_forced_theme_colors(tmp_path):
+    app = _app(tmp_path)
+    css = app.CSS.lower()
+
+    assert app.ansi_color is True
+    assert not re.search(r"#[0-9a-f]{3}(?:[0-9a-f]{3})?\\b", css)
+    assert "rgb(" not in css
+    assert "$primary" not in css
+    assert "$secondary" not in css
+    assert "$accent" not in css

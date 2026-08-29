@@ -18,6 +18,12 @@ _SECTIONS = (
 )
 
 
+class NavigationButton(Button):
+    """Mouse-operable primary navigation excluded from the Tab focus chain."""
+
+    can_focus = False
+
+
 class HubScreen(Screen[None]):
     """Shared persistent application chrome for primary screens."""
 
@@ -30,17 +36,17 @@ class HubScreen(Screen[None]):
         return ()
 
     def compose(self) -> ComposeResult:
-        yield Static("999\nJuice WRLD Music Hub", id="brand")
+        yield Static("999  ·  Juice WRLD Music Hub", id="brand")
         with Horizontal(id="primary-navigation"):
             for section, label in _SECTIONS:
-                button = Button(label, id=f"nav-{section}")
+                button = NavigationButton(label, id=f"nav-{section}")
                 if section == self.section:
                     button.add_class("-active")
                 yield button
         with Container(id="screen-content"):
             yield Static(self.title, id="screen-title")
             yield from self.compose_content()
-        yield Static("1–5 Navigate   Tab Focus   r Refresh   ? Help   q Quit", id="status-footer")
+        yield Static("1–5 Switch section   r Refresh   ? Help   q Quit", id="status-footer")
 
     def on_resize(self, event: Resize) -> None:
         self.set_class(event.size.width < 70, "-narrow")
