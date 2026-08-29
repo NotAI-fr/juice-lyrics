@@ -8,7 +8,10 @@ version = "1.4.0"
 description = "Manage local lyrics metadata and rmpc LRC files for MP3 libraries"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["mutagen>=1.47"]
+dependencies = [
+  "mutagen>=1.47",
+  "textual>=1.0,<2.0",
+]
 license = { text = "MIT" }
 authors = [
   { name = "juice-wrld-lyrics contributors" }

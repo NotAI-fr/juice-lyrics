@@ -1502,6 +1502,14 @@ def command_acquire(args: argparse.Namespace, settings: Settings, use_color: boo
         return command_acquire_delete(args, settings, use_color)
     raise RuntimeError("Unknown acquisition action")
 
+
+def command_tui(settings: Settings) -> int:
+    """Launch the experimental Textual frontend without affecting CLI startup."""
+
+    from .tui import run_tui
+
+    return run_tui(settings)
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=APP_NAME, description="Manage lyrics metadata and rmpc LRC files for local MP3 libraries.")
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
@@ -1539,6 +1547,8 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="Check the installation and API connection.")
 
     guide = sub.add_parser("guide", help="Show the built-in quick guide.")
+
+    sub.add_parser("tui", help="Launch the experimental read-only Textual interface.")
 
     search = sub.add_parser("search", help="Search the public Juice WRLD song catalogue.")
     search.add_argument("query")
@@ -1617,6 +1627,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "restore": return command_restore(args, settings, use_color)
         if args.command == "doctor": return command_doctor(args, settings, use_color)
         if args.command == "guide": return command_guide()
+        if args.command == "tui": return command_tui(settings)
         if args.command == "search": return command_search(args, settings, use_color)
         if args.command == "info": return command_info(args, settings, use_color)
         if args.command == "acquire": return command_acquire(args, settings, use_color)

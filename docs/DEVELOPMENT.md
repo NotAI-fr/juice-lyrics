@@ -52,6 +52,17 @@ The project uses `pyproject.toml` and exposes the `juice-lyrics` console script.
 
 Keep the runtime dependency set small.
 
+### Experimental Textual interface
+
+From an editable installation, launch the early read-only TUI shell with:
+
+```bash
+juice-lyrics tui
+```
+
+This milestone provides a dashboard and navigation placeholders only. It does
+not download media, sync lyrics, edit settings, or modify the local library.
+
 ## Source of truth and Git workflow
 
 The latest transferred project checkpoint/archive is the source of truth for ongoing development. The existing GitHub repository is not authoritative and should not be used as the development baseline.
