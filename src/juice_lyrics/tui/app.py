@@ -5,10 +5,10 @@ from typing import Any
 
 from textual.app import App
 from textual.binding import Binding
-from textual.widgets import Button
 
 from ..services.acquisition_queue import QueueSnapshot, get_queue_snapshot
 from ..services.library_status import LibraryStatus, get_library_status
+from .screens.base import NavigationItem
 from .screens.dashboard import DashboardScreen
 from .screens.placeholder import PlaceholderScreen
 
@@ -51,26 +51,27 @@ class JuiceLyricsApp(App[None]):
         align-horizontal: center;
     }
 
-    #primary-navigation NavigationButton {
+    #primary-navigation NavigationItem {
+        width: auto;
         min-width: 12;
         height: 3;
         margin: 0 1;
         background: transparent;
         color: ansi_default;
         border: none;
+        text-align: center;
+        content-align: center middle;
     }
 
-    #primary-navigation NavigationButton:hover {
-        background: transparent;
+    #primary-navigation NavigationItem:hover {
         color: ansi_default;
-        text-style: underline;
+        text-style: bold;
     }
 
-    #primary-navigation NavigationButton.-active,
-    #primary-navigation NavigationButton.-active:hover {
-        background: ansi_default;
-        color: ansi_default;
-        text-style: bold reverse;
+    #primary-navigation NavigationItem.-current,
+    #primary-navigation NavigationItem.-current:hover {
+        color: ansi_blue;
+        text-style: bold;
     }
 
     #screen-content {
@@ -121,7 +122,7 @@ class JuiceLyricsApp(App[None]):
         text-style: dim;
     }
 
-    Screen.-narrow #primary-navigation NavigationButton {
+    Screen.-narrow #primary-navigation NavigationItem {
         min-width: 7;
         margin: 0;
     }
@@ -190,9 +191,8 @@ class JuiceLyricsApp(App[None]):
     def action_show_help(self) -> None:
         self.notify("1–5 switch sections  •  r refreshes Dashboard  •  q quits", timeout=5)
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id and event.button.id.startswith("nav-"):
-            self.action_show_section(event.button.id.removeprefix("nav-"))
+    def on_navigation_item_activated(self, event: NavigationItem.Activated) -> None:
+        self.action_show_section(event.item.section)
 
 
 def run_tui(settings: Any) -> int:

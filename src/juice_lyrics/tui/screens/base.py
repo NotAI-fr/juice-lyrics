@@ -4,10 +4,11 @@ from collections.abc import Iterable
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
-from textual.events import Resize
+from textual.events import Click, Resize
+from textual.message import Message
 from textual.screen import Screen
 from textual.widget import Widget
-from textual.widgets import Button, Static
+from textual.widgets import Static
 
 _SECTIONS = (
     ("dashboard", "1 Dashboard"),
@@ -18,10 +19,22 @@ _SECTIONS = (
 )
 
 
-class NavigationButton(Button):
-    """Mouse-operable primary navigation excluded from the Tab focus chain."""
+class NavigationItem(Static):
+    """Lightweight mouse navigation without themed button state styling."""
 
     can_focus = False
+
+    class Activated(Message):
+        def __init__(self, item: NavigationItem) -> None:
+            self.item = item
+            super().__init__()
+
+    def __init__(self, label: str, section: str) -> None:
+        super().__init__(label, id=f"nav-{section}", markup=False)
+        self.section = section
+
+    def on_click(self, event: Click) -> None:
+        self.post_message(self.Activated(self))
 
 
 class HubScreen(Screen[None]):
@@ -39,10 +52,11 @@ class HubScreen(Screen[None]):
         yield Static("999  ·  Juice WRLD Music Hub", id="brand")
         with Horizontal(id="primary-navigation"):
             for section, label in _SECTIONS:
-                button = NavigationButton(label, id=f"nav-{section}")
-                if section == self.section:
-                    button.add_class("-active")
-                yield button
+                current = section == self.section
+                item = NavigationItem(f"[{label}]" if current else label, section)
+                if current:
+                    item.add_class("-current")
+                yield item
         with Container(id="screen-content"):
             yield Static(self.title, id="screen-title")
             yield from self.compose_content()

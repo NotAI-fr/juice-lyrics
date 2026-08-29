@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from juice_lyrics.config.settings import Settings
 from juice_lyrics.services import LibraryStatus, QueueSnapshot
 from juice_lyrics.tui import JuiceLyricsApp
+from juice_lyrics.tui.screens.base import NavigationItem
+from textual.widgets import Button, Static
 
 
 def _library_status(tmp_path: Path, **changes) -> LibraryStatus:
@@ -156,7 +158,7 @@ def test_navigation_buttons_are_excluded_from_tab_focus(tmp_path):
             await pilot.pause()
             await pilot.press("tab")
             assert app.focused is None
-            assert all(not button.can_focus for button in app.query("#primary-navigation Button"))
+            assert all(not item.can_focus for item in app.query("#primary-navigation NavigationItem"))
 
     asyncio.run(scenario())
 
@@ -166,12 +168,17 @@ def test_click_navigation_switches_and_active_indicator_follows_screen(tmp_path)
         app = _app(tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert app.query_one("#nav-dashboard").has_class("-active")
+            assert app.query_one("#nav-dashboard").has_class("-current")
+            assert "[1 Dashboard]" in _rendered(app, "#nav-dashboard")
+            assert "2 Browse" in _rendered(app, "#nav-browse")
+            assert "[2 Browse]" not in _rendered(app, "#nav-browse")
             await pilot.click("#nav-browse")
             await pilot.pause()
             assert app.screen.id == "screen-browse"
-            assert app.query_one("#nav-browse").has_class("-active")
-            assert not app.query_one("#nav-dashboard").has_class("-active")
+            assert app.query_one("#nav-browse").has_class("-current")
+            assert not app.query_one("#nav-dashboard").has_class("-current")
+            assert "[2 Browse]" in _rendered(app, "#nav-browse")
+            assert "[1 Dashboard]" not in _rendered(app, "#nav-dashboard")
             assert app.focused is None
 
     asyncio.run(scenario())
@@ -371,3 +378,29 @@ def test_ansi_mode_and_tui_styles_avoid_forced_theme_colors(tmp_path):
     assert "$primary" not in css
     assert "$secondary" not in css
     assert "$accent" not in css
+
+
+def test_active_navigation_uses_plain_static_widget_and_ansi_text_only(tmp_path):
+    app = _app(tmp_path)
+    css = app.CSS.lower()
+    item_rule = css.split(
+        "#primary-navigation navigationitem {", 1
+    )[1].split("}", 1)[0]
+    active_rule = css.split(
+        "#primary-navigation navigationitem.-current:hover", 1
+    )[1].split("}", 1)[0]
+
+    assert issubclass(NavigationItem, Static)
+    assert not issubclass(NavigationItem, Button)
+    assert NavigationItem.can_focus is False
+    assert "background: transparent" in item_rule
+    assert "border: none" in item_rule
+    assert "background" not in active_rule
+    assert "color: ansi_blue" in active_rule
+    assert "text-style: bold" in active_rule
+    assert "underline" not in css
+    assert "reverse" not in active_rule
+    assert ":focus" not in css
+    assert "focus-within" not in css
+    assert "selected" not in css
+    assert ".-active" not in css
