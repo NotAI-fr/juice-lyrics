@@ -1,4 +1,10 @@
-from .models import AcquisitionItem, AcquisitionResult, AcquisitionState
+from .models import (
+    AcquisitionFailureStage,
+    AcquisitionItem,
+    AcquisitionPostProcessingError,
+    AcquisitionResult,
+    AcquisitionState,
+)
 from .resolver import ResourceResolutionError, resolve_resource
 from .duplicates import DuplicateMatch, find_duplicate
 from .manifests import load_manifest
@@ -8,6 +14,8 @@ from .integration import IntegrationResult, integrate_downloaded_mp3
 
 __all__ = [
     "AcquisitionItem",
+    "AcquisitionFailureStage",
+    "AcquisitionPostProcessingError",
     "AcquisitionResult",
     "AcquisitionState",
     "ResourceResolutionError",

@@ -1333,6 +1333,8 @@ def _run_acquisition_job(job: AcquisitionJob, store: JobStore, settings: Setting
 
     print_header(title, use_color)
     def postprocess(result):
+        if result.postprocessing_retry:
+            print(f"\n  Retrying post-processing from existing finalized file: {result.item.destination}")
         integration = integrate_downloaded_mp3(
             result.item,
             song_fetcher=lambda song_id: _api_get_song(settings, song_id),

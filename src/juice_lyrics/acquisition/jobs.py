@@ -10,7 +10,7 @@ from typing import Any, Iterable
 
 from ..backup.manager import ensure_data_dirs
 from ..config.settings import DATA_DIR
-from .models import AcquisitionItem, AcquisitionResult, AcquisitionState
+from .models import AcquisitionFailureStage, AcquisitionItem, AcquisitionResult, AcquisitionState
 
 DEFAULT_JOBS_FILE = DATA_DIR / "acquisition_jobs.json"
 
@@ -28,6 +28,9 @@ class JobItem:
     bytes_written: int = 0
     resumed: bool = False
     error: str | None = None
+    failure_stage: AcquisitionFailureStage | None = None
+    retry_file_size: int | None = None
+    retry_file_sha256: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +47,9 @@ class JobItem:
             "bytes_written": self.bytes_written,
             "resumed": self.resumed,
             "error": self.error,
+            "failure_stage": self.failure_stage.value if self.failure_stage else None,
+            "retry_file_size": self.retry_file_size,
+            "retry_file_sha256": self.retry_file_sha256,
         }
 
     @classmethod
@@ -60,6 +66,12 @@ class JobItem:
                 metadata={str(k): str(v) for k, v in dict(item_raw.get("metadata", {})).items()},
             )
             state = AcquisitionState(str(raw.get("state", AcquisitionState.PENDING.value)))
+            failure_stage_raw = raw.get("failure_stage")
+            failure_stage = (
+                AcquisitionFailureStage(str(failure_stage_raw))
+                if failure_stage_raw not in (None, "")
+                else None
+            )
         except (KeyError, TypeError, ValueError) as exc:
             raise JobStoreError(f"Invalid acquisition job item: {exc}") from exc
 
@@ -69,6 +81,17 @@ class JobItem:
             bytes_written=int(raw.get("bytes_written", 0)),
             resumed=bool(raw.get("resumed", False)),
             error=raw.get("error"),
+            failure_stage=failure_stage,
+            retry_file_size=(
+                int(raw["retry_file_size"])
+                if raw.get("retry_file_size") is not None
+                else None
+            ),
+            retry_file_sha256=(
+                str(raw["retry_file_sha256"])
+                if raw.get("retry_file_sha256")
+                else None
+            ),
         )
 
 
@@ -119,6 +142,9 @@ class AcquisitionJob:
         entry.bytes_written = result.bytes_written
         entry.resumed = result.resumed
         entry.error = result.error
+        entry.failure_stage = result.failure_stage
+        entry.retry_file_size = None
+        entry.retry_file_sha256 = None
         self.touch()
 
     def to_dict(self) -> dict[str, Any]:

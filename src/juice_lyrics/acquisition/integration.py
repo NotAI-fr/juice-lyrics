@@ -14,7 +14,7 @@ from ..backup.manager import (
 from ..lyrics.engine import embed_lyrics, parse_synced_lyrics, verify_file, write_lrc
 from ..rmpc.integration import notify_rmpc_index
 from ..state import load_state, save_state, sha256_file
-from .models import AcquisitionItem
+from .models import AcquisitionFailureStage, AcquisitionItem, AcquisitionPostProcessingError
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +88,8 @@ def integrate_downloaded_mp3(
                 }],
             )
         except Exception as exc:
-            raise RuntimeError(
+            raise AcquisitionPostProcessingError(
+                AcquisitionFailureStage.LYRICS,
                 f"Audio download completed, but lyric backup failed before metadata modification: {exc}. "
                 "The downloaded file was not modified."
             ) from exc
@@ -102,12 +103,15 @@ def integrate_downloaded_mp3(
             try:
                 restore_file(backup_path, path)
             except Exception as restore_exc:
-                raise RuntimeError(
+                raise AcquisitionPostProcessingError(
+                    AcquisitionFailureStage.LYRICS,
                     f"Audio download completed, but lyric post-processing failed: {exc}. "
                     f"Automatic restore also failed: {restore_exc}. "
-                    f"The pristine backup remains at {backup_path}; the downloaded file may be partially modified."
+                    f"The pristine backup remains at {backup_path}; the downloaded file may be partially modified.",
+                    reuse_finalized_file=False,
                 ) from restore_exc
-            raise RuntimeError(
+            raise AcquisitionPostProcessingError(
+                AcquisitionFailureStage.LYRICS,
                 f"Audio download completed, but lyric post-processing failed: {exc}. "
                 "The original downloaded file was restored from backup; the failed item remains retryable."
             ) from exc
@@ -116,7 +120,8 @@ def integrate_downloaded_mp3(
             try:
                 lrc_path = write_lrc(path, synced, song, Path(lyrics_dir))
             except Exception as exc:
-                raise RuntimeError(
+                raise AcquisitionPostProcessingError(
+                    AcquisitionFailureStage.LRC,
                     f"Audio download and lyric processing succeeded, but LRC integration failed: {exc}. "
                     "The verified MP3 and pristine backup were retained; the failed item remains retryable."
                 ) from exc
@@ -151,7 +156,8 @@ def integrate_downloaded_mp3(
             save_state(current_state)
     except Exception as exc:
         processed = " and lyric processing succeeded" if lyric_type != "NONE" else ""
-        raise RuntimeError(
+        raise AcquisitionPostProcessingError(
+            AcquisitionFailureStage.STATE,
             f"Audio download{processed}, but state update failed "
             f"(Failed to synchronize library state): {exc}. "
             "The finalized MP3 was retained; the failed item remains retryable."

@@ -9,7 +9,7 @@ from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .models import AcquisitionItem, AcquisitionResult, AcquisitionState
+from .models import AcquisitionFailureStage, AcquisitionItem, AcquisitionResult, AcquisitionState
 
 ProgressCallback = Callable[[int, int | None], None]
 NON_RETRYABLE_HTTP_CODES = {400, 401, 403, 404, 410}
@@ -107,7 +107,9 @@ def download_to(
     partial = item.destination.with_name(item.destination.name + ".part")
 
     last_error: Exception | None = None
+    failure_stage = AcquisitionFailureStage.TRANSPORT
     for attempt in range(policy.retries + 1):
+        failure_stage = AcquisitionFailureStage.TRANSPORT
         resume_from = partial.stat().st_size if policy.resume and partial.exists() else 0
         try:
             headers = {
@@ -145,6 +147,7 @@ def download_to(
                             progress(written, total)
 
             result.state = AcquisitionState.VALIDATING
+            failure_stage = AcquisitionFailureStage.VALIDATION
             if _is_probable_error_payload(partial):
                 partial.unlink(missing_ok=True)
                 raise RuntimeError("Downloaded payload looks empty or like an error response")
@@ -167,6 +170,7 @@ def download_to(
             break
 
         except HTTPError as exc:
+            failure_stage = AcquisitionFailureStage.TRANSPORT
             last_error = exc
             if exc.code in NON_RETRYABLE_HTTP_CODES:
                 break
@@ -187,5 +191,5 @@ def download_to(
 
     result.state = AcquisitionState.FAILED
     result.error = str(last_error or "Download failed")
+    result.failure_stage = failure_stage
     return result
-
