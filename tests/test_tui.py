@@ -139,7 +139,11 @@ def test_keyboard_navigation_reaches_all_placeholder_screens(tmp_path):
         app = _app(tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            for key, section in zip("2345", ("browse", "library", "downloads", "settings")):
+            await pilot.press("2")
+            await pilot.pause()
+            assert app.screen.id == "screen-browse"
+            assert app.query_one("#browse-query") is not None
+            for key, section in zip("345", ("library", "downloads", "settings")):
                 await pilot.press(key)
                 await pilot.pause()
                 assert app.screen.id == f"screen-{section}"
@@ -179,7 +183,7 @@ def test_click_navigation_switches_and_active_indicator_follows_screen(tmp_path)
             assert not app.query_one("#nav-dashboard").has_class("-current")
             assert "[2 Browse]" in _rendered(app, "#nav-browse")
             assert "[1 Dashboard]" not in _rendered(app, "#nav-dashboard")
-            assert app.focused is None
+            assert app.focused is app.query_one("#browse-query")
 
     asyncio.run(scenario())
 
@@ -400,7 +404,7 @@ def test_active_navigation_uses_plain_static_widget_and_ansi_text_only(tmp_path)
     assert "text-style: bold" in active_rule
     assert "underline" not in css
     assert "reverse" not in active_rule
-    assert ":focus" not in css
-    assert "focus-within" not in css
-    assert "selected" not in css
-    assert ".-active" not in css
+    assert "navigationitem:focus" not in css
+    assert "navigationitem:focus-within" not in css
+    assert "navigationitem.-selected" not in css
+    assert "navigationitem.-active" not in css

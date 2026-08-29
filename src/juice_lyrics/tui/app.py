@@ -7,13 +7,22 @@ from textual.app import App
 from textual.binding import Binding
 
 from ..services.acquisition_queue import QueueSnapshot, get_queue_snapshot
+from ..services.catalogue import (
+    CatalogueSearchResult,
+    SongDetails,
+    get_song_details,
+    search_catalogue,
+)
 from ..services.library_status import LibraryStatus, get_library_status
 from .screens.base import NavigationItem
+from .screens.browse import BrowseScreen
 from .screens.dashboard import DashboardScreen
 from .screens.placeholder import PlaceholderScreen
 
 LibraryStatusProvider = Callable[[Any], LibraryStatus]
 QueueSnapshotProvider = Callable[[], QueueSnapshot]
+CatalogueSearchProvider = Callable[..., tuple[CatalogueSearchResult, ...]]
+CatalogueDetailsProvider = Callable[..., SongDetails | None]
 
 
 class JuiceLyricsApp(App[None]):
@@ -23,11 +32,11 @@ class JuiceLyricsApp(App[None]):
     SUB_TITLE = "Juice WRLD Music Hub"
 
     BINDINGS = [
-        Binding("1", "show_section('dashboard')", "Dashboard", show=False),
-        Binding("2", "show_section('browse')", "Browse", show=False),
-        Binding("3", "show_section('library')", "Library", show=False),
-        Binding("4", "show_section('downloads')", "Downloads", show=False),
-        Binding("5", "show_section('settings')", "Settings", show=False),
+        Binding("1", "show_section('dashboard')", "Dashboard", show=False, priority=True),
+        Binding("2", "show_section('browse')", "Browse", show=False, priority=True),
+        Binding("3", "show_section('library')", "Library", show=False, priority=True),
+        Binding("4", "show_section('downloads')", "Downloads", show=False, priority=True),
+        Binding("5", "show_section('settings')", "Settings", show=False, priority=True),
         Binding("r", "refresh_active", "Refresh", show=False),
         Binding("question_mark", "show_help", "Help", show=False),
         Binding("q", "quit", "Quit", show=False, priority=True),
@@ -108,6 +117,73 @@ class JuiceLyricsApp(App[None]):
         height: auto;
     }
 
+    #browse-controls {
+        height: auto;
+        layout: grid;
+        grid-size: 3 1;
+        grid-columns: 2fr 1fr 1fr;
+        grid-rows: 4;
+        grid-gutter: 0 1;
+    }
+
+    .browse-filter {
+        height: 4;
+    }
+
+    #browse-controls Input {
+        background: transparent;
+        color: ansi_default;
+        border: tall ansi_default;
+        background-tint: transparent;
+        padding: 0 1;
+    }
+
+    #browse-controls Input:focus {
+        background: transparent;
+        border: tall ansi_blue;
+        background-tint: transparent;
+    }
+
+    .filter-label {
+        height: 1;
+        text-style: dim;
+    }
+
+    #browse-status {
+        height: 2;
+        padding: 0 1;
+    }
+
+    #browse-status.-error {
+        color: ansi_red;
+    }
+
+    #browse-main {
+        height: 1fr;
+        layout: grid;
+        grid-size: 2 1;
+        grid-columns: 3fr 2fr;
+        grid-gutter: 0 1;
+    }
+
+    .browse-panel {
+        height: 1fr;
+        border: round ansi_cyan;
+        padding: 0 1;
+    }
+
+    #browse-results-scroll,
+    #browse-details-scroll {
+        height: 1fr;
+        background: transparent;
+    }
+
+    #browse-results,
+    #browse-details {
+        height: auto;
+        background: transparent;
+    }
+
     #placeholder-panel {
         border: round ansi_cyan;
         padding: 2 3;
@@ -135,6 +211,19 @@ class JuiceLyricsApp(App[None]):
     Screen.-narrow #screen-content {
         padding: 1;
     }
+
+    Screen.-narrow #browse-controls {
+        grid-size: 1 3;
+        grid-columns: 1fr;
+        grid-rows: 4 4 4;
+        overflow-y: auto;
+    }
+
+    Screen.-narrow #browse-main {
+        grid-size: 1 2;
+        grid-columns: 1fr;
+        grid-rows: 1fr 1fr;
+    }
     """
 
     def __init__(
@@ -143,11 +232,15 @@ class JuiceLyricsApp(App[None]):
         *,
         library_status_provider: LibraryStatusProvider = get_library_status,
         queue_snapshot_provider: QueueSnapshotProvider = get_queue_snapshot,
+        catalogue_search_provider: CatalogueSearchProvider = search_catalogue,
+        catalogue_details_provider: CatalogueDetailsProvider = get_song_details,
     ) -> None:
         super().__init__(ansi_color=True)
         self.settings = settings
         self.library_status_provider = library_status_provider
         self.queue_snapshot_provider = queue_snapshot_provider
+        self.catalogue_search_provider = catalogue_search_provider
+        self.catalogue_details_provider = catalogue_details_provider
 
     def on_mount(self) -> None:
         self.install_screen(
@@ -159,7 +252,11 @@ class JuiceLyricsApp(App[None]):
             "dashboard",
         )
         self.install_screen(
-            PlaceholderScreen("Browse", "Catalogue search and song details are planned for a later milestone."),
+            BrowseScreen(
+                self.settings,
+                search_provider=self.catalogue_search_provider,
+                details_provider=self.catalogue_details_provider,
+            ),
             "browse",
         )
         self.install_screen(
@@ -189,7 +286,11 @@ class JuiceLyricsApp(App[None]):
             self.notify(f"{self.screen.title or 'This section'} has no data to refresh yet.")
 
     def action_show_help(self) -> None:
-        self.notify("1–5 switch sections  •  r refreshes Dashboard  •  q quits", timeout=5)
+        if self.screen.name == "browse":
+            message = "/ search  •  ↑/↓ or j/k select  •  Enter details  •  r rerun  •  1–5 sections  •  q quit"
+        else:
+            message = "1–5 switch sections  •  r refreshes Dashboard  •  q quits"
+        self.notify(message, timeout=5)
 
     def on_navigation_item_activated(self, event: NavigationItem.Activated) -> None:
         self.action_show_section(event.item.section)
