@@ -7,13 +7,21 @@ from pathlib import Path
 from typing import Any
 
 from ..acquisition.resolver import ResourceResolutionError, resolve_resource
-from ..api.client import get_song, search_song_names, search_songs
+from ..api.client import (
+    get_categories,
+    get_eras,
+    get_song,
+    search_song_names,
+    search_songs,
+)
 from ..config.settings import Settings
 
 SearchResponse = Mapping[str, Any]
 SearchFunction = Callable[..., SearchResponse]
 NameSearchFunction = Callable[..., Sequence[Any]]
 DetailsFunction = Callable[[Settings, int], Mapping[str, Any]]
+CategoryFunction = Callable[..., Mapping[str, Any]]
+EraFunction = Callable[..., Sequence[Mapping[str, Any]]]
 SongId = int | str
 
 
@@ -36,6 +44,37 @@ class CatalogueSearchResult:
     media_path: str | None
     lyrics: LyricAvailability
     downloadable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CataloguePage:
+    results: tuple[CatalogueSearchResult, ...]
+    page: int
+    page_size: int
+    total_count: int
+    next_page: int | None
+    previous_page: int | None
+
+    @property
+    def range_start(self) -> int:
+        return (self.page - 1) * self.page_size + 1 if self.results else 0
+
+    @property
+    def range_end(self) -> int:
+        return self.range_start + len(self.results) - 1 if self.results else 0
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogueFilterOption:
+    label: str
+    value: str
+    identifier: int | str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogueFilterMetadata:
+    categories: tuple[CatalogueFilterOption, ...]
+    eras: tuple[CatalogueFilterOption, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,16 +186,42 @@ def search_catalogue(
 ) -> tuple[CatalogueSearchResult, ...]:
     """Search and normalize catalogue records without changing application state."""
 
-    response = searcher(
+    return search_catalogue_page(
         settings,
         query,
         category=category,
         era=era,
         refresh=refresh,
+        searcher=searcher,
+    ).results
+
+
+def search_catalogue_page(
+    settings: Settings,
+    query: str,
+    *,
+    category: str | None = None,
+    era: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    refresh: bool = False,
+    searcher: SearchFunction = search_songs,
+) -> CataloguePage:
+    """Return one normalized, server-filtered catalogue page."""
+
+    response = searcher(
+        settings,
+        query,
+        category=category,
+        era=era,
+        page=page,
+        page_size=page_size,
+        refresh=refresh,
     )
-    raw_results = response.get("results", []) if isinstance(response, Mapping) else []
+    response_data = response if isinstance(response, Mapping) else {}
+    raw_results = response_data.get("results", [])
     if not isinstance(raw_results, Sequence) or isinstance(raw_results, (str, bytes, bytearray)):
-        return ()
+        raw_results = ()
 
     results: list[CatalogueSearchResult] = []
     for index, record in enumerate(raw_results, start=1):
@@ -166,7 +231,75 @@ def search_catalogue(
         fields.pop("synced_lyrics")
         fields.pop("plain_lyrics")
         results.append(CatalogueSearchResult(selection_index=index, **fields))
-    return tuple(results)
+    normalized = tuple(results)
+    total = _nonnegative_int(response_data.get("count"), len(normalized))
+    return CataloguePage(
+        results=normalized,
+        page=max(1, page),
+        page_size=max(1, page_size),
+        total_count=total,
+        next_page=page + 1 if response_data.get("next") else None,
+        previous_page=page - 1 if page > 1 and response_data.get("previous") else None,
+    )
+
+
+def get_catalogue_filters(
+    settings: Settings,
+    *,
+    refresh: bool = False,
+    category_fetcher: CategoryFunction = get_categories,
+    era_fetcher: EraFunction = get_eras,
+) -> CatalogueFilterMetadata:
+    """Normalize API-provided selector labels and canonical request values."""
+
+    category_data = category_fetcher(settings, refresh=refresh)
+    raw_categories = category_data.get("categories", []) if isinstance(category_data, Mapping) else []
+    categories: list[CatalogueFilterOption] = []
+    if isinstance(raw_categories, Sequence) and not isinstance(raw_categories, (str, bytes, bytearray)):
+        for item in raw_categories:
+            if not isinstance(item, Mapping):
+                continue
+            value = _text(item.get("value"))
+            label = _text(item.get("label"))
+            if value and label:
+                categories.append(CatalogueFilterOption(label, value))
+
+    eras: list[CatalogueFilterOption] = []
+    for item in era_fetcher(settings, refresh=refresh):
+        if not isinstance(item, Mapping):
+            continue
+        name = _text(item.get("name"))
+        identifier = _song_id(item.get("id"))
+        if name:
+            eras.append(CatalogueFilterOption(name, name, identifier))
+    return CatalogueFilterMetadata(tuple(categories), tuple(eras))
+
+
+def get_song_details_by_id(
+    settings: Settings,
+    song_id: SongId,
+    *,
+    selection_index: int = 1,
+    details_fetcher: DetailsFunction = get_song,
+) -> SongDetails | None:
+    """Load stable details for a selected catalogue record by numeric API ID."""
+
+    try:
+        numeric_id = int(song_id)
+        record = details_fetcher(settings, numeric_id)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(record, Mapping):
+        return None
+    return SongDetails(selection_index=selection_index, **_common_fields(settings, record))
+
+
+def _nonnegative_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0, parsed)
 
 
 def get_song_details(

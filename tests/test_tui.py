@@ -7,7 +7,7 @@ from threading import Event
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from juice_lyrics.config.settings import Settings
-from juice_lyrics.services import LibraryStatus, QueueSnapshot
+from juice_lyrics.services import CatalogueFilterMetadata, LibraryStatus, QueueSnapshot
 from juice_lyrics.tui import JuiceLyricsApp
 from juice_lyrics.tui.screens.base import NavigationItem
 from textual.widgets import Button, Static
@@ -47,6 +47,7 @@ def _app(tmp_path: Path, *, library=None, queue=None) -> JuiceLyricsApp:
         Settings(music_dir=tmp_path / "music"),
         library_status_provider=library or (lambda settings: _library_status(tmp_path)),
         queue_snapshot_provider=queue or _queue_snapshot,
+        catalogue_filters_provider=lambda *args, **kwargs: CatalogueFilterMetadata((), ()),
     )
 
 

@@ -1,0 +1,13 @@
+{
+  "count": 34,
+  "next": null,
+  "previous": "http://juicewrldapi.com/juicewrld/eras/?page_size=100",
+  "results": [
+    {
+      "id": 130,
+      "name": "DRFL (TV)",
+      "description": "DRFL television performances",
+      "time_frame": ""
+    }
+  ]
+}

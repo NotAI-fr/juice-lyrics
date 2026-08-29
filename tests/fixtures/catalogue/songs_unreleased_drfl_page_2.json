@@ -1,0 +1,24 @@
+{
+  "count": 235,
+  "next": "http://juicewrldapi.com/juicewrld/songs/?category=unreleased&era=DRFL&page=3&page_size=50&search=",
+  "previous": "http://juicewrldapi.com/juicewrld/songs/?category=unreleased&era=DRFL&page_size=50&search=",
+  "results": [
+    {
+      "id": 95214,
+      "name": "Rental (v1)",
+      "category": "unreleased",
+      "era": {"id": 110, "name": "DRFL"},
+      "length": "4:13",
+      "path": "Tracks/Rental (v1).mp3",
+      "synced_lyrics": "[00:01.00] line"
+    },
+    {
+      "id": 95061,
+      "name": "10 Feet (v1)",
+      "category": "unreleased",
+      "era": {"id": 110, "name": "DRFL"},
+      "length": "3:38",
+      "path": "Tracks/10 Feet (v1).mp3"
+    }
+  ]
+}

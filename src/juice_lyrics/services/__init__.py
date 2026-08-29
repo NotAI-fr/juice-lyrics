@@ -10,11 +10,17 @@ from .acquisition_queue import (
     resolve_queue_reference,
 )
 from .catalogue import (
+    CatalogueFilterMetadata,
+    CatalogueFilterOption,
+    CataloguePage,
     CatalogueSearchResult,
     LyricAvailability,
     SongDetails,
+    get_catalogue_filters,
     get_song_details,
+    get_song_details_by_id,
     search_catalogue,
+    search_catalogue_page,
 )
 from .library_status import LibraryStatus, get_library_status
 from .library_sync import (
@@ -34,6 +40,9 @@ from .library_sync import (
 
 __all__ = [
     "CatalogueSearchResult",
+    "CatalogueFilterMetadata",
+    "CatalogueFilterOption",
+    "CataloguePage",
     "LibraryStatus",
     "LibrarySyncDependencies",
     "LibrarySyncOptions",
@@ -53,10 +62,13 @@ __all__ = [
     "TrackSyncPlan",
     "TrackSyncResult",
     "execute_library_sync",
+    "get_catalogue_filters",
     "get_queue_snapshot",
     "get_library_status",
     "get_song_details",
+    "get_song_details_by_id",
     "plan_library_sync",
     "search_catalogue",
+    "search_catalogue_page",
     "resolve_queue_reference",
 ]

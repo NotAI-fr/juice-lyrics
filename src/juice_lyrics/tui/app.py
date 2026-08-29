@@ -8,10 +8,12 @@ from textual.binding import Binding
 
 from ..services.acquisition_queue import QueueSnapshot, get_queue_snapshot
 from ..services.catalogue import (
-    CatalogueSearchResult,
+    CatalogueFilterMetadata,
+    CataloguePage,
     SongDetails,
-    get_song_details,
-    search_catalogue,
+    get_catalogue_filters,
+    get_song_details_by_id,
+    search_catalogue_page,
 )
 from ..services.library_status import LibraryStatus, get_library_status
 from .screens.base import NavigationItem
@@ -21,8 +23,9 @@ from .screens.placeholder import PlaceholderScreen
 
 LibraryStatusProvider = Callable[[Any], LibraryStatus]
 QueueSnapshotProvider = Callable[[], QueueSnapshot]
-CatalogueSearchProvider = Callable[..., tuple[CatalogueSearchResult, ...]]
+CatalogueSearchProvider = Callable[..., CataloguePage]
 CatalogueDetailsProvider = Callable[..., SongDetails | None]
+CatalogueFiltersProvider = Callable[..., CatalogueFilterMetadata]
 
 
 class JuiceLyricsApp(App[None]):
@@ -130,7 +133,8 @@ class JuiceLyricsApp(App[None]):
         height: 4;
     }
 
-    #browse-controls Input {
+    #browse-controls Input,
+    #browse-controls SelectCurrent {
         background: transparent;
         color: ansi_default;
         border: tall ansi_default;
@@ -138,10 +142,27 @@ class JuiceLyricsApp(App[None]):
         padding: 0 1;
     }
 
-    #browse-controls Input:focus {
+    #browse-controls Input:focus,
+    #browse-controls Select:focus > SelectCurrent {
         background: transparent;
         border: tall ansi_blue;
         background-tint: transparent;
+    }
+
+    #browse-controls Select,
+    #browse-controls SelectOverlay {
+        background: transparent;
+        color: ansi_default;
+    }
+
+    #browse-controls SelectOverlay {
+        border: tall ansi_blue;
+    }
+
+    #browse-controls .option-list--option-highlighted {
+        background: transparent;
+        color: ansi_blue;
+        text-style: bold;
     }
 
     .filter-label {
@@ -232,8 +253,9 @@ class JuiceLyricsApp(App[None]):
         *,
         library_status_provider: LibraryStatusProvider = get_library_status,
         queue_snapshot_provider: QueueSnapshotProvider = get_queue_snapshot,
-        catalogue_search_provider: CatalogueSearchProvider = search_catalogue,
-        catalogue_details_provider: CatalogueDetailsProvider = get_song_details,
+        catalogue_search_provider: CatalogueSearchProvider = search_catalogue_page,
+        catalogue_details_provider: CatalogueDetailsProvider = get_song_details_by_id,
+        catalogue_filters_provider: CatalogueFiltersProvider = get_catalogue_filters,
     ) -> None:
         super().__init__(ansi_color=True)
         self.settings = settings
@@ -241,6 +263,7 @@ class JuiceLyricsApp(App[None]):
         self.queue_snapshot_provider = queue_snapshot_provider
         self.catalogue_search_provider = catalogue_search_provider
         self.catalogue_details_provider = catalogue_details_provider
+        self.catalogue_filters_provider = catalogue_filters_provider
 
     def on_mount(self) -> None:
         self.install_screen(
@@ -256,6 +279,7 @@ class JuiceLyricsApp(App[None]):
                 self.settings,
                 search_provider=self.catalogue_search_provider,
                 details_provider=self.catalogue_details_provider,
+                filters_provider=self.catalogue_filters_provider,
             ),
             "browse",
         )
@@ -287,7 +311,7 @@ class JuiceLyricsApp(App[None]):
 
     def action_show_help(self) -> None:
         if self.screen.name == "browse":
-            message = "/ search  •  ↑/↓ or j/k select  •  Enter details  •  r rerun  •  1–5 sections  •  q quit"
+            message = "/ search  •  ↑/↓ select  •  Enter details  •  n/p pages  •  r refresh  •  1–5 sections  •  q quit"
         else:
             message = "1–5 switch sections  •  r refreshes Dashboard  •  q quits"
         self.notify(message, timeout=5)

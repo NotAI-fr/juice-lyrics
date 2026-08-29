@@ -10,19 +10,43 @@ from textual.binding import Binding
 from textual.containers import Container, Grid, Vertical, VerticalScroll
 from textual.events import Key, Resize, ScreenResume
 from textual.widget import Widget
-from textual.widgets import Input, Static
+from textual.widgets import Input, Select, Static
 from textual.worker import Worker, WorkerState
 
-from ...services.catalogue import CatalogueSearchResult, LyricAvailability, SongDetails
+from ...services.catalogue import (
+    CatalogueFilterMetadata,
+    CataloguePage,
+    CatalogueSearchResult,
+    LyricAvailability,
+    SongDetails,
+)
 from .base import HubScreen
 
-SearchProvider = Callable[..., tuple[CatalogueSearchResult, ...]]
+SearchProvider = Callable[..., CataloguePage | tuple[CatalogueSearchResult, ...]]
 DetailsProvider = Callable[..., SongDetails | None]
+FiltersProvider = Callable[..., CatalogueFilterMetadata]
 _PREVIEW_LINES = 6
+_PAGE_SIZE = 50
 
 
 class BrowseInput(Input):
     """Filter input that preserves the shell's global numeric navigation."""
+
+    def on_key(self, event: Key) -> None:
+        if event.key == "slash":
+            self.screen.action_focus_search()
+            event.prevent_default()
+            event.stop()
+            return
+        if event.key in "12345":
+            sections = ("dashboard", "browse", "library", "downloads", "settings")
+            self.app.action_show_section(sections[int(event.key) - 1])
+            event.prevent_default()
+            event.stop()
+
+
+class BrowseSelect(Select[str]):
+    """Catalogue selector that preserves global section shortcuts."""
 
     def on_key(self, event: Key) -> None:
         if event.key == "slash":
@@ -42,13 +66,14 @@ class SearchRequest:
     query: str
     category: str | None
     era: str | None
+    page: int
     refresh: bool
 
 
 @dataclass(frozen=True, slots=True)
 class SearchOutcome:
     request: SearchRequest
-    results: tuple[CatalogueSearchResult, ...] = ()
+    page: CataloguePage | None = None
     error: str | None = None
 
 
@@ -56,6 +81,12 @@ class SearchOutcome:
 class DetailsOutcome:
     result: CatalogueSearchResult
     details: SongDetails | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FiltersOutcome:
+    metadata: CatalogueFilterMetadata | None = None
     error: str | None = None
 
 
@@ -70,29 +101,34 @@ class BrowseScreen(HubScreen):
         *,
         search_provider: SearchProvider,
         details_provider: DetailsProvider,
+        filters_provider: FiltersProvider,
     ) -> None:
         super().__init__("browse", "Browse")
         self.settings = settings
         self._search_provider = search_provider
         self._details_provider = details_provider
+        self._filters_provider = filters_provider
         self.results: tuple[CatalogueSearchResult, ...] = ()
+        self.current_page: CataloguePage | None = None
         self.selected_index = 0
         self.last_request: SearchRequest | None = None
         self._search_worker: Worker[SearchOutcome] | None = None
         self._details_worker: Worker[DetailsOutcome] | None = None
+        self._filters_worker: Worker[FiltersOutcome] | None = None
+        self._applying_filters = False
 
     def compose_content(self) -> Iterable[Widget]:
         with Grid(id="browse-controls"):
             with Vertical(classes="browse-filter"):
                 yield Static("Search", classes="filter-label")
-                yield BrowseInput(placeholder="Song title", id="browse-query")
+                yield BrowseInput(placeholder="Optional song title", id="browse-query")
             with Vertical(classes="browse-filter"):
-                yield Static("Category (All when blank)", classes="filter-label")
-                yield BrowseInput(placeholder="All", id="browse-category")
+                yield Static("Category", classes="filter-label")
+                yield BrowseSelect([("Loading…", "")], allow_blank=False, id="browse-category", disabled=True)
             with Vertical(classes="browse-filter"):
-                yield Static("Era (All when blank)", classes="filter-label")
-                yield BrowseInput(placeholder="All", id="browse-era")
-        yield Static("Enter a song title and press Enter.", id="browse-status", markup=False)
+                yield Static("Era", classes="filter-label")
+                yield BrowseSelect([("Loading…", "")], allow_blank=False, id="browse-era", disabled=True)
+        yield Static("Enter a title or choose at least one filter.", id="browse-status", markup=False)
         with Grid(id="browse-main"):
             with Container(classes="browse-panel", id="browse-results-panel"):
                 yield Static("Results", classes="panel-title")
@@ -109,22 +145,32 @@ class BrowseScreen(HubScreen):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.submit_search(refresh=False)
 
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if not self._applying_filters and not event.select.disabled:
+            self.submit_search(refresh=False)
+
     def on_screen_resume(self, event: ScreenResume) -> None:
+        if self._filters_worker is None:
+            self._filters_worker = self._load_filters()
         if self.results:
             self.call_after_refresh(self.set_focus, None)
 
     def submit_search(self, *, refresh: bool) -> None:
         query = self.query_one("#browse-query", Input).value.strip()
-        category = self.query_one("#browse-category", Input).value.strip() or None
-        era = self.query_one("#browse-era", Input).value.strip() or None
-        if not query:
-            self._set_status("Enter a song title before searching.", error=True)
+        category = _select_value(self.query_one("#browse-category", Select))
+        era = _select_value(self.query_one("#browse-era", Select))
+        if not query and not category and not era:
+            self._set_status("Enter a title or choose at least one filter.", error=True)
             return
 
-        request = SearchRequest(query, category, era, refresh)
+        request = SearchRequest(query, category, era, 1, refresh)
+        self._start_search(request)
+
+    def _start_search(self, request: SearchRequest) -> None:
         self.last_request = request
         self.set_focus(None)
         self.results = ()
+        self.current_page = None
         self.selected_index = 0
         self.query_one("#browse-results", Static).update("Searching…")
         self.query_one("#browse-details", Static).update("Waiting for results…")
@@ -136,9 +182,22 @@ class BrowseScreen(HubScreen):
             self.submit_search(refresh=True)
             return
         self.query_one("#browse-query", Input).value = self.last_request.query
-        self.query_one("#browse-category", Input).value = self.last_request.category or ""
-        self.query_one("#browse-era", Input).value = self.last_request.era or ""
-        self.submit_search(refresh=True)
+        self.query_one("#browse-category", Select).value = self.last_request.category or ""
+        self.query_one("#browse-era", Select).value = self.last_request.era or ""
+        self._start_search(SearchRequest(
+            self.last_request.query,
+            self.last_request.category,
+            self.last_request.era,
+            self.last_request.page,
+            True,
+        ))
+
+    @work(thread=True, exclusive=True, group="catalogue-filters", exit_on_error=False)
+    def _load_filters(self) -> FiltersOutcome:
+        try:
+            return FiltersOutcome(self._filters_provider(self.settings, refresh=False))
+        except Exception as exc:
+            return FiltersOutcome(error=str(exc) or type(exc).__name__)
 
     @work(thread=True, exclusive=True, group="catalogue-search", exit_on_error=False)
     def _run_search(self, request: SearchRequest) -> SearchOutcome:
@@ -148,9 +207,16 @@ class BrowseScreen(HubScreen):
                 request.query,
                 category=request.category,
                 era=request.era,
+                page=request.page,
+                page_size=_PAGE_SIZE,
                 refresh=request.refresh,
             )
-            return SearchOutcome(request, tuple(results))
+            if isinstance(results, CataloguePage):
+                page = results
+            else:
+                normalized = tuple(results)
+                page = CataloguePage(normalized, request.page, _PAGE_SIZE, len(normalized), None, None)
+            return SearchOutcome(request, page)
         except Exception as exc:
             return SearchOutcome(request, error=str(exc) or type(exc).__name__)
 
@@ -159,23 +225,32 @@ class BrowseScreen(HubScreen):
         request = self.last_request
         if request is None:
             return DetailsOutcome(result, error="Search context is unavailable")
+        if result.song_id is None:
+            return DetailsOutcome(result, error="This result has no stable song ID")
         try:
             details = self._details_provider(
                 self.settings,
-                request.query,
+                result.song_id,
                 selection_index=result.selection_index,
-                refresh=False,
             )
             return DetailsOutcome(result, details)
         except Exception as exc:
             return DetailsOutcome(result, error=str(exc) or type(exc).__name__)
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        if event.worker is self._search_worker:
+        if event.worker is self._filters_worker:
+            if event.state is WorkerState.SUCCESS:
+                self._apply_filters(event.worker.result)
+            elif event.state is WorkerState.ERROR:
+                self._apply_filters(FiltersOutcome(error="Filter metadata worker failed"))
+        elif event.worker is self._search_worker:
             if event.state is WorkerState.SUCCESS:
                 self._apply_search(event.worker.result)
             elif event.state is WorkerState.ERROR:
-                self._apply_search(SearchOutcome(self.last_request or SearchRequest("", None, None, False), error="Search worker failed"))
+                self._apply_search(SearchOutcome(
+                    self.last_request or SearchRequest("", None, None, 1, False),
+                    error="Search worker failed",
+                ))
         elif event.worker is self._details_worker:
             if event.state is WorkerState.SUCCESS:
                 self._apply_details(event.worker.result)
@@ -185,22 +260,47 @@ class BrowseScreen(HubScreen):
     def _apply_search(self, outcome: SearchOutcome) -> None:
         if outcome.error:
             self.results = ()
+            self.current_page = None
             self.query_one("#browse-results", Static).update("Search unavailable.")
             self.query_one("#browse-details", Static).update("No song selected.")
             self._set_status(f"Search failed: {outcome.error}", error=True)
             return
 
-        self.results = outcome.results
+        page = outcome.page or CataloguePage((), outcome.request.page, _PAGE_SIZE, 0, None, None)
+        self.current_page = page
+        self.results = page.results
         self.selected_index = 0
         if not self.results:
             self.query_one("#browse-results", Static).update("No catalogue results found.")
-            self.query_one("#browse-details", Static).update("Try another title or filter.")
-            self._set_status(f'No results for "{outcome.request.query}".')
+            if outcome.request.page > 1:
+                self.query_one("#browse-details", Static).update("Return to the previous or first page.")
+                self._set_status(f"Page {outcome.request.page} is no longer available.", error=True)
+            else:
+                self.query_one("#browse-details", Static).update("Try another title or filter.")
+                self._set_status(_empty_result_status(outcome.request))
             return
 
         self._render_results()
         self._render_summary(self.results[0])
-        self._set_status(self._result_status(outcome.request, len(self.results)))
+        self._set_status(self._result_status(outcome.request, page))
+
+    def _apply_filters(self, outcome: FiltersOutcome) -> None:
+        category = self.query_one("#browse-category", Select)
+        era = self.query_one("#browse-era", Select)
+        if outcome.error or outcome.metadata is None:
+            category.set_options([("Unavailable", "")])
+            era.set_options([("Unavailable", "")])
+            category.disabled = era.disabled = True
+            self._set_status(f"Filter metadata unavailable: {outcome.error or 'Unknown error'}. Title search remains available.", error=True)
+            return
+        self._applying_filters = True
+        category.set_options([("All", ""), *((item.label, item.value) for item in outcome.metadata.categories)])
+        era.set_options([("All", ""), *((item.label, item.value) for item in outcome.metadata.eras)])
+        category.value = era.value = ""
+        self._applying_filters = False
+        category.disabled = era.disabled = False
+        if self.last_request is None:
+            self._set_status("Enter an optional title or choose filters, then press / and Enter.")
 
     def _apply_details(self, outcome: DetailsOutcome) -> None:
         if not self.results or self.results[self.selected_index] != outcome.result:
@@ -213,7 +313,9 @@ class BrowseScreen(HubScreen):
             self.query_one("#browse-details", Static).update(self._details_text(outcome.details))
 
     def on_key(self, event: Key) -> None:
-        if isinstance(self.app.focused, Input):
+        if any(select.expanded for select in self.query(Select)):
+            return
+        if isinstance(self.app.focused, (Input, Select)):
             return
         if event.key in ("down", "j"):
             self._move_selection(1)
@@ -221,10 +323,42 @@ class BrowseScreen(HubScreen):
             self._move_selection(-1)
         elif event.key == "enter":
             self._load_selected_details()
+        elif event.key in ("n", "pagedown"):
+            self._change_page(next_page=True)
+        elif event.key in ("p", "pageup"):
+            self._change_page(next_page=False)
+        elif event.key == "home":
+            self._first_page()
         else:
             return
         event.prevent_default()
         event.stop()
+
+    def _change_page(self, *, next_page: bool) -> None:
+        if self.current_page is None or self.last_request is None:
+            return
+        page = self.current_page.next_page if next_page else self.current_page.previous_page
+        if page is None:
+            self.notify("No next page." if next_page else "Already on the first page.")
+            return
+        self._start_search(SearchRequest(
+            self.last_request.query,
+            self.last_request.category,
+            self.last_request.era,
+            page,
+            False,
+        ))
+
+    def _first_page(self) -> None:
+        if self.last_request is None or self.last_request.page == 1:
+            return
+        self._start_search(SearchRequest(
+            self.last_request.query,
+            self.last_request.category,
+            self.last_request.era,
+            1,
+            False,
+        ))
 
     def _move_selection(self, amount: int) -> None:
         if not self.results:
@@ -310,13 +444,15 @@ class BrowseScreen(HubScreen):
 
     @staticmethod
     def _loading_status(request: SearchRequest) -> str:
-        filters = _filter_text(request.category, request.era)
-        return f'Searching for "{request.query}"…{filters}'
+        if request.query:
+            return f'Searching for "{request.query}"…{_filter_text(request.category, request.era)}'
+        return f"Searching: {_filter_values(request.category, request.era)}…"
 
     @staticmethod
-    def _result_status(request: SearchRequest, count: int) -> str:
+    def _result_status(request: SearchRequest, page: CataloguePage) -> str:
         filters = _filter_text(request.category, request.era)
-        return f"{count} result(s).{filters}  ↑/↓ or j/k select · Enter details"
+        location = f"Page {page.page} · Showing {page.range_start}–{page.range_end} of {page.total_count}"
+        return f"{location}.{filters}  ↑/↓ select · n/p pages · Enter details"
 
     def on_resize(self, event: Resize) -> None:
         super().on_resize(event)
@@ -333,12 +469,28 @@ def _lyrics_label(value: LyricAvailability) -> str:
 
 
 def _filter_text(category: str | None, era: str | None) -> str:
+    values = _filter_values(category, era)
+    return f"  Filters: {values}." if values else "  Filters: All."
+
+
+def _filter_values(category: str | None, era: str | None) -> str:
     values = []
     if category:
         values.append(f"category={category}")
     if era:
         values.append(f"era={era}")
-    return f"  Filters: {', '.join(values)}." if values else "  Filters: All."
+    return ", ".join(values)
+
+
+def _empty_result_status(request: SearchRequest) -> str:
+    if request.query:
+        return f'No results for "{request.query}".{_filter_text(request.category, request.era)}'
+    return f"No results for filters: {_filter_values(request.category, request.era)}."
+
+
+def _select_value(select: Select) -> str | None:
+    value = select.value
+    return value if isinstance(value, str) and value else None
 
 
 def _lyric_preview(details: SongDetails) -> str:

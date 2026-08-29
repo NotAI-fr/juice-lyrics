@@ -232,8 +232,8 @@ def search_api(settings: Settings, title: str, refresh: bool = False) -> list[di
     return results
 
 
-def search_api_advanced(settings: Settings, query: str, category: str | None = None, era: str | None = None, refresh: bool = False) -> dict[str, Any]:
-    params = [f"search={quote(query)}", "page_size=50"]
+def search_api_advanced(settings: Settings, query: str, category: str | None = None, era: str | None = None, page: int = 1, page_size: int = 50, refresh: bool = False) -> dict[str, Any]:
+    params = [f"search={quote(query)}", f"page_size={page_size}", f"page={page}"]
     if category:
         params.append(f"category={quote(category)}")
     if era:
@@ -719,8 +719,16 @@ def search_api(settings: Settings, title: str, refresh: bool = False) -> list[di
     return _api_search_song_names(settings, title, refresh=refresh)
 
 
-def search_api_advanced(settings: Settings, query: str, category: str | None = None, era: str | None = None, refresh: bool = False) -> dict[str, Any]:
-    return _api_search_songs(settings, query, category=category, era=era, refresh=refresh)
+def search_api_advanced(settings: Settings, query: str, category: str | None = None, era: str | None = None, page: int = 1, page_size: int = 50, refresh: bool = False) -> dict[str, Any]:
+    return _api_search_songs(
+        settings,
+        query,
+        category=category,
+        era=era,
+        page=page,
+        page_size=page_size,
+        refresh=refresh,
+    )
 
 
 def get_song(settings: Settings, song_id: int) -> dict[str, Any]:

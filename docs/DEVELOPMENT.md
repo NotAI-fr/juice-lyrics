@@ -62,11 +62,14 @@ juice-lyrics tui
 
 The experimental shell provides a read-only Dashboard and a functional
 read-only Browse screen. Press `/` to focus catalogue search and Enter to
-submit. Category and era fields accept API filter values; leave either blank
-for All. Use arrows or `j`/`k` to select results and Enter to load full details
-and a lyric preview. Global keys remain `1`–`5` for sections, `?` for help, and
-`q` to quit. Browse does not download media, create jobs, sync lyrics, edit
-settings, or modify the local library.
+submit. Category and Era are keyboard-usable selectors populated from API
+metadata; choose All for no filter. Filter-only searches are supported. Results
+use the API's 50-song pages and show the visible range and total. Use `n` or
+PageDown for the next page, `p` or PageUp for the previous page, and Home for
+page one. Arrows or `j`/`k` select results, Enter loads full details and a lyric
+preview, and `r` refreshes the current page. Global keys remain `1`–`5` for
+sections, `?` for help, and `q` to quit. Browse does not download media, create
+jobs, sync lyrics, edit settings, or modify the local library.
 It uses Textual's ANSI-color mode and ANSI palette names rather than a bundled
 theme. Exact terminal-background transparency can still vary with Textual's
 alternate-screen rendering and the terminal emulator.

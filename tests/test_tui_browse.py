@@ -5,12 +5,15 @@ from threading import Event
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from textual.widgets import Input
+from textual.widgets import Input, Select
 
 from juice_lyrics.config.settings import Settings
 from juice_lyrics.services import LibraryStatus, QueueSnapshot
 from juice_lyrics.services.catalogue import (
     CatalogueSearchResult,
+    CatalogueFilterMetadata,
+    CatalogueFilterOption,
+    CataloguePage,
     LyricAvailability,
     SongDetails,
 )
@@ -62,7 +65,7 @@ def _details(
     )
 
 
-def _app(tmp_path: Path, *, search, details=None) -> JuiceLyricsApp:
+def _app(tmp_path: Path, *, search, details=None, filters=None) -> JuiceLyricsApp:
     return JuiceLyricsApp(
         Settings(music_dir=tmp_path / "music"),
         library_status_provider=lambda settings: LibraryStatus(
@@ -71,6 +74,16 @@ def _app(tmp_path: Path, *, search, details=None) -> JuiceLyricsApp:
         queue_snapshot_provider=lambda: QueueSnapshot((), 0, 0, 0, 0, 0),
         catalogue_search_provider=search,
         catalogue_details_provider=details or (lambda *args, **kwargs: None),
+        catalogue_filters_provider=filters or (lambda *args, **kwargs: CatalogueFilterMetadata(
+            categories=(
+                CatalogueFilterOption("Released", "released"),
+                CatalogueFilterOption("Unreleased", "unreleased"),
+            ),
+            eras=(
+                CatalogueFilterOption("DRFL", "DRFL", 110),
+                CatalogueFilterOption("JW3", "JW3", 111),
+            ),
+        )),
     )
 
 
@@ -110,9 +123,173 @@ def test_browse_is_functional_slash_focuses_and_empty_query_does_not_search(tmp_
             await pilot.press("enter")
             await pilot.pause()
             assert calls == []
-            assert "Enter a song title" in _text(app, "#browse-status")
+            assert "Enter a title or choose at least one filter" in _text(app, "#browse-status")
 
     asyncio.run(scenario())
+
+
+def test_filter_only_searches_forward_category_era_and_both_from_filter_fields(tmp_path):
+    calls = []
+
+    def search(settings, query, **kwargs):
+        calls.append((query, kwargs))
+        return (_result(1, "Filtered Song"),)
+
+    async def submit_from(app, pilot, selector):
+        field = app.query_one(selector, Select)
+        field.focus()
+        await pilot.pause()
+        worker = app.screen._search_worker
+        assert worker is not None
+        await worker.wait()
+        await pilot.pause()
+
+    async def scenario():
+        app = _app(tmp_path, search=search)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+
+            app.query_one("#browse-category", Select).value = "unreleased"
+            await submit_from(app, pilot, "#browse-category")
+            assert calls[-1] == ("", {"category": "unreleased", "era": None, "page": 1, "page_size": 50, "refresh": False})
+
+            app.query_one("#browse-category", Select).value = ""
+            app.query_one("#browse-era", Select).value = "DRFL"
+            await submit_from(app, pilot, "#browse-era")
+            assert calls[-1] == ("", {"category": None, "era": "DRFL", "page": 1, "page_size": 50, "refresh": False})
+
+            app.query_one("#browse-category", Select).value = "unreleased"
+            await submit_from(app, pilot, "#browse-category")
+            assert calls[-1] == ("", {"category": "unreleased", "era": "DRFL", "page": 1, "page_size": 50, "refresh": False})
+            assert "Filtered Song" in _text(app, "#browse-results")
+            assert "Filters: category=unreleased, era=DRFL" in _text(app, "#browse-status")
+
+    asyncio.run(scenario())
+
+
+def test_filter_only_loading_empty_and_error_states(tmp_path):
+    started = Event()
+    release = Event()
+    mode = "slow"
+
+    def search(settings, query, **kwargs):
+        if mode == "slow":
+            started.set()
+            release.wait(timeout=5)
+            return (_result(1, "Era Song"),)
+        if mode == "empty":
+            return ()
+        raise RuntimeError("filtered catalogue failed")
+
+    async def submit_era(app, pilot):
+        field = app.query_one("#browse-era", Select)
+        field.value = "DRFL"
+        field.focus()
+        app.screen.submit_search(refresh=False)
+        await pilot.pause()
+
+    async def scenario():
+        nonlocal mode
+        app = _app(tmp_path, search=search)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            await submit_era(app, pilot)
+            await asyncio.to_thread(started.wait, 2)
+            assert "Searching: era=DRFL" in _text(app, "#browse-status")
+            release.set()
+            await app.screen._search_worker.wait()
+            await pilot.pause()
+            assert "Era Song" in _text(app, "#browse-results")
+
+            mode = "empty"
+            await submit_era(app, pilot)
+            await app.screen._search_worker.wait()
+            await pilot.pause()
+            assert "No catalogue results found" in _text(app, "#browse-results")
+            assert "No results for filters: era=DRFL" in _text(app, "#browse-status")
+
+            mode = "error"
+            await submit_era(app, pilot)
+            await app.screen._search_worker.wait()
+            await pilot.pause()
+            assert "filtered catalogue failed" in _text(app, "#browse-status")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+
+
+def test_filter_only_refresh_and_screen_switch_preserve_blank_title_and_state(tmp_path):
+    calls = []
+    results = (_result(1, "One"), _result(2, "Two"))
+
+    def search(settings, query, **kwargs):
+        calls.append((query, kwargs))
+        return results
+
+    async def scenario():
+        app = _app(tmp_path, search=search)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            app.query_one("#browse-category", Select).value = "unreleased"
+            app.query_one("#browse-era", Select).value = "DRFL"
+            await pilot.pause()
+            await app.screen._search_worker.wait()
+            await pilot.pause()
+            await pilot.press("down", "3", "2")
+            await pilot.pause()
+            assert app.query_one("#browse-query", Input).value == ""
+            assert app.query_one("#browse-category", Select).value == "unreleased"
+            assert app.query_one("#browse-era", Select).value == "DRFL"
+            assert "> Two" in _text(app, "#browse-results")
+
+            await pilot.press("r")
+            await app.screen._search_worker.wait()
+            await pilot.pause()
+            assert calls[-1] == ("", {"category": "unreleased", "era": "DRFL", "page": 1, "page_size": 50, "refresh": True})
+
+    asyncio.run(scenario())
+
+
+def test_new_filter_only_search_supersedes_stale_filter_results(tmp_path):
+    first_started = Event()
+    release_first = Event()
+
+    def search(settings, query, **kwargs):
+        if kwargs["era"] == "DRFL":
+            first_started.set()
+            release_first.wait(timeout=5)
+            return (_result(1, "Stale Era"),)
+        return (_result(1, "Fresh Era"),)
+
+    async def scenario():
+        app = _app(tmp_path, search=search)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            era = app.query_one("#browse-era", Select)
+            era.value = "DRFL"
+            era.focus()
+            await pilot.pause()
+            await asyncio.to_thread(first_started.wait, 2)
+
+            era.value = "JW3"
+            era.focus()
+            await pilot.pause()
+            current = app.screen._search_worker
+            assert current is not None
+            await current.wait()
+            await pilot.pause()
+            assert "Fresh Era" in _text(app, "#browse-results")
+
+            release_first.set()
+            await pilot.pause()
+            assert "Stale Era" not in _text(app, "#browse-results")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release_first.set()
 
 
 def test_search_forwards_filters_and_preserves_service_order(tmp_path):
@@ -127,11 +304,11 @@ def test_search_forwards_filters_and_preserves_service_order(tmp_path):
         app = _app(tmp_path, search=search)
         async with app.run_test(size=(120, 30)) as pilot:
             await _open_browse(app, pilot)
-            app.query_one("#browse-category", Input).value = "unreleased"
-            app.query_one("#browse-era", Input).value = "DRFL"
+            app.query_one("#browse-category", Select).value = "unreleased"
+            app.query_one("#browse-era", Select).value = "DRFL"
             await _submit(app, pilot, "rental")
 
-            assert calls == [("rental", {"category": "unreleased", "era": "DRFL", "refresh": False})]
+            assert calls[-1] == ("rental", {"category": "unreleased", "era": "DRFL", "page": 1, "page_size": 50, "refresh": False})
             rendered = _text(app, "#browse-results")
             assert rendered.index("First") < rendered.index("Second") < rendered.index("Third")
             assert "Filters: category=unreleased, era=DRFL" in _text(app, "#browse-status")
@@ -300,7 +477,7 @@ def test_arrow_jk_selection_updates_basic_details_and_enter_loads_full_details(t
             assert worker is not None
             await worker.wait()
             await pilot.pause()
-            assert detail_calls == [("songs", {"selection_index": 2, "refresh": False})]
+            assert detail_calls == [(2, {"selection_index": 2})]
             assert "[00:01.00] selected lyric" in _text(app, "#browse-details")
 
     asyncio.run(scenario())
@@ -378,7 +555,7 @@ def test_refresh_forwards_refresh_and_state_survives_section_switch(tmp_path):
             assert worker is not None
             await worker.wait()
             await pilot.pause()
-            assert calls[-1] == ("persist", {"category": None, "era": None, "refresh": True})
+            assert calls[-1] == ("persist", {"category": None, "era": None, "page": 1, "page_size": 50, "refresh": True})
 
     asyncio.run(scenario())
 
@@ -427,3 +604,167 @@ def test_browse_is_read_only_and_has_no_live_api_dependency(tmp_path, monkeypatc
     assert not list(tmp_path.rglob("*.json"))
     assert not list(tmp_path.rglob("*.lrc"))
     assert not list(tmp_path.rglob("*.toml"))
+
+
+def test_pagination_next_previous_home_refresh_and_later_page_details(tmp_path):
+    calls = []
+    detail_ids = []
+
+    def search(settings, query, **kwargs):
+        calls.append((query, kwargs))
+        page = kwargs["page"]
+        if page == 1:
+            results = tuple(_result(index, f"Page One {index}") for index in range(1, 51))
+            return CataloguePage(results, 1, 50, 75, 2, None)
+        results = tuple(_result(index, f"Page Two {index}") for index in range(51, 76))
+        return CataloguePage(results, 2, 50, 75, None, 1)
+
+    def details(settings, song_id, **kwargs):
+        detail_ids.append(song_id)
+        result = _result(song_id, f"Page Two {song_id}")
+        return _details(result, synced="[00:01.00] later page")
+
+    async def scenario():
+        app = _app(tmp_path, search=search, details=details)
+        async with app.run_test(size=(120, 32)) as pilot:
+            await _open_browse(app, pilot)
+            await _submit(app, pilot, "page")
+            assert "Page 1 · Showing 1–50 of 75" in _text(app, "#browse-status")
+
+            await pilot.press("n")
+            await app.screen._search_worker.wait()
+            await pilot.pause()
+            assert "Page 2 · Showing 51–75 of 75" in _text(app, "#browse-status")
+            assert "> Page Two 51" in _text(app, "#browse-results")
+            await pilot.press("enter")
+            await app.screen._details_worker.wait()
+            await pilot.pause()
+            assert detail_ids == [51]
+            assert "later page" in _text(app, "#browse-details")
+
+            await pilot.press("r")
+            await app.screen._search_worker.wait()
+            assert calls[-1][1]["page"] == 2 and calls[-1][1]["refresh"] is True
+
+            await pilot.press("p")
+            await app.screen._search_worker.wait()
+            await pilot.press("n")
+            await app.screen._search_worker.wait()
+            await pilot.press("home")
+            await app.screen._search_worker.wait()
+            await pilot.pause()
+            assert "Page 1 · Showing 1–50 of 75" in _text(app, "#browse-status")
+
+    asyncio.run(scenario())
+
+
+def test_filter_change_resets_pagination_to_first_page(tmp_path):
+    calls = []
+
+    def search(settings, query, **kwargs):
+        calls.append(kwargs.copy())
+        result = (_result(1, "Result"),)
+        return CataloguePage(result, kwargs["page"], 50, 60, 2 if kwargs["page"] == 1 else None, 1 if kwargs["page"] > 1 else None)
+
+    async def scenario():
+        app = _app(tmp_path, search=search)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            await _submit(app, pilot, "filter reset")
+            await pilot.press("n")
+            await app.screen._search_worker.wait()
+            assert calls[-1]["page"] == 2
+
+            app.query_one("#browse-era", Select).value = "DRFL"
+            await pilot.pause()
+            await app.screen._search_worker.wait()
+            assert calls[-1]["page"] == 1
+            assert calls[-1]["era"] == "DRFL"
+
+    asyncio.run(scenario())
+
+
+def test_stale_page_response_cannot_replace_new_first_page(tmp_path):
+    page_two_started = Event()
+    release_page_two = Event()
+
+    def search(settings, query, **kwargs):
+        if kwargs["page"] == 2:
+            page_two_started.set()
+            release_page_two.wait(timeout=5)
+            return CataloguePage((_result(51, "Stale Page Two"),), 2, 50, 60, None, 1)
+        return CataloguePage((_result(1, f"Fresh {query}"),), 1, 50, 60, 2, None)
+
+    async def scenario():
+        app = _app(tmp_path, search=search)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            await _submit(app, pilot, "old")
+            await pilot.press("n")
+            await asyncio.to_thread(page_two_started.wait, 2)
+
+            field = app.query_one("#browse-query", Input)
+            field.value = "new"
+            field.focus()
+            await pilot.press("enter")
+            current = app.screen._search_worker
+            assert current is not None
+            await current.wait()
+            await pilot.pause()
+            assert "Fresh new" in _text(app, "#browse-results")
+
+            release_page_two.set()
+            await pilot.pause()
+            assert "Stale Page Two" not in _text(app, "#browse-results")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release_page_two.set()
+
+
+def test_selector_keyboard_confirmation_uses_canonical_value(tmp_path):
+    calls = []
+
+    async def scenario():
+        app = _app(tmp_path, search=lambda settings, query, **kwargs: calls.append(kwargs) or ())
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            category = app.query_one("#browse-category", Select)
+            category.focus()
+            await pilot.press("enter", "down", "down", "enter")
+            await pilot.pause()
+            worker = app.screen._search_worker
+            assert worker is not None
+            await worker.wait()
+            assert category.value == "unreleased"
+            assert calls[-1]["category"] == "unreleased"
+
+    asyncio.run(scenario())
+
+
+def test_filter_metadata_failure_disables_selectors_but_title_search_survives(tmp_path):
+    calls = []
+
+    def broken_filters(*args, **kwargs):
+        raise RuntimeError("metadata endpoint unavailable")
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            search=lambda settings, query, **kwargs: calls.append(query) or (),
+            filters=broken_filters,
+        )
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            worker = app.screen._filters_worker
+            assert worker is not None
+            await worker.wait()
+            await pilot.pause()
+            assert app.query_one("#browse-category", Select).disabled
+            assert app.query_one("#browse-era", Select).disabled
+            assert "Filter metadata unavailable" in _text(app, "#browse-status")
+            await _submit(app, pilot, "Rental")
+            assert calls == ["Rental"]
+
+    asyncio.run(scenario())

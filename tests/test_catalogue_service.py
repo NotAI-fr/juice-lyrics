@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import sys
 
@@ -7,9 +8,14 @@ import pytest
 
 from juice_lyrics.config.settings import Settings
 from juice_lyrics.services.catalogue import (
+    CatalogueFilterMetadata,
+    CataloguePage,
     LyricAvailability,
+    get_catalogue_filters,
     get_song_details,
+    get_song_details_by_id,
     search_catalogue,
+    search_catalogue_page,
 )
 
 
@@ -30,7 +36,38 @@ def test_empty_catalogue_search_preserves_filters():
     )
 
     assert results == ()
-    assert calls == [("rental", {"category": "unreleased", "era": "DRFL", "refresh": True})]
+    assert calls == [("rental", {
+        "category": "unreleased",
+        "era": "DRFL",
+        "page": 1,
+        "page_size": 50,
+        "refresh": True,
+    })]
+
+
+def test_catalogue_search_forwards_empty_title_with_server_filters():
+    calls = []
+
+    def searcher(settings, query, **kwargs):
+        calls.append((query, kwargs))
+        return {"results": []}
+
+    results = search_catalogue(
+        Settings(),
+        "",
+        category="unreleased",
+        era="DRFL",
+        searcher=searcher,
+    )
+
+    assert results == ()
+    assert calls == [("", {
+        "category": "unreleased",
+        "era": "DRFL",
+        "page": 1,
+        "page_size": 50,
+        "refresh": False,
+    })]
 
 
 def test_search_normalizes_shapes_lyrics_and_downloadability(tmp_path):
@@ -78,6 +115,78 @@ def test_search_normalizes_shapes_lyrics_and_downloadability(tmp_path):
     assert results[0].downloadable is True
     assert results[1].downloadable is True
     assert results[2].downloadable is False
+
+
+def test_page_normalizes_total_next_previous_and_visible_range(tmp_path):
+    payload = json.loads(
+        (Path(__file__).parent / "fixtures" / "catalogue" / "songs_unreleased_drfl_page_2.json").read_text(encoding="utf-8")
+    )
+    calls = []
+
+    page = search_catalogue_page(
+        Settings(music_dir=tmp_path),
+        "",
+        category="unreleased",
+        era="DRFL",
+        page=2,
+        page_size=50,
+        searcher=lambda settings, query, **kwargs: calls.append((query, kwargs)) or payload,
+    )
+
+    assert isinstance(page, CataloguePage)
+    assert page.total_count == 235
+    assert page.page == 2
+    assert page.page_size == 50
+    assert page.previous_page == 1
+    assert page.next_page == 3
+    assert page.range_start == 51
+    assert page.range_end == 52
+    assert [result.song_id for result in page.results] == [95214, 95061]
+    assert calls[0][1]["page"] == 2
+    assert calls[0][1]["page_size"] == 50
+
+
+def test_filter_metadata_maps_labels_to_canonical_request_values():
+    metadata = get_catalogue_filters(
+        Settings(),
+        category_fetcher=lambda *args, **kwargs: json.loads(
+            (Path(__file__).parent / "fixtures" / "catalogue" / "categories.json").read_text(encoding="utf-8")
+        ),
+        era_fetcher=lambda *args, **kwargs: json.loads(
+            (Path(__file__).parent / "fixtures" / "catalogue" / "eras_page_1.json").read_text(encoding="utf-8")
+        )["results"],
+    )
+
+    assert isinstance(metadata, CatalogueFilterMetadata)
+    assert [(item.label, item.value) for item in metadata.categories] == [
+        ("Released", "released"),
+        ("Unreleased", "unreleased"),
+        ("Unsurfaced", "unsurfaced"),
+        ("Recording Session", "recording_session"),
+    ]
+    drfl = next(item for item in metadata.eras if item.label == "DRFL")
+    assert drfl.value == "DRFL"
+    assert drfl.identifier == 110
+
+
+def test_details_by_id_uses_stable_selected_song_id(tmp_path):
+    fetched = []
+    details = get_song_details_by_id(
+        Settings(music_dir=tmp_path),
+        95214,
+        selection_index=7,
+        details_fetcher=lambda settings, song_id: fetched.append(song_id) or {
+            "id": song_id,
+            "name": "Rental (v1)",
+            "era": {"id": 110, "name": "DRFL"},
+            "category": "unreleased",
+        },
+    )
+
+    assert details is not None
+    assert details.song_id == 95214
+    assert details.selection_index == 7
+    assert fetched == [95214]
 
 
 def test_search_handles_malformed_optional_metadata_without_writes(tmp_path):

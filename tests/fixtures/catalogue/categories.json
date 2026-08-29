@@ -1,0 +1,8 @@
+{
+  "categories": [
+    {"value": "released", "label": "Released"},
+    {"value": "unreleased", "label": "Unreleased"},
+    {"value": "unsurfaced", "label": "Unsurfaced"},
+    {"value": "recording_session", "label": "Recording Session"}
+  ]
+}
