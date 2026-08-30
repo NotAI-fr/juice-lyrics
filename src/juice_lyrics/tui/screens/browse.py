@@ -85,7 +85,7 @@ class PaginationControl(Static):
         self.available = available
         self.set_class(available, "-available")
         self.set_class(not available, "-unavailable")
-        self.update(f"[{self.label}]" if available else self.label)
+        self.update(Text(f"[{self.label}]"))
 
     def on_click(self, event: Click) -> None:
         if self.available:
@@ -545,7 +545,10 @@ class BrowseScreen(HubScreen):
     def _result_status(self, request: SearchRequest, page: CataloguePage) -> str:
         filters = _filter_text(request.category, request.era)
         selected = min(len(page.results), self.selected_index + 1)
-        return f"Result {selected} of {len(page.results)} loaded.{filters}  ↑/↓ select · Enter details"
+        return (
+            f"Result {selected} of {len(page.results)} loaded · n/p pages · "
+            f"j/k select · PgUp/PgDn scroll · Enter details.{filters}"
+        )
 
     def on_resize(self, event: Resize) -> None:
         super().on_resize(event)

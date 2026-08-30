@@ -370,8 +370,12 @@ class JuiceLyricsApp(App[None]):
             self.notify(f"{self.screen.title or 'This section'} has no data to refresh yet.")
 
     def action_show_help(self) -> None:
-        if self.screen.name == "browse":
-            message = "/ search  •  ↑/↓ or j/k select  •  PgUp/PgDn list  •  Home/End  •  n/p pages  •  r refresh"
+        if getattr(self.screen, "section", None) == "browse":
+            message = (
+                "n next catalogue page  •  p previous catalogue page  •  "
+                "PageDown/PageUp scroll the loaded results  •  "
+                "Home/End first/last loaded result  •  j/k select  •  Enter details"
+            )
         else:
             message = "1–5 switch sections  •  r refreshes Dashboard  •  q quits"
         self.notify(message, timeout=5)

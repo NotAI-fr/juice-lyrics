@@ -690,6 +690,9 @@ def test_loaded_page_scrolls_all_fifty_results_and_supports_list_navigation(tmp_
             assert app.query_one("#browse-pagination").region.bottom <= app.screen.region.bottom
             assert "Page 1 of 30 · Results 1–50 of 1,485" in _text(app, "#browse-page-position")
             assert not app.query_one("#browse-previous").available
+            assert "[p Previous]" in _text(app, "#browse-previous")
+            assert "[n Next]" in _text(app, "#browse-next")
+            assert "n/p pages" in _text(app, "#browse-status")
 
             for _ in range(34):
                 await pilot.press("down")
@@ -736,6 +739,25 @@ def test_loaded_page_scrolls_all_fifty_results_and_supports_list_navigation(tmp_
             await app.screen._search_worker.wait()
             await pilot.pause()
             assert calls[-1]["page"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_browse_help_distinguishes_loaded_result_scrolling_from_api_pages(tmp_path):
+    messages = []
+
+    async def scenario():
+        app = _app(tmp_path, search=lambda *args, **kwargs: ())
+        app.notify = lambda message, **kwargs: messages.append(message)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _open_browse(app, pilot)
+            app.action_show_help()
+            assert messages
+            help_text = messages[-1]
+            assert "n next catalogue page" in help_text
+            assert "p previous catalogue page" in help_text
+            assert "PageDown/PageUp scroll the loaded results" in help_text
+            assert "Home/End first/last loaded result" in help_text
 
     asyncio.run(scenario())
 
