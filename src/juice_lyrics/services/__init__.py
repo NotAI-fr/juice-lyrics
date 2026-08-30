@@ -23,7 +23,17 @@ from .catalogue import (
     search_catalogue,
     search_catalogue_page,
 )
-from .library_status import LibraryStatus, get_library_status
+from .library_status import (
+    LibraryLrcStatus,
+    LibraryLyricStatus,
+    LibraryMatchStatus,
+    LibrarySnapshot,
+    LibraryStateStatus,
+    LibraryStatus,
+    LibraryTrack,
+    get_library_snapshot,
+    get_library_status,
+)
 from .library_sync import (
     LibrarySyncDependencies,
     LibrarySyncOptions,
@@ -36,6 +46,7 @@ from .library_sync import (
     TrackSyncPlan,
     TrackSyncResult,
     execute_library_sync,
+    get_library_sync_preview,
     plan_library_sync,
 )
 
@@ -45,6 +56,12 @@ __all__ = [
     "CatalogueFilterOption",
     "CataloguePage",
     "LibraryStatus",
+    "LibraryLrcStatus",
+    "LibraryLyricStatus",
+    "LibraryMatchStatus",
+    "LibrarySnapshot",
+    "LibraryStateStatus",
+    "LibraryTrack",
     "LibrarySyncDependencies",
     "LibrarySyncOptions",
     "LibrarySyncPlan",
@@ -64,9 +81,11 @@ __all__ = [
     "TrackSyncPlan",
     "TrackSyncResult",
     "execute_library_sync",
+    "get_library_sync_preview",
     "get_catalogue_filters",
     "get_queue_snapshot",
     "get_library_status",
+    "get_library_snapshot",
     "get_song_details",
     "get_song_details_by_id",
     "plan_library_sync",

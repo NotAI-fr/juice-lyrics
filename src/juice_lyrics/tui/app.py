@@ -15,11 +15,13 @@ from ..services.catalogue import (
     get_song_details_by_id,
     search_catalogue_page,
 )
-from ..services.library_status import LibraryStatus, get_library_status
+from ..services.library_status import LibrarySnapshot, LibraryStatus, get_library_snapshot, get_library_status
+from ..services.library_sync import LibrarySyncPlan, get_library_sync_preview
 from .screens.base import NavigationItem
 from .screens.browse import BrowseScreen
 from .screens.dashboard import DashboardScreen
 from .screens.downloads import DownloadsScreen
+from .screens.library import LibraryScreen
 from .screens.placeholder import PlaceholderScreen
 
 LibraryStatusProvider = Callable[[Any], LibraryStatus]
@@ -27,6 +29,8 @@ QueueSnapshotProvider = Callable[[], QueueSnapshot]
 CatalogueSearchProvider = Callable[..., CataloguePage]
 CatalogueDetailsProvider = Callable[..., SongDetails | None]
 CatalogueFiltersProvider = Callable[..., CatalogueFilterMetadata]
+LibrarySnapshotProvider = Callable[[Any], LibrarySnapshot]
+LibraryPreviewProvider = Callable[[Any], LibrarySyncPlan]
 
 
 class JuiceLyricsApp(App[None]):
@@ -301,6 +305,99 @@ class JuiceLyricsApp(App[None]):
         background: transparent;
     }
 
+    #library-summary {
+        height: 2;
+        padding: 0 1;
+        text-style: bold;
+    }
+
+    #library-status,
+    #library-preview,
+    #library-position {
+        height: 2;
+        padding: 0 1;
+    }
+
+    #library-status.-error {
+        color: ansi_red;
+    }
+
+    #library-controls {
+        height: 4;
+        layout: grid;
+        grid-size: 2 1;
+        grid-columns: 2fr 1fr;
+        grid-gutter: 0 1;
+    }
+
+    .library-filter {
+        height: 4;
+    }
+
+    #library-controls Input,
+    #library-controls SelectCurrent {
+        background: transparent;
+        color: ansi_default;
+        border: tall ansi_default;
+        background-tint: transparent;
+        padding: 0 1;
+    }
+
+    #library-controls Input:focus,
+    #library-controls Select:focus > SelectCurrent {
+        background: transparent;
+        border: tall ansi_blue;
+        background-tint: transparent;
+    }
+
+    #library-controls Select,
+    #library-controls SelectOverlay {
+        background: transparent;
+        color: ansi_default;
+    }
+
+    #library-controls SelectOverlay {
+        border: tall ansi_blue;
+    }
+
+    #library-controls .option-list--option-highlighted {
+        background: transparent;
+        color: ansi_blue;
+        text-style: bold;
+    }
+
+    #library-main {
+        height: 1fr;
+        layout: grid;
+        grid-size: 2 1;
+        grid-columns: 3fr 2fr;
+        grid-gutter: 0 1;
+    }
+
+    .library-panel {
+        height: 1fr;
+        border: round ansi_cyan;
+        padding: 0 1;
+    }
+
+    #library-tracks-scroll,
+    #library-details-scroll {
+        height: 1fr;
+        overflow-y: scroll;
+        overflow-x: hidden;
+        background: transparent;
+        scrollbar-size-vertical: 1;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+        scrollbar-corner-color: transparent;
+    }
+
+    #library-tracks,
+    #library-details {
+        height: auto;
+        background: transparent;
+    }
+
     #placeholder-panel {
         border: round ansi_cyan;
         padding: 2 3;
@@ -376,6 +473,44 @@ class JuiceLyricsApp(App[None]):
     Screen.-short .downloads-panel .panel-title {
         height: 1;
     }
+
+    Screen.-library-narrow #library-main {
+        grid-size: 1 1;
+        grid-columns: 1fr;
+        grid-rows: 1fr;
+    }
+
+    Screen.-library-narrow #library-details-panel {
+        display: none;
+    }
+
+    Screen.-library-narrow.-details-mode #library-tracks-panel {
+        display: none;
+    }
+
+    Screen.-library-narrow.-details-mode #library-details-panel {
+        display: block;
+    }
+
+    Screen.-short #library-summary,
+    Screen.-short #library-status,
+    Screen.-short #library-preview,
+    Screen.-short #library-position,
+    Screen.-short .library-panel .panel-title {
+        height: 1;
+    }
+
+    Screen.-library-compact #screen-title {
+        display: none;
+    }
+
+    Screen.-library-compact #library-summary,
+    Screen.-library-compact #library-status,
+    Screen.-library-compact #library-preview,
+    Screen.-library-compact #library-position,
+    Screen.-library-compact .library-panel .panel-title {
+        height: 1;
+    }
     """
 
     def __init__(
@@ -388,6 +523,8 @@ class JuiceLyricsApp(App[None]):
         catalogue_details_provider: CatalogueDetailsProvider = get_song_details_by_id,
         catalogue_filters_provider: CatalogueFiltersProvider = get_catalogue_filters,
         downloads_queue_provider: QueueSnapshotProvider | None = None,
+        library_snapshot_provider: LibrarySnapshotProvider = get_library_snapshot,
+        library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
     ) -> None:
         super().__init__(ansi_color=True)
         self.settings = settings
@@ -397,6 +534,8 @@ class JuiceLyricsApp(App[None]):
         self.catalogue_details_provider = catalogue_details_provider
         self.catalogue_filters_provider = catalogue_filters_provider
         self.downloads_queue_provider = downloads_queue_provider or queue_snapshot_provider
+        self.library_snapshot_provider = library_snapshot_provider
+        self.library_preview_provider = library_preview_provider
 
     def on_mount(self) -> None:
         self.install_screen(
@@ -417,7 +556,11 @@ class JuiceLyricsApp(App[None]):
             "browse",
         )
         self.install_screen(
-            PlaceholderScreen("Library", "Local track browsing and sync actions are planned for a later milestone."),
+            LibraryScreen(
+                self.settings,
+                snapshot_provider=self.library_snapshot_provider,
+                preview_provider=self.library_preview_provider,
+            ),
             "library",
         )
         self.install_screen(
@@ -454,6 +597,11 @@ class JuiceLyricsApp(App[None]):
             message = (
                 "↑/↓ or j/k select jobs  •  Home/End first/last job  •  "
                 "PgUp/PgDn move jobs  •  Enter track details  •  Esc job list  •  r refresh"
+            )
+        elif section == "library":
+            message = (
+                "↑/↓ or j/k select tracks  •  / local search  •  Home/End first/last  •  "
+                "PgUp/PgDn move tracks  •  Enter details  •  s read-only sync preview  •  r refresh"
             )
         else:
             message = "1–5 switch sections  •  r refreshes Dashboard  •  q quits"

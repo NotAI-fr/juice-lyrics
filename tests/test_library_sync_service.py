@@ -15,6 +15,7 @@ from juice_lyrics.services.library_sync import (
     SyncEventKind,
     SyncLyricType,
     execute_library_sync,
+    get_library_sync_preview,
     plan_library_sync,
 )
 
@@ -185,6 +186,32 @@ def test_dry_run_and_refresh_are_non_mutating(tmp_path):
     assert path.read_bytes() == b"original"
     assert state_file.read_bytes() == before
     assert saved == []
+    assert not backup_root.exists()
+    assert not (tmp_path / "lyrics").exists()
+
+
+def test_frontend_preview_helper_is_dry_run_and_non_mutating(tmp_path):
+    path = tmp_path / "Track.mp3"
+    path.write_bytes(b"original")
+    state_file = tmp_path / "state.json"
+    state_file.write_text(json.dumps({"files": {}}), encoding="utf-8")
+    deps, _, saved, backup_root = _dependencies(tmp_path, {"Track": _candidate()})
+    deps.state_loader = lambda: (_ for _ in ()).throw(AssertionError("mutating state loader called"))
+    deps.embedder = lambda *args: (_ for _ in ()).throw(AssertionError("embed called"))
+
+    plan = get_library_sync_preview(
+        Settings(music_dir=tmp_path),
+        rmpc_enabled=True,
+        lyrics_dir=tmp_path / "lyrics",
+        state_file=state_file,
+        dependencies=deps,
+    )
+
+    assert plan.options.dry_run is True
+    assert plan.ready_files == 1
+    assert plan.synced_files == 1
+    assert saved == []
+    assert path.read_bytes() == b"original"
     assert not backup_root.exists()
     assert not (tmp_path / "lyrics").exists()
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
@@ -285,6 +286,31 @@ def plan_library_sync(
             _emit(progress, SyncEventKind.TRACK_FAILED, path=path, message=str(exc))
     _emit(progress, SyncEventKind.SCAN_COMPLETED, total=len(files))
     return LibrarySyncPlan(options, tuple(tracks), state)
+
+
+def get_library_sync_preview(
+    settings: Settings,
+    *,
+    rmpc_enabled: bool | None = None,
+    lyrics_dir: Path | None = None,
+    state_file: Path = STATE_FILE,
+    dependencies: LibrarySyncDependencies | None = None,
+    progress: ProgressCallback | None = None,
+) -> LibrarySyncPlan:
+    """Build a non-mutating sync plan suitable for read-only frontends."""
+
+    if rmpc_enabled is None:
+        rmpc_enabled = shutil.which("rmpc") is not None and DEFAULT_RMPC_CONFIG.exists()
+    if rmpc_enabled and lyrics_dir is None:
+        lyrics_dir = DEFAULT_RMPC_LYRICS_DIR
+    options = LibrarySyncOptions.from_settings(
+        settings,
+        dry_run=True,
+        rmpc_enabled=rmpc_enabled,
+        lyrics_dir=lyrics_dir,
+        state_file=state_file,
+    )
+    return plan_library_sync(options, dependencies=dependencies, progress=progress)
 
 
 def _state_entry(

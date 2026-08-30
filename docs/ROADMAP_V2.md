@@ -134,8 +134,8 @@ Goal:
 Create the main application interface.
 
 Status: In progress. The responsive terminal-native shell, Dashboard, Browse,
-and read-only Downloads screen are integrated. Library and Settings remain
-placeholders, and the TUI remains read-only.
+Library, and read-only Downloads screen are integrated. Settings remains a
+placeholder, and the TUI remains read-only.
 
 Screens:
 
@@ -163,7 +163,9 @@ Features:
 - Sync state.
 - Metadata.
 
-Status: Placeholder; planned next read-only screen.
+Status: Read-only functionality complete, including local search and status
+filters, track details, and explicit non-mutating sync previews. Sync execution
+remains planned.
 
 ---
 
@@ -197,14 +199,13 @@ Status: Placeholder.
 
 Recommended implementation order after the current checkpoint:
 
-1. Read-only Library screen
-2. Settings screen
-3. Browse-to-download job creation
-4. Downloads Run/Retry/Delete actions
-5. Library sync actions
-6. `999` command and naming migration
-7. Native FLAC support
-8. Beta polish, packaging, and release testing
+1. Settings screen
+2. Browse-to-download job creation
+3. Downloads Run/Retry/Delete actions
+4. Library sync actions
+5. `999` command and naming migration
+6. Native FLAC support
+7. Beta polish, packaging, and release testing
 
 Possible future improvements:
 

@@ -61,7 +61,7 @@ juice-lyrics tui
 ```
 
 The experimental shell provides a read-only Dashboard plus functional,
-read-only Browse and Downloads screens. Press `/` to focus catalogue search and Enter to
+read-only Browse, Library, and Downloads screens. Press `/` to focus catalogue search and Enter to
 submit. Category and Era are keyboard-usable selectors populated from API
 metadata; choose All for no filter. Filter-only searches are supported. Results
 use the API's 50-song pages and show a permanently visible page, range, and
@@ -81,6 +81,18 @@ last job, and PageUp/PageDown to move through longer job lists. Enter opens the
 selected job's scrollable track details and Escape returns to the job list.
 Press `r` to refresh the read-only queue snapshot. Run, Retry, Delete, Cancel,
 and Download actions are intentionally unavailable in this milestone.
+
+In Library, arrows or `j`/`k` select local MP3 tracks, Home/End select the first
+or last track, and PageUp/PageDown move through longer lists. Press `/` for a
+local title/filename search and use the Status selector for Matched, Unmatched,
+Synced lyrics, Plain lyrics, No lyrics, or Needs attention. These filters operate
+on the loaded snapshot and do not contact the catalogue API or rescan files.
+Press Enter for track details in narrow terminals, Escape to return, and `r` to
+refresh the read-only snapshot. Press `s` explicitly to generate an API-backed
+sync plan. It is a preview only: no audio, state, backup, LRC, configuration, or
+rmpc changes are made. The existing API cache may be updated by that explicit
+preview. Actual library sync remains CLI-only via `juice-lyrics sync`. The
+scanner is currently MP3-focused; native FLAC support remains planned.
 
 ## Source of truth and Git workflow
 

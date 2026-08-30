@@ -2,7 +2,7 @@
 
 ## Current Status
 Backend services remain stable and the experimental Textual frontend is
-integrated as a read-only presentation layer. The current checkpoint has 185
+integrated as a read-only presentation layer. The current checkpoint has 197
 passing tests.
 
 ## Current Branch
@@ -15,9 +15,10 @@ v2-redesign
 ## Completed and integrated
 
 - Typed read-only library-status, catalogue, acquisition-queue, and library-sync services.
-- Responsive terminal-native Textual shell with functional read-only Dashboard, Browse, and Downloads screens.
+- Responsive terminal-native Textual shell with functional read-only Dashboard, Browse, Library, and Downloads screens.
 - Canonical Category and Era selectors, filter-only searches, correct case-sensitive API cache behavior, server-side catalogue pagination, scrollable 50-result pages, and stable ID-based song details.
 - Downloads queue summaries, job navigation, track details, structured failure stages, and retry eligibility.
+- Library summary, local track navigation, typed lyric/match/LRC/state details, local filters, and explicit read-only sync preview.
 - Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.
 
 ## Available through the CLI
@@ -27,7 +28,7 @@ and sync the library.
 
 ## Current limitations
 
-- Library and Settings remain placeholders.
+- Settings remains a placeholder.
 - TUI queue mutations and Browse download actions are not implemented.
 - Native FLAC support remains planned; lyric post-processing is currently MP3-only.
 - The planned executable/product name remains `999`; package, distribution, and
@@ -42,14 +43,13 @@ and sync the library.
 
 ## Recommended next milestones
 
-1. Read-only Library screen
-2. Settings screen
-3. Browse-to-download job creation
-4. Downloads Run/Retry/Delete actions
-5. Library sync actions
-6. `999` command and naming migration
-7. Native FLAC support
-8. Beta polish, packaging, and release testing
+1. Settings screen
+2. Browse-to-download job creation
+3. Downloads Run/Retry/Delete actions
+4. Library sync actions
+5. `999` command and naming migration
+6. Native FLAC support
+7. Beta polish, packaging, and release testing
 
 ## Resume development
 

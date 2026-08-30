@@ -5,7 +5,15 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from juice_lyrics.config.settings import Settings
-from juice_lyrics.services.library_status import LibraryStatus, get_library_status
+from juice_lyrics.services.library_status import (
+    LibraryLrcStatus,
+    LibraryLyricStatus,
+    LibraryMatchStatus,
+    LibraryStateStatus,
+    LibraryStatus,
+    get_library_snapshot,
+    get_library_status,
+)
 from juice_lyrics.state import sha256_file
 
 
@@ -123,3 +131,116 @@ def test_library_status_does_not_contact_api(tmp_path, monkeypatch):
     )
 
     assert status.track_count == 0
+
+
+def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypatch):
+    import juice_lyrics.api.client as api_client
+
+    library = tmp_path / "music"
+    library.mkdir()
+    synced = library / "A Synced.mp3"
+    plain = library / "B Plain.mp3"
+    missing = library / "C Missing.mp3"
+    for path in (synced, plain, missing):
+        path.write_bytes(path.name.encode())
+    lrc = tmp_path / "lyrics" / "A Synced.lrc"
+    lrc.parent.mkdir()
+    lrc.write_text("[00:01.00] line\n", encoding="utf-8")
+    state_file = tmp_path / "state.json"
+    state_file.write_text(json.dumps({
+        "files": {
+            "A Synced.mp3": {
+                "sha256": sha256_file(synced),
+                "song_id": 1,
+                "api_name": "A Synced (v1)",
+                "lrc": str(lrc),
+            },
+            "B Plain.mp3": {
+                "sha256": "old",
+                "song_id": 2,
+                "api_name": "B Plain",
+                "lrc": None,
+            },
+        }
+    }), encoding="utf-8")
+    verification = {
+        synced: (True, "SYLT (2 synced lines)"),
+        plain: (True, "USLT (ordinary lyrics)"),
+        missing: (False, "no managed lyrics frame"),
+    }
+    monkeypatch.setattr(
+        api_client,
+        "api_get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("API called")),
+    )
+
+    snapshot = get_library_snapshot(
+        Settings(music_dir=library),
+        state_file=state_file,
+        verifier=verification.__getitem__,
+        duration_reader=lambda path: {synced: 180.0, plain: 181.5, missing: None}[path],
+    )
+
+    assert [track.filename for track in snapshot.tracks] == [
+        "A Synced.mp3", "B Plain.mp3", "C Missing.mp3"
+    ]
+    assert snapshot.total_track_count == 3
+    assert snapshot.matched_count == 2
+    assert snapshot.unmatched_count == 1
+    assert snapshot.synced_count == 1
+    assert snapshot.plain_count == 1
+    assert snapshot.no_lyrics_count == 1
+    assert snapshot.external_lrc_count == 1
+    assert snapshot.needs_attention_count == 2
+    assert snapshot.tracks[0].match_status is LibraryMatchStatus.MATCHED
+    assert snapshot.tracks[0].lyric_status is LibraryLyricStatus.SYNCED
+    assert snapshot.tracks[0].lrc_status is LibraryLrcStatus.PRESENT
+    assert snapshot.tracks[0].state_status is LibraryStateStatus.CURRENT
+    assert snapshot.tracks[1].state_status is LibraryStateStatus.CHANGED
+    assert snapshot.tracks[2].match_status is LibraryMatchStatus.UNMATCHED
+    assert snapshot.tracks[2].lyric_status is LibraryLyricStatus.NONE
+
+
+def test_track_snapshot_handles_missing_library_and_malformed_state(tmp_path):
+    missing = tmp_path / "missing"
+    snapshot = get_library_snapshot(Settings(music_dir=missing), state_file=tmp_path / "state.json")
+    assert snapshot.directory_exists is False
+    assert snapshot.tracks == ()
+    assert "does not exist" in snapshot.warnings[0]
+
+    library = tmp_path / "music"
+    library.mkdir()
+    track = library / "Track.mp3"
+    track.write_bytes(b"audio")
+    state_file = tmp_path / "bad-state.json"
+    state_file.write_text("not-json", encoding="utf-8")
+    snapshot = get_library_snapshot(
+        Settings(music_dir=library),
+        state_file=state_file,
+        verifier=lambda path: (False, "unreadable tags"),
+        duration_reader=lambda path: None,
+    )
+    assert snapshot.directory_exists is True
+    assert snapshot.warnings
+    assert snapshot.tracks[0].state_status is LibraryStateStatus.NEW
+    assert snapshot.tracks[0].warning == "unreadable tags"
+
+
+def test_track_snapshot_is_read_only(tmp_path, monkeypatch):
+    library = tmp_path / "music"
+    library.mkdir()
+    track = library / "Track.mp3"
+    track.write_bytes(b"original")
+    state_file = tmp_path / "absent" / "state.json"
+    before = track.read_bytes()
+
+    snapshot = get_library_snapshot(
+        Settings(music_dir=library),
+        state_file=state_file,
+        verifier=lambda path: (False, "no managed lyrics frame"),
+        duration_reader=lambda path: 100.0,
+    )
+
+    assert snapshot.total_track_count == 1
+    assert track.read_bytes() == before
+    assert not state_file.parent.exists()
