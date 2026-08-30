@@ -199,10 +199,57 @@ class JuiceLyricsApp(App[None]):
         background: transparent;
     }
 
+    #browse-results-scroll {
+        overflow-y: scroll;
+        overflow-x: hidden;
+        scrollbar-size-vertical: 1;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+        scrollbar-corner-color: transparent;
+    }
+
     #browse-results,
     #browse-details {
         height: auto;
         background: transparent;
+    }
+
+    #browse-pagination {
+        height: 2;
+        layout: grid;
+        grid-size: 3 1;
+        grid-columns: 14 1fr 10;
+        padding: 0 1;
+    }
+
+    #browse-pagination PaginationControl {
+        width: 100%;
+        height: 1;
+        background: transparent;
+        border: none;
+        color: ansi_default;
+        text-align: center;
+    }
+
+    #browse-pagination PaginationControl.-available {
+        color: ansi_blue;
+        text-style: bold;
+    }
+
+    #browse-pagination PaginationControl.-available:hover {
+        background: transparent;
+        text-style: bold;
+    }
+
+    #browse-pagination PaginationControl.-unavailable {
+        color: ansi_default;
+        text-style: dim;
+    }
+
+    #browse-page-position {
+        height: 1;
+        text-align: center;
+        color: ansi_default;
     }
 
     #placeholder-panel {
@@ -234,16 +281,29 @@ class JuiceLyricsApp(App[None]):
     }
 
     Screen.-narrow #browse-controls {
-        grid-size: 1 3;
-        grid-columns: 1fr;
-        grid-rows: 4 4 4;
-        overflow-y: auto;
+        grid-size: 3 1;
+        grid-columns: 2fr 1fr 1fr;
+        grid-rows: 4;
     }
 
     Screen.-narrow #browse-main {
         grid-size: 1 2;
         grid-columns: 1fr;
-        grid-rows: 1fr 1fr;
+        grid-rows: 2fr 1fr;
+    }
+
+    Screen.-narrow #browse-pagination {
+        padding: 0;
+    }
+
+    Screen.-short #screen-title {
+        display: none;
+    }
+
+    Screen.-short #browse-status,
+    Screen.-short #browse-pagination,
+    Screen.-short .browse-panel .panel-title {
+        height: 1;
     }
     """
 
@@ -311,7 +371,7 @@ class JuiceLyricsApp(App[None]):
 
     def action_show_help(self) -> None:
         if self.screen.name == "browse":
-            message = "/ search  •  ↑/↓ select  •  Enter details  •  n/p pages  •  r refresh  •  1–5 sections  •  q quit"
+            message = "/ search  •  ↑/↓ or j/k select  •  PgUp/PgDn list  •  Home/End  •  n/p pages  •  r refresh"
         else:
             message = "1–5 switch sections  •  r refreshes Dashboard  •  q quits"
         self.notify(message, timeout=5)

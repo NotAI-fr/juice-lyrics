@@ -5,6 +5,7 @@ from threading import Event
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from textual.containers import VerticalScroll
 from textual.widgets import Input, Select
 
 from juice_lyrics.config.settings import Settings
@@ -629,12 +630,18 @@ def test_pagination_next_previous_home_refresh_and_later_page_details(tmp_path):
         async with app.run_test(size=(120, 32)) as pilot:
             await _open_browse(app, pilot)
             await _submit(app, pilot, "page")
-            assert "Page 1 · Showing 1–50 of 75" in _text(app, "#browse-status")
+            assert "Result 1 of 50 loaded" in _text(app, "#browse-status")
+            assert "Page 1 of 2 · Results 1–50 of 75" in _text(app, "#browse-page-position")
+            initial_calls = len(calls)
+            await pilot.press("p")
+            await pilot.pause()
+            assert len(calls) == initial_calls
 
             await pilot.press("n")
             await app.screen._search_worker.wait()
             await pilot.pause()
-            assert "Page 2 · Showing 51–75 of 75" in _text(app, "#browse-status")
+            assert "Page 2 of 2 · Results 51–75 of 75" in _text(app, "#browse-page-position")
+            assert not app.query_one("#browse-next").available
             assert "> Page Two 51" in _text(app, "#browse-results")
             await pilot.press("enter")
             await app.screen._details_worker.wait()
@@ -651,11 +658,109 @@ def test_pagination_next_previous_home_refresh_and_later_page_details(tmp_path):
             await pilot.press("n")
             await app.screen._search_worker.wait()
             await pilot.press("home")
-            await app.screen._search_worker.wait()
             await pilot.pause()
-            assert "Page 1 · Showing 1–50 of 75" in _text(app, "#browse-status")
+            assert app.screen.selected_index == 0
+            assert "Page 2 of 2 · Results 51–75 of 75" in _text(app, "#browse-page-position")
 
     asyncio.run(scenario())
+
+
+def test_loaded_page_scrolls_all_fifty_results_and_supports_list_navigation(tmp_path):
+    calls = []
+
+    def search(settings, query, **kwargs):
+        calls.append(kwargs.copy())
+        page = kwargs["page"]
+        start = (page - 1) * 50 + 1
+        results = tuple(_result(index, f"Song {index}") for index in range(start, start + 50))
+        return CataloguePage(results, page, 50, 1485, page + 1, page - 1 if page > 1 else None)
+
+    async def scenario():
+        app = _app(tmp_path, search=search)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _open_browse(app, pilot)
+            await _submit(app, pilot, "songs")
+            scroll = app.query_one("#browse-results-scroll", VerticalScroll)
+            rendered = _text(app, "#browse-results")
+
+            assert len(app.screen.results) == 50
+            assert "Song 1" in rendered and "Song 50" in rendered
+            assert scroll.max_scroll_y > 0
+            assert app.query_one("#browse-pagination").region.height > 0
+            assert app.query_one("#browse-pagination").region.bottom <= app.screen.region.bottom
+            assert "Page 1 of 30 · Results 1–50 of 1,485" in _text(app, "#browse-page-position")
+            assert not app.query_one("#browse-previous").available
+
+            for _ in range(34):
+                await pilot.press("down")
+            await pilot.pause()
+            assert app.screen.selected_index == 34
+            assert "> Song 35" in _text(app, "#browse-results")
+            assert "Song 35" in _text(app, "#browse-details")
+            assert scroll.scroll_y <= 34 < scroll.scroll_y + scroll.size.height
+
+            await pilot.press("end")
+            await pilot.pause()
+            assert app.screen.selected_index == 49
+            assert "> Song 50" in _text(app, "#browse-results")
+            assert scroll.scroll_y <= 49 < scroll.scroll_y + scroll.size.height
+
+            await pilot.press("home", "pagedown")
+            await pilot.pause()
+            page_step_index = app.screen.selected_index
+            assert 0 < page_step_index < 49
+            assert len(calls) == 1
+            await pilot.press("pageup")
+            await pilot.pause()
+            assert app.screen.selected_index == 0
+
+            await pilot.press("end")
+            await pilot.pause()
+            assert scroll.scroll_y > 0
+            clicked = await pilot.click("#browse-next")
+            assert clicked, (
+                app.query_one("#browse-next").region,
+                app.query_one("#browse-pagination").region,
+            )
+            await pilot.pause()
+            await app.screen._search_worker.wait()
+            await pilot.pause()
+            assert calls[-1]["page"] == 2
+            assert app.screen.selected_index == 0
+            assert scroll.scroll_y == 0
+            assert "Page 2 of 30 · Results 51–100 of 1,485" in _text(app, "#browse-page-position")
+            assert app.query_one("#browse-previous").available
+
+            await pilot.click("#browse-previous")
+            await pilot.pause()
+            await app.screen._search_worker.wait()
+            await pilot.pause()
+            assert calls[-1]["page"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_fifty_result_page_remains_scrollable_at_realistic_terminal_sizes(tmp_path):
+    results = tuple(_result(index, f"Visible Song {index}") for index in range(1, 51))
+
+    async def scenario(size):
+        app = _app(
+            tmp_path,
+            search=lambda settings, query, **kwargs: CataloguePage(results, 1, 50, 1485, 2, None),
+        )
+        async with app.run_test(size=size) as pilot:
+            await _open_browse(app, pilot)
+            await _submit(app, pilot, "visible")
+            scroll = app.query_one("#browse-results-scroll", VerticalScroll)
+            pagination = app.query_one("#browse-pagination")
+            assert len(app.screen.results) == 50
+            assert 5 <= scroll.size.height < 50
+            assert scroll.max_scroll_y > 0
+            assert pagination.region.height > 0
+            assert pagination.region.bottom <= app.screen.region.bottom
+
+    for size in ((80, 24), (100, 30), (120, 40)):
+        asyncio.run(scenario(size))
 
 
 def test_filter_change_resets_pagination_to_first_page(tmp_path):

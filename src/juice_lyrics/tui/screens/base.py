@@ -64,3 +64,4 @@ class HubScreen(Screen[None]):
 
     def on_resize(self, event: Resize) -> None:
         self.set_class(event.size.width < 70, "-narrow")
+        self.set_class(event.size.height < 30, "-short")

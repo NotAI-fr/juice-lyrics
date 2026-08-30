@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from math import ceil
 from typing import Any
 
+from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Grid, Vertical, VerticalScroll
-from textual.events import Key, Resize, ScreenResume
+from textual.events import Click, Key, Resize, ScreenResume
+from textual.geometry import Region
+from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Input, Select, Static
 from textual.worker import Worker, WorkerState
@@ -59,6 +63,33 @@ class BrowseSelect(Select[str]):
             self.app.action_show_section(sections[int(event.key) - 1])
             event.prevent_default()
             event.stop()
+
+
+class PaginationControl(Static):
+    """Non-focusable terminal-native previous/next page control."""
+
+    can_focus = False
+
+    class Activated(Message):
+        def __init__(self, item: PaginationControl) -> None:
+            self.item = item
+            super().__init__()
+
+    def __init__(self, label: str, direction: int, *, id: str) -> None:
+        super().__init__(label, id=id, markup=False)
+        self.label = label
+        self.direction = direction
+        self.available = False
+
+    def set_available(self, available: bool) -> None:
+        self.available = available
+        self.set_class(available, "-available")
+        self.set_class(not available, "-unavailable")
+        self.update(f"[{self.label}]" if available else self.label)
+
+    def on_click(self, event: Click) -> None:
+        if self.available:
+            self.post_message(self.Activated(self))
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,13 +162,17 @@ class BrowseScreen(HubScreen):
         yield Static("Enter a title or choose at least one filter.", id="browse-status", markup=False)
         with Grid(id="browse-main"):
             with Container(classes="browse-panel", id="browse-results-panel"):
-                yield Static("Results", classes="panel-title")
+                yield Static("Results · 0 loaded", classes="panel-title", id="browse-results-title")
                 with VerticalScroll(id="browse-results-scroll"):
                     yield Static("No search yet.", id="browse-results", markup=False)
             with Container(classes="browse-panel", id="browse-details-panel"):
                 yield Static("Details", classes="panel-title")
                 with VerticalScroll(id="browse-details-scroll"):
                     yield Static("Select a result to inspect it.", id="browse-details", markup=False)
+        with Grid(id="browse-pagination"):
+            yield PaginationControl("p Previous", -1, id="browse-previous")
+            yield Static("No catalogue page loaded", id="browse-page-position", markup=False)
+            yield PaginationControl("n Next", 1, id="browse-next")
 
     def action_focus_search(self) -> None:
         self.query_one("#browse-query", Input).focus()
@@ -173,7 +208,10 @@ class BrowseScreen(HubScreen):
         self.current_page = None
         self.selected_index = 0
         self.query_one("#browse-results", Static).update("Searching…")
+        self.query_one("#browse-results-title", Static).update("Results · loading")
         self.query_one("#browse-details", Static).update("Waiting for results…")
+        self.query_one("#browse-results-scroll", VerticalScroll).scroll_home(animate=False, immediate=True)
+        self._update_pagination(None, loading_page=request.page)
         self._set_status(self._loading_status(request))
         self._search_worker = self._run_search(request)
 
@@ -262,7 +300,9 @@ class BrowseScreen(HubScreen):
             self.results = ()
             self.current_page = None
             self.query_one("#browse-results", Static).update("Search unavailable.")
+            self.query_one("#browse-results-title", Static).update("Results · unavailable")
             self.query_one("#browse-details", Static).update("No song selected.")
+            self._update_pagination(None)
             self._set_status(f"Search failed: {outcome.error}", error=True)
             return
 
@@ -270,6 +310,8 @@ class BrowseScreen(HubScreen):
         self.current_page = page
         self.results = page.results
         self.selected_index = 0
+        self.query_one("#browse-results-title", Static).update(f"Results · {len(self.results)} loaded")
+        self._update_pagination(page)
         if not self.results:
             self.query_one("#browse-results", Static).update("No catalogue results found.")
             if outcome.request.page > 1:
@@ -283,6 +325,7 @@ class BrowseScreen(HubScreen):
         self._render_results()
         self._render_summary(self.results[0])
         self._set_status(self._result_status(outcome.request, page))
+        self.call_after_refresh(self._scroll_selection_into_view)
 
     def _apply_filters(self, outcome: FiltersOutcome) -> None:
         category = self.query_one("#browse-category", Select)
@@ -323,12 +366,18 @@ class BrowseScreen(HubScreen):
             self._move_selection(-1)
         elif event.key == "enter":
             self._load_selected_details()
-        elif event.key in ("n", "pagedown"):
+        elif event.key == "n":
             self._change_page(next_page=True)
-        elif event.key in ("p", "pageup"):
+        elif event.key == "p":
             self._change_page(next_page=False)
+        elif event.key == "pagedown":
+            self._move_viewport(1)
+        elif event.key == "pageup":
+            self._move_viewport(-1)
         elif event.key == "home":
-            self._first_page()
+            self._select_index(0)
+        elif event.key == "end":
+            self._select_index(len(self.results) - 1)
         else:
             return
         event.prevent_default()
@@ -349,23 +398,42 @@ class BrowseScreen(HubScreen):
             False,
         ))
 
-    def _first_page(self) -> None:
-        if self.last_request is None or self.last_request.page == 1:
-            return
-        self._start_search(SearchRequest(
-            self.last_request.query,
-            self.last_request.category,
-            self.last_request.era,
-            1,
-            False,
-        ))
+    def on_pagination_control_activated(self, event: PaginationControl.Activated) -> None:
+        self._change_page(next_page=event.item.direction > 0)
 
     def _move_selection(self, amount: int) -> None:
         if not self.results:
             return
-        self.selected_index = max(0, min(len(self.results) - 1, self.selected_index + amount))
+        self._select_index(self.selected_index + amount)
+
+    def _move_viewport(self, direction: int) -> None:
+        scroll = self.query_one("#browse-results-scroll", VerticalScroll)
+        row_height = 2 if "-narrow" in self.classes else 1
+        visible_rows = max(1, scroll.size.height // row_height)
+        self._select_index(self.selected_index + direction * max(1, visible_rows - 1))
+
+    def _select_index(self, index: int) -> None:
+        if not self.results:
+            return
+        self.selected_index = max(0, min(len(self.results) - 1, index))
         self._render_results()
         self._render_summary(self.results[self.selected_index])
+        if self.last_request is not None and self.current_page is not None:
+            self._set_status(self._result_status(self.last_request, self.current_page))
+        self.call_after_refresh(self._scroll_selection_into_view)
+
+    def _scroll_selection_into_view(self) -> None:
+        if not self.results:
+            return
+        scroll = self.query_one("#browse-results-scroll", VerticalScroll)
+        row_height = 2 if "-narrow" in self.classes else 1
+        row_y = self.selected_index * row_height
+        scroll.scroll_to_region(
+            Region(0, row_y, max(1, scroll.virtual_size.width), row_height),
+            animate=False,
+            immediate=True,
+            x_axis=False,
+        )
 
     def _load_selected_details(self) -> None:
         if not self.results:
@@ -392,7 +460,33 @@ class BrowseScreen(HubScreen):
                     f"{marker} {title[:26]:26} {era[:10]:10} {category[:12]:12} "
                     f"{length[:7]:7} {lyrics:6} {available}"
                 )
-        self.query_one("#browse-results", Static).update("\n".join(lines))
+        self.query_one("#browse-results", Static).update(
+            Text("\n".join(lines), no_wrap=True, overflow="ellipsis")
+        )
+
+    def _update_pagination(self, page: CataloguePage | None, *, loading_page: int | None = None) -> None:
+        previous = self.query_one("#browse-previous", PaginationControl)
+        next_control = self.query_one("#browse-next", PaginationControl)
+        position = self.query_one("#browse-page-position", Static)
+        if page is None:
+            previous.set_available(False)
+            next_control.set_available(False)
+            position.update(
+                f"Page {loading_page} · Loading…"
+                if loading_page
+                else "No catalogue page loaded"
+            )
+            return
+        previous.set_available(page.previous_page is not None)
+        next_control.set_available(page.next_page is not None)
+        page_count = max(1, ceil(page.total_count / page.page_size))
+        if page.results:
+            position.update(
+                f"Page {page.page} of {page_count} · "
+                f"Results {page.range_start}–{page.range_end} of {page.total_count:,}"
+            )
+        else:
+            position.update(f"Page {page.page} of {page_count} · No results")
 
     def _render_summary(self, result: CatalogueSearchResult) -> None:
         artists = ", ".join(result.artists) or "Unknown"
@@ -448,16 +542,16 @@ class BrowseScreen(HubScreen):
             return f'Searching for "{request.query}"…{_filter_text(request.category, request.era)}'
         return f"Searching: {_filter_values(request.category, request.era)}…"
 
-    @staticmethod
-    def _result_status(request: SearchRequest, page: CataloguePage) -> str:
+    def _result_status(self, request: SearchRequest, page: CataloguePage) -> str:
         filters = _filter_text(request.category, request.era)
-        location = f"Page {page.page} · Showing {page.range_start}–{page.range_end} of {page.total_count}"
-        return f"{location}.{filters}  ↑/↓ select · n/p pages · Enter details"
+        selected = min(len(page.results), self.selected_index + 1)
+        return f"Result {selected} of {len(page.results)} loaded.{filters}  ↑/↓ select · Enter details"
 
     def on_resize(self, event: Resize) -> None:
         super().on_resize(event)
         if self.results:
             self._render_results()
+            self.call_after_refresh(self._scroll_selection_into_view)
 
 
 def _lyrics_label(value: LyricAvailability) -> str:
