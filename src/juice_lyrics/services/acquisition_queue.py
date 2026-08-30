@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -8,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..acquisition.jobs import DEFAULT_JOBS_FILE, JobStoreError
-from ..acquisition.models import AcquisitionState
+from ..acquisition.models import AcquisitionFailureStage, AcquisitionState
 
 
 class QueueStatus(str, Enum):
@@ -23,6 +24,15 @@ class QueueStatus(str, Enum):
     UNKNOWN = "unknown"
 
 
+class QueueFailureStage(str, Enum):
+    TRANSPORT = "transport"
+    VALIDATION = "validation"
+    LYRICS = "lyrics"
+    LRC = "lrc"
+    STATE = "state"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True, slots=True)
 class QueueItem:
     title: str | None
@@ -34,6 +44,8 @@ class QueueItem:
     resumed: bool
     error: str | None
     retryable: bool
+    failure_stage: QueueFailureStage | None = None
+    postprocessing_retryable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +65,7 @@ class QueueJob:
     retryable: bool
     deletion_allowed: bool
     items: tuple[QueueItem, ...]
+    updated_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,17 +138,66 @@ def _item_status(value: Any) -> tuple[QueueStatus, str]:
     return normalized, stored
 
 
+def _failure_stage(value: Any) -> QueueFailureStage | None:
+    stored = _text(value)
+    if stored is None:
+        return None
+    return {
+        AcquisitionFailureStage.TRANSPORT.value: QueueFailureStage.TRANSPORT,
+        AcquisitionFailureStage.VALIDATION.value: QueueFailureStage.VALIDATION,
+        AcquisitionFailureStage.LYRICS.value: QueueFailureStage.LYRICS,
+        AcquisitionFailureStage.LRC.value: QueueFailureStage.LRC,
+        AcquisitionFailureStage.STATE.value: QueueFailureStage.STATE,
+    }.get(stored, QueueFailureStage.UNKNOWN)
+
+
+def _sha256(path: Path, chunk_size: int = 1024 * 128) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _safe_postprocessing_retry(
+    record: Mapping[str, Any],
+    destination: Path | None,
+    status: QueueStatus,
+    stage: QueueFailureStage | None,
+) -> bool:
+    if status is not QueueStatus.FAILED or stage not in {
+        QueueFailureStage.LYRICS,
+        QueueFailureStage.LRC,
+        QueueFailureStage.STATE,
+    }:
+        return False
+    expected_size = _optional_nonnegative_int(record.get("retry_file_size"))
+    expected_sha256 = _text(record.get("retry_file_sha256"))
+    if destination is None or expected_size is None or expected_sha256 is None:
+        return False
+    try:
+        return (
+            destination.is_file()
+            and destination.stat().st_size == expected_size
+            and _sha256(destination) == expected_sha256.lower()
+        )
+    except OSError:
+        return False
+
+
 def _queue_item(raw: Any) -> QueueItem:
     record = raw if isinstance(raw, Mapping) else {}
     item = record.get("item")
     item_record = item if isinstance(item, Mapping) else {}
     status, stored_state = _item_status(record.get("state"))
     destination_text = _text(item_record.get("destination"))
+    destination = Path(destination_text) if destination_text else None
     expected = _optional_nonnegative_int(item_record.get("expected_size"))
     error = _text(record.get("error"))
+    failure_stage = _failure_stage(record.get("failure_stage"))
     return QueueItem(
         title=_text(item_record.get("title")),
-        destination=Path(destination_text) if destination_text else None,
+        destination=destination,
         status=status,
         stored_state=stored_state,
         bytes_written=_nonnegative_int(record.get("bytes_written")),
@@ -143,6 +205,13 @@ def _queue_item(raw: Any) -> QueueItem:
         resumed=bool(record.get("resumed", False)),
         error=error,
         retryable=status not in _TERMINAL and status is not QueueStatus.UNKNOWN,
+        failure_stage=failure_stage,
+        postprocessing_retryable=_safe_postprocessing_retry(
+            record,
+            destination,
+            status,
+            failure_stage,
+        ),
     )
 
 
@@ -234,6 +303,7 @@ def get_queue_snapshot(path: Path = DEFAULT_JOBS_FILE) -> QueueSnapshot:
                     item.stored_state in _DELETE_BLOCKING_STORED_STATES for item in items
                 ),
                 items=items,
+                updated_at=_text(raw.get("updated_at")),
             )
         )
 

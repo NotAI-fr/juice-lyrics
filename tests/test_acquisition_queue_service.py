@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -7,8 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import pytest
 
 from juice_lyrics.acquisition.jobs import JobStore
-from juice_lyrics.acquisition.models import AcquisitionItem, AcquisitionState
+from juice_lyrics.acquisition.models import AcquisitionFailureStage, AcquisitionItem, AcquisitionState
 from juice_lyrics.services.acquisition_queue import (
+    QueueFailureStage,
     QueueReferenceError,
     QueueStatus,
     get_queue_snapshot,
@@ -178,6 +180,28 @@ def test_view_does_not_recover_or_rewrite_store(tmp_path):
     loaded = store.get("active-uuid")
     assert loaded is not None
     assert loaded.items[0].state is AcquisitionState.CHECKING_EXISTING
+
+
+def test_failure_stage_updated_time_and_safe_postprocessing_retry_are_exposed(tmp_path):
+    store = JobStore(tmp_path / "jobs.json")
+    job = store.create([_item(tmp_path)], job_id="lyrics-failure")
+    destination = job.items[0].item.destination
+    destination.write_bytes(b"finalized audio")
+    job.items[0].state = AcquisitionState.FAILED
+    job.items[0].failure_stage = AcquisitionFailureStage.LYRICS
+    job.items[0].error = "lyrics verification failed"
+    job.items[0].retry_file_size = destination.stat().st_size
+    job.items[0].retry_file_sha256 = hashlib.sha256(destination.read_bytes()).hexdigest()
+    store.save(job)
+
+    view = get_queue_snapshot(store.path).jobs[0]
+
+    assert view.updated_at is not None
+    assert view.items[0].failure_stage is QueueFailureStage.LYRICS
+    assert view.items[0].postprocessing_retryable is True
+
+    destination.write_bytes(b"changed")
+    assert get_queue_snapshot(store.path).jobs[0].items[0].postprocessing_retryable is False
 
 
 def test_cli_jobs_uses_queue_view_and_preserves_output(tmp_path, monkeypatch, capsys):

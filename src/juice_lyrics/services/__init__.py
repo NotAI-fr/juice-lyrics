@@ -1,6 +1,7 @@
 """Application services shared by command-line and interactive frontends."""
 
 from .acquisition_queue import (
+    QueueFailureStage,
     QueueItem,
     QueueJob,
     QueueReferenceError,
@@ -51,6 +52,7 @@ __all__ = [
     "LyricAvailability",
     "MatchOutcome",
     "QueueItem",
+    "QueueFailureStage",
     "QueueJob",
     "QueueReferenceError",
     "QueueSnapshot",

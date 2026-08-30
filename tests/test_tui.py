@@ -135,7 +135,7 @@ def test_refresh_calls_both_services_again(tmp_path):
     asyncio.run(scenario())
 
 
-def test_keyboard_navigation_reaches_all_placeholder_screens(tmp_path):
+def test_keyboard_navigation_reaches_functional_and_placeholder_screens(tmp_path):
     async def scenario():
         app = _app(tmp_path)
         async with app.run_test() as pilot:
@@ -144,11 +144,15 @@ def test_keyboard_navigation_reaches_all_placeholder_screens(tmp_path):
             await pilot.pause()
             assert app.screen.id == "screen-browse"
             assert app.query_one("#browse-query") is not None
-            for key, section in zip("345", ("library", "downloads", "settings")):
+            for key, section in zip("35", ("library", "settings")):
                 await pilot.press(key)
                 await pilot.pause()
                 assert app.screen.id == f"screen-{section}"
                 assert "planned for a later milestone" in _rendered(app, "#placeholder-message")
+            await pilot.press("4")
+            await pilot.pause()
+            assert app.screen.id == "screen-downloads"
+            assert app.query_one("#download-jobs") is not None
             await pilot.press("1")
             await pilot.pause()
             assert app.screen.id == "screen-dashboard"

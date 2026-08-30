@@ -60,8 +60,8 @@ From an editable installation, launch the early read-only TUI shell with:
 juice-lyrics tui
 ```
 
-The experimental shell provides a read-only Dashboard and a functional
-read-only Browse screen. Press `/` to focus catalogue search and Enter to
+The experimental shell provides a read-only Dashboard plus functional,
+read-only Browse and Downloads screens. Press `/` to focus catalogue search and Enter to
 submit. Category and Era are keyboard-usable selectors populated from API
 metadata; choose All for no filter. Filter-only searches are supported. Results
 use the API's 50-song pages and show a permanently visible page, range, and
@@ -75,6 +75,12 @@ or modify the local library.
 It uses Textual's ANSI-color mode and ANSI palette names rather than a bundled
 theme. Exact terminal-background transparency can still vary with Textual's
 alternate-screen rendering and the terminal emulator.
+
+In Downloads, use arrows or `j`/`k` to select a job, Home/End for the first or
+last job, and PageUp/PageDown to move through longer job lists. Enter opens the
+selected job's scrollable track details and Escape returns to the job list.
+Press `r` to refresh the read-only queue snapshot. Run, Retry, Delete, Cancel,
+and Download actions are intentionally unavailable in this milestone.
 
 ## Source of truth and Git workflow
 

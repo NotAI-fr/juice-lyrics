@@ -19,6 +19,7 @@ from ..services.library_status import LibraryStatus, get_library_status
 from .screens.base import NavigationItem
 from .screens.browse import BrowseScreen
 from .screens.dashboard import DashboardScreen
+from .screens.downloads import DownloadsScreen
 from .screens.placeholder import PlaceholderScreen
 
 LibraryStatusProvider = Callable[[Any], LibraryStatus]
@@ -252,6 +253,54 @@ class JuiceLyricsApp(App[None]):
         color: ansi_default;
     }
 
+    #downloads-summary {
+        height: 2;
+        padding: 0 1;
+        text-style: bold;
+    }
+
+    #downloads-status,
+    #downloads-position {
+        height: 2;
+        padding: 0 1;
+    }
+
+    #downloads-status.-error {
+        color: ansi_red;
+    }
+
+    #downloads-main {
+        height: 1fr;
+        layout: grid;
+        grid-size: 2 1;
+        grid-columns: 2fr 3fr;
+        grid-gutter: 0 1;
+    }
+
+    .downloads-panel {
+        height: 1fr;
+        border: round ansi_cyan;
+        padding: 0 1;
+    }
+
+    #download-jobs-scroll,
+    #download-details-scroll {
+        height: 1fr;
+        overflow-y: scroll;
+        overflow-x: hidden;
+        background: transparent;
+        scrollbar-size-vertical: 1;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+        scrollbar-corner-color: transparent;
+    }
+
+    #download-jobs,
+    #download-details {
+        height: auto;
+        background: transparent;
+    }
+
     #placeholder-panel {
         border: round ansi_cyan;
         padding: 2 3;
@@ -305,6 +354,28 @@ class JuiceLyricsApp(App[None]):
     Screen.-short .browse-panel .panel-title {
         height: 1;
     }
+
+    Screen.-downloads-narrow #downloads-main {
+        grid-size: 1 2;
+        grid-columns: 1fr;
+        grid-rows: 2fr 1fr;
+    }
+
+    Screen.-downloads-narrow.-details-mode #downloads-main {
+        grid-size: 1 1;
+        grid-rows: 1fr;
+    }
+
+    Screen.-downloads-narrow.-details-mode #download-jobs-panel {
+        display: none;
+    }
+
+    Screen.-short #downloads-summary,
+    Screen.-short #downloads-status,
+    Screen.-short #downloads-position,
+    Screen.-short .downloads-panel .panel-title {
+        height: 1;
+    }
     """
 
     def __init__(
@@ -316,6 +387,7 @@ class JuiceLyricsApp(App[None]):
         catalogue_search_provider: CatalogueSearchProvider = search_catalogue_page,
         catalogue_details_provider: CatalogueDetailsProvider = get_song_details_by_id,
         catalogue_filters_provider: CatalogueFiltersProvider = get_catalogue_filters,
+        downloads_queue_provider: QueueSnapshotProvider | None = None,
     ) -> None:
         super().__init__(ansi_color=True)
         self.settings = settings
@@ -324,6 +396,7 @@ class JuiceLyricsApp(App[None]):
         self.catalogue_search_provider = catalogue_search_provider
         self.catalogue_details_provider = catalogue_details_provider
         self.catalogue_filters_provider = catalogue_filters_provider
+        self.downloads_queue_provider = downloads_queue_provider or queue_snapshot_provider
 
     def on_mount(self) -> None:
         self.install_screen(
@@ -348,7 +421,7 @@ class JuiceLyricsApp(App[None]):
             "library",
         )
         self.install_screen(
-            PlaceholderScreen("Downloads", "Queue details and acquisition actions are planned for a later milestone."),
+            DownloadsScreen(queue_provider=self.downloads_queue_provider),
             "downloads",
         )
         self.install_screen(
@@ -370,11 +443,17 @@ class JuiceLyricsApp(App[None]):
             self.notify(f"{self.screen.title or 'This section'} has no data to refresh yet.")
 
     def action_show_help(self) -> None:
-        if getattr(self.screen, "section", None) == "browse":
+        section = getattr(self.screen, "section", None)
+        if section == "browse":
             message = (
                 "n next catalogue page  •  p previous catalogue page  •  "
                 "PageDown/PageUp scroll the loaded results  •  "
                 "Home/End first/last loaded result  •  j/k select  •  Enter details"
+            )
+        elif section == "downloads":
+            message = (
+                "↑/↓ or j/k select jobs  •  Home/End first/last job  •  "
+                "PgUp/PgDn move jobs  •  Enter track details  •  Esc job list  •  r refresh"
             )
         else:
             message = "1–5 switch sections  •  r refreshes Dashboard  •  q quits"
