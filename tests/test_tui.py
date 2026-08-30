@@ -135,7 +135,7 @@ def test_refresh_calls_both_services_again(tmp_path):
     asyncio.run(scenario())
 
 
-def test_keyboard_navigation_reaches_functional_and_placeholder_screens(tmp_path):
+def test_keyboard_navigation_reaches_all_functional_screens(tmp_path):
     async def scenario():
         app = _app(tmp_path)
         async with app.run_test() as pilot:
@@ -151,7 +151,7 @@ def test_keyboard_navigation_reaches_functional_and_placeholder_screens(tmp_path
             await pilot.press("5")
             await pilot.pause()
             assert app.screen.id == "screen-settings"
-            assert "planned for a later milestone" in _rendered(app, "#placeholder-message")
+            assert app.query_one("#settings-configuration") is not None
             await pilot.press("4")
             await pilot.pause()
             assert app.screen.id == "screen-downloads"

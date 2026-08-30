@@ -133,9 +133,8 @@ Goal:
 
 Create the main application interface.
 
-Status: In progress. The responsive terminal-native shell, Dashboard, Browse,
-Library, and read-only Downloads screen are integrated. Settings remains a
-placeholder, and the TUI remains read-only.
+Status: In progress. The responsive terminal-native shell and all five primary
+sections are integrated as read-only screens. Mutating workflows remain CLI-only.
 
 Screens:
 
@@ -191,7 +190,9 @@ Features:
 - rmpc settings.
 - API settings.
 
-Status: Placeholder.
+Status: Read-only functionality complete, including effective configuration,
+path existence, provenance where reliable, rmpc integration state, and current
+capability limitations. Editing remains planned.
 
 ---
 
@@ -199,13 +200,12 @@ Status: Placeholder.
 
 Recommended implementation order after the current checkpoint:
 
-1. Settings screen
-2. Browse-to-download job creation
-3. Downloads Run/Retry/Delete actions
-4. Library sync actions
-5. `999` command and naming migration
-6. Native FLAC support
-7. Beta polish, packaging, and release testing
+1. Browse-to-download job creation
+2. Downloads Run/Retry/Delete actions
+3. Library sync actions
+4. `999` command and naming migration
+5. Native FLAC support
+6. Beta polish, packaging, and release testing
 
 Possible future improvements:
 

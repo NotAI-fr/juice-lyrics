@@ -274,22 +274,23 @@ The latest development checkpoint reports:
 * MP3 post-processing with ID3 SYLT/USLT and rmpc LRC integration verified
 * Settings / Path CLI compatibility verified
 * responsive terminal-native Textual shell with `ansi_color=True`
-* functional read-only Dashboard, Browse, Library, and Downloads screens
+* all five main TUI sections are functional and read-only: Dashboard, Browse, Library, Downloads, and Settings
 * canonical Category and Era selectors, filter-only searches, and correct case-sensitive API cache behaviour
 * server-side catalogue pagination with scrollable 50-result pages and stable ID-based song details
 * queue summaries, job navigation, track details, structured failure stages, and retry eligibility
 * Library provides local track browsing, local filters, metadata/lyric/LRC/state details, and explicit read-only sync previews
-* Settings remains a placeholder; TUI queue mutations, Browse download actions, and sync execution are not implemented
+* Settings reports effective configuration, provenance where reliable, application paths, and rmpc integration without creating or changing files
+* TUI queue mutations, Browse download actions, configuration editing, and sync execution are not implemented
 * legacy CLI remains the way to download, delete jobs, and sync
-* 197 automated tests passing across the suite
+* 213 automated tests passing across the suite
 
 The repository for this checkpoint is `/home/nobloat/Downloads/juice-lyrics-codex`
 on branch `v2-redesign`. The planned product and executable name remains `999`,
 but no rename or migration has been performed. Native FLAC support remains
 planned.
 
-Recommended next milestones are: Settings, Browse-to-download job creation,
-Downloads Run/Retry/Delete actions, Library sync actions, the `999`
+Recommended next milestones are: Browse-to-download job creation, Downloads
+Run/Retry/Delete actions, Library sync actions, the `999`
 naming migration, native FLAC support, then beta polish and release testing.
 
 To resume:

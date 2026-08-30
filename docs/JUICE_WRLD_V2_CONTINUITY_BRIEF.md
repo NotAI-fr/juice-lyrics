@@ -52,7 +52,7 @@ Milestone reached:
 
 The current development branch is `v2-redesign` in
 `/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
-197 passing tests.
+213 passing tests.
 
 Completed and integrated:
 
@@ -80,11 +80,13 @@ functional read-only Dashboard and Browse screens, canonical Category and Era
 selectors, correct case-sensitive API cache behavior, server-side catalogue
 pagination with scrollable 50-result pages, stable ID-based song details, and a
 read-only Downloads screen with queue summaries, job navigation, track details,
-failure stages, and retry eligibility, plus a read-only Library screen with
-local track browsing, filters, details, and explicit sync previews.
+failure stages, and retry eligibility, a read-only Library screen with local
+track browsing, filters, details, and explicit sync previews, and a read-only
+Settings screen with effective configuration, paths, provenance, and rmpc state.
 
-Settings remains a placeholder. Browse download actions, TUI queue mutations,
-and sync execution are not implemented. The legacy CLI remains the way to
+All five primary TUI sections are functional and read-only. Browse download
+actions, TUI queue mutations, configuration editing, and sync execution are not
+implemented. The legacy CLI remains the way to
 download, delete jobs, and sync. Native FLAC support remains planned. The planned
 product/executable name remains `999`; package, distribution, and data paths
 have not been renamed.

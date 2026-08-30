@@ -17,12 +17,13 @@ from ..services.catalogue import (
 )
 from ..services.library_status import LibrarySnapshot, LibraryStatus, get_library_snapshot, get_library_status
 from ..services.library_sync import LibrarySyncPlan, get_library_sync_preview
+from ..services.settings_snapshot import SettingsSnapshot, get_settings_snapshot
 from .screens.base import NavigationItem
 from .screens.browse import BrowseScreen
 from .screens.dashboard import DashboardScreen
 from .screens.downloads import DownloadsScreen
 from .screens.library import LibraryScreen
-from .screens.placeholder import PlaceholderScreen
+from .screens.settings import SettingsScreen
 
 LibraryStatusProvider = Callable[[Any], LibraryStatus]
 QueueSnapshotProvider = Callable[[], QueueSnapshot]
@@ -31,6 +32,7 @@ CatalogueDetailsProvider = Callable[..., SongDetails | None]
 CatalogueFiltersProvider = Callable[..., CatalogueFilterMetadata]
 LibrarySnapshotProvider = Callable[[Any], LibrarySnapshot]
 LibraryPreviewProvider = Callable[[Any], LibrarySyncPlan]
+SettingsSnapshotProvider = Callable[[Any], SettingsSnapshot]
 
 
 class JuiceLyricsApp(App[None]):
@@ -398,6 +400,66 @@ class JuiceLyricsApp(App[None]):
         background: transparent;
     }
 
+    #settings-warning {
+        height: 2;
+        padding: 0 1;
+        color: ansi_blue;
+        text-style: bold;
+    }
+
+    #settings-status,
+    #settings-position {
+        height: 2;
+        padding: 0 1;
+    }
+
+    #settings-status.-error {
+        color: ansi_red;
+    }
+
+    #settings-scroll {
+        height: 1fr;
+        overflow-y: scroll;
+        overflow-x: hidden;
+        background: transparent;
+        scrollbar-size-vertical: 1;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+        scrollbar-corner-color: transparent;
+    }
+
+    #settings-main {
+        height: auto;
+        layout: grid;
+        grid-size: 2 2;
+        grid-columns: 1fr 1fr;
+        grid-gutter: 1 1;
+    }
+
+    .settings-panel {
+        height: auto;
+        min-height: 8;
+        border: round ansi_cyan;
+        padding: 0 1;
+    }
+
+    #settings-configuration,
+    #settings-paths,
+    #settings-integrations,
+    #settings-capabilities {
+        height: auto;
+        background: transparent;
+    }
+
+    #settings-detail {
+        height: auto;
+        min-height: 3;
+        margin-top: 1;
+        border-top: solid ansi_cyan;
+        padding: 0 1;
+        background: transparent;
+    }
+
     #placeholder-panel {
         border: round ansi_cyan;
         padding: 2 3;
@@ -511,6 +573,22 @@ class JuiceLyricsApp(App[None]):
     Screen.-library-compact .library-panel .panel-title {
         height: 1;
     }
+
+    Screen.-settings-narrow #settings-main {
+        grid-size: 1 4;
+        grid-columns: 1fr;
+    }
+
+    Screen.-settings-compact #screen-title {
+        display: none;
+    }
+
+    Screen.-settings-compact #settings-warning,
+    Screen.-settings-compact #settings-status,
+    Screen.-settings-compact #settings-position,
+    Screen.-settings-compact .settings-panel .panel-title {
+        height: 1;
+    }
     """
 
     def __init__(
@@ -525,6 +603,7 @@ class JuiceLyricsApp(App[None]):
         downloads_queue_provider: QueueSnapshotProvider | None = None,
         library_snapshot_provider: LibrarySnapshotProvider = get_library_snapshot,
         library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
+        settings_snapshot_provider: SettingsSnapshotProvider = get_settings_snapshot,
     ) -> None:
         super().__init__(ansi_color=True)
         self.settings = settings
@@ -536,6 +615,7 @@ class JuiceLyricsApp(App[None]):
         self.downloads_queue_provider = downloads_queue_provider or queue_snapshot_provider
         self.library_snapshot_provider = library_snapshot_provider
         self.library_preview_provider = library_preview_provider
+        self.settings_snapshot_provider = settings_snapshot_provider
 
     def on_mount(self) -> None:
         self.install_screen(
@@ -568,7 +648,10 @@ class JuiceLyricsApp(App[None]):
             "downloads",
         )
         self.install_screen(
-            PlaceholderScreen("Settings", "Configuration viewing and editing are planned for a later milestone."),
+            SettingsScreen(
+                self.settings,
+                snapshot_provider=self.settings_snapshot_provider,
+            ),
             "settings",
         )
         self.push_screen("dashboard")
@@ -602,6 +685,11 @@ class JuiceLyricsApp(App[None]):
             message = (
                 "↑/↓ or j/k select tracks  •  / local search  •  Home/End first/last  •  "
                 "PgUp/PgDn move tracks  •  Enter details  •  s read-only sync preview  •  r refresh"
+            )
+        elif section == "settings":
+            message = (
+                "↑/↓ or j/k inspect settings  •  Home/End first/last  •  "
+                "PgUp/PgDn scroll  •  r refresh  •  read-only; configuration changes remain CLI-only"
             )
         else:
             message = "1–5 switch sections  •  r refreshes Dashboard  •  q quits"

@@ -49,6 +49,15 @@ from .library_sync import (
     get_library_sync_preview,
     plan_library_sync,
 )
+from .settings_snapshot import (
+    IntegrationSnapshot,
+    IntegrationStatus,
+    SettingValue,
+    SettingsPath,
+    SettingsSnapshot,
+    SettingsSource,
+    get_settings_snapshot,
+)
 
 __all__ = [
     "CatalogueSearchResult",
@@ -62,6 +71,8 @@ __all__ = [
     "LibrarySnapshot",
     "LibraryStateStatus",
     "LibraryTrack",
+    "IntegrationSnapshot",
+    "IntegrationStatus",
     "LibrarySyncDependencies",
     "LibrarySyncOptions",
     "LibrarySyncPlan",
@@ -74,6 +85,10 @@ __all__ = [
     "QueueReferenceError",
     "QueueSnapshot",
     "QueueStatus",
+    "SettingValue",
+    "SettingsPath",
+    "SettingsSnapshot",
+    "SettingsSource",
     "SongDetails",
     "SyncEvent",
     "SyncEventKind",
@@ -86,6 +101,7 @@ __all__ = [
     "get_queue_snapshot",
     "get_library_status",
     "get_library_snapshot",
+    "get_settings_snapshot",
     "get_song_details",
     "get_song_details_by_id",
     "plan_library_sync",

@@ -60,8 +60,8 @@ From an editable installation, launch the early read-only TUI shell with:
 juice-lyrics tui
 ```
 
-The experimental shell provides a read-only Dashboard plus functional,
-read-only Browse, Library, and Downloads screens. Press `/` to focus catalogue search and Enter to
+The experimental shell provides functional read-only Dashboard, Browse,
+Library, Downloads, and Settings screens. Press `/` to focus catalogue search and Enter to
 submit. Category and Era are keyboard-usable selectors populated from API
 metadata; choose All for no filter. Filter-only searches are supported. Results
 use the API's 50-song pages and show a permanently visible page, range, and
@@ -93,6 +93,14 @@ sync plan. It is a preview only: no audio, state, backup, LRC, configuration, or
 rmpc changes are made. The existing API cache may be updated by that explicit
 preview. Actual library sync remains CLI-only via `juice-lyrics sync`. The
 scanner is currently MP3-focused; native FLAC support remains planned.
+
+In Settings, arrows or `j`/`k` inspect effective configuration values, paths,
+and environment details; Home/End and PageUp/PageDown navigate longer content.
+The view reports the active config file, reliable default/config/runtime source
+labels, path existence, and whether rmpc is detected and configured. Press `r`
+to refresh. The screen is strictly read-only: configuration changes and setup
+remain CLI-only, no missing XDG paths are created, the scanner remains MP3-only,
+and native FLAC support remains planned.
 
 ## Source of truth and Git workflow
 

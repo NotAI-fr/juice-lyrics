@@ -2,6 +2,8 @@ from pathlib import Path
 import sys
 import tempfile
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from juice_lyrics.cli import parse_length, parse_synced_lyrics, patch_rmpc_config
@@ -155,3 +157,42 @@ def test_command_guide(capsys):
     assert "juice-lyrics quick guide" in out
     assert "juice-lyrics acquire search" in out
     assert "juice-lyrics sync" in out
+
+
+def test_config_show_preserves_missing_and_existing_cli_behavior(tmp_path, monkeypatch, capsys):
+    import argparse
+    import juice_lyrics.cli as cli
+
+    config = tmp_path / "config.toml"
+    monkeypatch.setattr(cli, "CONFIG_FILE", config)
+    args = argparse.Namespace(action="show")
+
+    assert cli.command_config(args) == 0
+    output = capsys.readouterr().out
+    assert "No config. Defaults are in use." in output
+    assert str(config) in output
+
+    content = 'music_dir = "/music"\ntimeout = 20\n'
+    config.write_text(content, encoding="utf-8")
+    assert cli.command_config(args) == 0
+    assert capsys.readouterr().out == content + "\n"
+
+
+def test_config_init_and_missing_library_setup_dispatch_remain_compatible(tmp_path, monkeypatch):
+    import argparse
+    import juice_lyrics.cli as cli
+    from juice_lyrics.config.settings import Settings
+
+    calls = []
+    monkeypatch.setattr(cli, "write_default_config", lambda force: calls.append(force))
+    assert cli.command_config(argparse.Namespace(action="init", force=True)) == 0
+    assert calls == [True]
+
+    missing = tmp_path / "missing-library"
+    with pytest.raises(RuntimeError, match="Music directory does not exist"):
+        cli.command_setup(
+            argparse.Namespace(yes=True, refresh=False),
+            Settings(music_dir=missing),
+            use_color=False,
+        )
+    assert not missing.exists()
