@@ -25,9 +25,9 @@ Future work should improve usability around these systems.
 
 ---
 
-# Phase 0 — Planning (Current)
+# Phase 0 — Planning (Complete)
 
-Status: In Progress
+Status: Complete
 
 Goals:
 
@@ -133,6 +133,10 @@ Goal:
 
 Create the main application interface.
 
+Status: In progress. The responsive terminal-native shell, Dashboard, Browse,
+and read-only Downloads screen are integrated. Library and Settings remain
+placeholders, and the TUI remains read-only.
+
 Screens:
 
 ## Browse
@@ -145,6 +149,9 @@ Features:
 - Lyrics preview.
 - Download actions.
 
+Status: Read-only functionality complete, including server-side pagination and
+scrollable 50-result pages. Download actions remain planned.
+
 ---
 
 ## Library
@@ -155,6 +162,8 @@ Features:
 - Lyrics status.
 - Sync state.
 - Metadata.
+
+Status: Placeholder; planned next read-only screen.
 
 ---
 
@@ -167,6 +176,9 @@ Features:
 - Completed items.
 - Retry.
 
+Status: Read-only queue view complete. Run, Retry, Delete, and Cancel actions
+remain planned.
+
 ---
 
 ## Settings
@@ -177,9 +189,22 @@ Features:
 - rmpc settings.
 - API settings.
 
+Status: Placeholder.
+
 ---
 
 # Phase 5 — Advanced Features
+
+Recommended implementation order after the current checkpoint:
+
+1. Read-only Library screen
+2. Settings screen
+3. Browse-to-download job creation
+4. Downloads Run/Retry/Delete actions
+5. Library sync actions
+6. `999` command and naming migration
+7. Native FLAC support
+8. Beta polish, packaging, and release testing
 
 Possible future improvements:
 

@@ -1,26 +1,37 @@
 # 999 Project State
 
 ## Current Status
-Backend frozen.
-80 tests passing.
-GitHub backup complete.
+Backend services remain stable and the experimental Textual frontend is
+integrated as a read-only presentation layer. The current checkpoint has 185
+passing tests.
 
 ## Current Branch
 v2-redesign
 
-## What Exists
-- API client
-- lyrics engine
-- acquisition
-- downloader
-- rmpc integration
-- CLI
+## Repository
 
-## What Is Planned
-- rename to 999
-- Textual TUI
-- UX redesign
-- migration system
+`/home/nobloat/Downloads/juice-lyrics-codex`
+
+## Completed and integrated
+
+- Typed read-only library-status, catalogue, acquisition-queue, and library-sync services.
+- Responsive terminal-native Textual shell with functional read-only Dashboard, Browse, and Downloads screens.
+- Canonical Category and Era selectors, filter-only searches, correct case-sensitive API cache behavior, server-side catalogue pagination, scrollable 50-result pages, and stable ID-based song details.
+- Downloads queue summaries, job navigation, track details, structured failure stages, and retry eligibility.
+- Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.
+
+## Available through the CLI
+
+The legacy CLI remains the supported way to download, delete acquisition jobs,
+and sync the library.
+
+## Current limitations
+
+- Library and Settings remain placeholders.
+- TUI queue mutations and Browse download actions are not implemented.
+- Native FLAC support remains planned; lyric post-processing is currently MP3-only.
+- The planned executable/product name remains `999`; package, distribution, and
+  data paths remain named `juice-lyrics`.
 
 ## Important Decisions
 - Keep embedded lyrics
@@ -29,12 +40,22 @@ v2-redesign
 - Use Textual
 - Keep backend separate from UI
 
-## Current Problem
-Not installed globally.
-Still development venv.
+## Recommended next milestones
 
-## Next Steps
-1. Finish design docs
-2. Design TUI
-3. Implement v2
-4. Package/install properly
+1. Read-only Library screen
+2. Settings screen
+3. Browse-to-download job creation
+4. Downloads Run/Retry/Delete actions
+5. Library sync actions
+6. `999` command and naming migration
+7. Native FLAC support
+8. Beta polish, packaging, and release testing
+
+## Resume development
+
+```bash
+cd /home/nobloat/Downloads/juice-lyrics-codex
+git switch v2-redesign
+.venv/bin/pytest -q
+.venv/bin/juice-lyrics tui
+```

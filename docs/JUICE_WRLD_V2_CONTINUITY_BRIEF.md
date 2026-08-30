@@ -48,7 +48,13 @@ The backend is considered stable.
 
 Milestone reached:
 
-## 80 automated tests passing
+## Current verified checkpoint
+
+The current development branch is `v2-redesign` in
+`/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
+185 passing tests.
+
+Completed and integrated:
 
 Verified systems:
 
@@ -68,6 +74,19 @@ Verified systems:
 - persistent acquisition jobs
 - duplicate detection
 - CLI workflows
+
+The v2 frontend now also includes a responsive terminal-native Textual shell,
+functional read-only Dashboard and Browse screens, canonical Category and Era
+selectors, correct case-sensitive API cache behavior, server-side catalogue
+pagination with scrollable 50-result pages, stable ID-based song details, and a
+read-only Downloads screen with queue summaries, job navigation, track details,
+failure stages, and retry eligibility.
+
+Library and Settings remain placeholders. Browse download actions and TUI queue
+mutations are not implemented. The legacy CLI remains the way to download,
+delete jobs, and sync. Native FLAC support remains planned. The planned
+product/executable name remains `999`; package, distribution, and data paths
+have not been renamed.
 
 Live API acquisition was tested successfully.
 
@@ -127,7 +146,8 @@ docs/
 └── this file
 
 
-The project is currently in the design/planning stage.
+The project is in incremental v2 implementation. The backend remains stable and
+the TUI is intentionally read-only.
 
 ---
 
@@ -278,11 +298,9 @@ Download:
 Available
 
 
-Actions:
-
-- open details
-- download
-- preview lyrics
+The current Browse implementation supports result selection, details, lyrics
+previews, canonical filters, and pagination. Download actions are not yet
+implemented.
 
 ---
 
@@ -330,11 +348,9 @@ Downloading 65%
 Lemon Glow
 Complete
 
-Actions:
-
-- retry
-- cancel
-- remove
+The current Downloads implementation is read-only. It shows queue totals,
+jobs, tracks, structured failures, and retry eligibility. Retry, cancel, remove,
+and other queue mutations are not yet implemented.
 
 ---
 

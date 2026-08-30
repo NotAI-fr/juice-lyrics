@@ -273,7 +273,32 @@ The latest development checkpoint reports:
 * generic transport downloader with HTTP range resume and validation verified
 * MP3 post-processing with ID3 SYLT/USLT and rmpc LRC integration verified
 * Settings / Path CLI compatibility verified
-* 80 automated tests passing across the suite
+* responsive terminal-native Textual shell with `ansi_color=True`
+* functional read-only Dashboard, Browse, and Downloads screens
+* canonical Category and Era selectors, filter-only searches, and correct case-sensitive API cache behaviour
+* server-side catalogue pagination with scrollable 50-result pages and stable ID-based song details
+* queue summaries, job navigation, track details, structured failure stages, and retry eligibility
+* Library and Settings remain placeholders; TUI queue mutations and Browse download actions are not implemented
+* legacy CLI remains the way to download, delete jobs, and sync
+* 185 automated tests passing across the suite
+
+The repository for this checkpoint is `/home/nobloat/Downloads/juice-lyrics-codex`
+on branch `v2-redesign`. The planned product and executable name remains `999`,
+but no rename or migration has been performed. Native FLAC support remains
+planned.
+
+Recommended next milestones are: read-only Library, Settings, Browse-to-download
+job creation, Downloads Run/Retry/Delete actions, Library sync actions, the `999`
+naming migration, native FLAC support, then beta polish and release testing.
+
+To resume:
+
+```bash
+cd /home/nobloat/Downloads/juice-lyrics-codex
+git switch v2-redesign
+.venv/bin/pytest -q
+.venv/bin/juice-lyrics tui
+```
 
 ## Development rules
 
