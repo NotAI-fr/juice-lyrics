@@ -254,6 +254,22 @@ Too technical.
 
 ---
 
+v2 user-facing model:
+
+Browse → select a song → press `a` → review destination → Add to queue
+
+Adding a song creates durable internal acquisition state but does not begin a
+download. The Downloads screen shows individual tracks, not jobs or UUIDs.
+Completed tracks are hidden from the active queue; failed tracks remain visible
+for future Retry or Remove actions.
+
+Planned follow-up interactions include Space to toggle multiple selections,
+`a` to add selected songs, and a bounded explicitly confirmed `A` action. The
+application will not bulk-fetch an unbounded catalogue merely to fill a queue.
+
+Future queue actions are Download selected, Download all, Remove, Clear queue,
+Retry failed, and Cancel active download.
+
 v2:
 
 User selects:

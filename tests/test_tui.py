@@ -155,7 +155,7 @@ def test_keyboard_navigation_reaches_all_functional_screens(tmp_path):
             await pilot.press("4")
             await pilot.pause()
             assert app.screen.id == "screen-downloads"
-            assert app.query_one("#download-jobs") is not None
+            assert app.query_one("#download-queue") is not None
             await pilot.press("1")
             await pilot.pause()
             assert app.screen.id == "screen-dashboard"

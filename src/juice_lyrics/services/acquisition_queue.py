@@ -46,6 +46,8 @@ class QueueItem:
     retryable: bool
     failure_stage: QueueFailureStage | None = None
     postprocessing_retryable: bool = False
+    identifier: str | None = None
+    metadata: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,6 +213,15 @@ def _queue_item(raw: Any) -> QueueItem:
             destination,
             status,
             failure_stage,
+        ),
+        identifier=_text(item_record.get("identifier")),
+        metadata=tuple(
+            (str(key), str(value))
+            for key, value in sorted(
+                (item_record.get("metadata") or {}).items()
+                if isinstance(item_record.get("metadata"), Mapping)
+                else ()
+            )
         ),
     )
 

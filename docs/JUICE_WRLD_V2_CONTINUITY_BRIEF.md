@@ -52,7 +52,7 @@ Milestone reached:
 
 The current development branch is `v2-redesign` in
 `/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
-213 passing tests.
+220 passing tests.
 
 Completed and integrated:
 
@@ -76,18 +76,21 @@ Verified systems:
 - CLI workflows
 
 The v2 frontend now also includes a responsive terminal-native Textual shell,
-functional read-only Dashboard and Browse screens, canonical Category and Era
+functional Dashboard and Browse screens, canonical Category and Era
 selectors, correct case-sensitive API cache behavior, server-side catalogue
 pagination with scrollable 50-result pages, stable ID-based song details, and a
-read-only Downloads screen with queue summaries, job navigation, track details,
-failure stages, and retry eligibility, a read-only Library screen with local
+Downloads screen with a flat track queue, song navigation, details, failure
+stages, retry eligibility, and an explicit Browse Add to queue flow that never
+starts a download, a read-only Library screen with local
 track browsing, filters, details, and explicit sync previews, and a read-only
 Settings screen with effective configuration, paths, provenance, and rmpc state.
 
-All five primary TUI sections are functional and read-only. Browse download
-actions, TUI queue mutations, configuration editing, and sync execution are not
-implemented. The legacy CLI remains the way to
-download, delete jobs, and sync. Native FLAC support remains planned. The planned
+All five primary TUI sections are functional. Browse may add one explicitly
+confirmed song to the queue; Downloads execution, retry, remove, clear, and
+cancel actions, configuration editing, and sync execution are not implemented.
+Durable jobs remain an internal backend detail and completed entries are hidden
+from the active track queue. The legacy CLI remains the way to run downloads,
+delete jobs, and sync. Native FLAC support remains planned. The planned
 product/executable name remains `999`; package, distribution, and data paths
 have not been renamed.
 
@@ -351,9 +354,11 @@ Downloading 65%
 Lemon Glow
 Complete
 
-The current Downloads implementation is read-only. It shows queue totals,
-jobs, tracks, structured failures, and retry eligibility. Retry, cancel, remove,
-and other queue mutations are not yet implemented.
+The current Downloads implementation is a read-only flat track queue. It shows
+queue totals, individual songs, structured failures, and retry eligibility;
+internal jobs are hidden except for optional troubleshooting references. Browse
+can add one explicitly confirmed song without starting it. Download execution,
+retry, cancel, remove, clear, and other queue mutations are not yet implemented.
 
 ---
 

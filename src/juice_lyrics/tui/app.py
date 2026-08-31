@@ -15,6 +15,13 @@ from ..services.catalogue import (
     get_song_details_by_id,
     search_catalogue_page,
 )
+from ..services.download_queue import (
+    DownloadQueueSnapshot,
+    QueueAddResult,
+    add_to_download_queue,
+    plan_queue_additions,
+    project_download_queue,
+)
 from ..services.library_status import LibrarySnapshot, LibraryStatus, get_library_snapshot, get_library_status
 from ..services.library_sync import LibrarySyncPlan, get_library_sync_preview
 from ..services.settings_snapshot import SettingsSnapshot, get_settings_snapshot
@@ -27,6 +34,9 @@ from .screens.settings import SettingsScreen
 
 LibraryStatusProvider = Callable[[Any], LibraryStatus]
 QueueSnapshotProvider = Callable[[], QueueSnapshot]
+DownloadQueueProvider = Callable[[], DownloadQueueSnapshot]
+QueuePlanProvider = Callable[..., QueueAddResult]
+QueueAddProvider = Callable[..., QueueAddResult]
 CatalogueSearchProvider = Callable[..., CataloguePage]
 CatalogueDetailsProvider = Callable[..., SongDetails | None]
 CatalogueFiltersProvider = Callable[..., CatalogueFilterMetadata]
@@ -259,6 +269,55 @@ class JuiceLyricsApp(App[None]):
         color: ansi_default;
     }
 
+    AddToQueueDialog {
+        align: center middle;
+        background: transparent;
+    }
+
+    #queue-confirm-dialog {
+        width: 72;
+        max-width: 92%;
+        height: auto;
+        padding: 1 2;
+        border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #queue-confirm-title {
+        height: 2;
+        text-style: bold;
+        color: ansi_blue;
+    }
+
+    #queue-confirm-body {
+        height: auto;
+    }
+
+    #queue-confirm-status {
+        height: 2;
+        padding-top: 1;
+    }
+
+    #queue-confirm-actions {
+        height: 2;
+        layout: grid;
+        grid-size: 2 1;
+        grid-columns: 1fr 1fr;
+    }
+
+    #queue-confirm-actions QueueDialogAction {
+        background: transparent;
+        border: none;
+        color: ansi_blue;
+        text-style: bold;
+        text-align: center;
+    }
+
+    #queue-confirm-actions QueueDialogAction:hover {
+        background: transparent;
+        text-style: bold;
+    }
+
     #downloads-summary {
         height: 2;
         padding: 0 1;
@@ -289,7 +348,7 @@ class JuiceLyricsApp(App[None]):
         padding: 0 1;
     }
 
-    #download-jobs-scroll,
+    #download-queue-scroll,
     #download-details-scroll {
         height: 1fr;
         overflow-y: scroll;
@@ -301,7 +360,7 @@ class JuiceLyricsApp(App[None]):
         scrollbar-corner-color: transparent;
     }
 
-    #download-jobs,
+    #download-queue,
     #download-details {
         height: auto;
         background: transparent;
@@ -525,7 +584,7 @@ class JuiceLyricsApp(App[None]):
         grid-rows: 1fr;
     }
 
-    Screen.-downloads-narrow.-details-mode #download-jobs-panel {
+    Screen.-downloads-narrow.-details-mode #download-queue-panel {
         display: none;
     }
 
@@ -600,7 +659,9 @@ class JuiceLyricsApp(App[None]):
         catalogue_search_provider: CatalogueSearchProvider = search_catalogue_page,
         catalogue_details_provider: CatalogueDetailsProvider = get_song_details_by_id,
         catalogue_filters_provider: CatalogueFiltersProvider = get_catalogue_filters,
-        downloads_queue_provider: QueueSnapshotProvider | None = None,
+        downloads_queue_provider: DownloadQueueProvider | None = None,
+        queue_plan_provider: QueuePlanProvider = plan_queue_additions,
+        queue_add_provider: QueueAddProvider = add_to_download_queue,
         library_snapshot_provider: LibrarySnapshotProvider = get_library_snapshot,
         library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
         settings_snapshot_provider: SettingsSnapshotProvider = get_settings_snapshot,
@@ -612,7 +673,17 @@ class JuiceLyricsApp(App[None]):
         self.catalogue_search_provider = catalogue_search_provider
         self.catalogue_details_provider = catalogue_details_provider
         self.catalogue_filters_provider = catalogue_filters_provider
-        self.downloads_queue_provider = downloads_queue_provider or queue_snapshot_provider
+        source_downloads_provider = downloads_queue_provider or queue_snapshot_provider
+
+        def normalized_downloads_provider() -> DownloadQueueSnapshot:
+            snapshot = source_downloads_provider()
+            if isinstance(snapshot, QueueSnapshot):
+                return project_download_queue(snapshot)
+            return snapshot
+
+        self.downloads_queue_provider = normalized_downloads_provider
+        self.queue_plan_provider = queue_plan_provider
+        self.queue_add_provider = queue_add_provider
         self.library_snapshot_provider = library_snapshot_provider
         self.library_preview_provider = library_preview_provider
         self.settings_snapshot_provider = settings_snapshot_provider
@@ -632,6 +703,8 @@ class JuiceLyricsApp(App[None]):
                 search_provider=self.catalogue_search_provider,
                 details_provider=self.catalogue_details_provider,
                 filters_provider=self.catalogue_filters_provider,
+                queue_plan_provider=self.queue_plan_provider,
+                queue_add_provider=self.queue_add_provider,
             ),
             "browse",
         )
@@ -661,6 +734,12 @@ class JuiceLyricsApp(App[None]):
             return
         self.switch_screen(section)
 
+    def invalidate_download_queue(self) -> None:
+        downloads = self.get_screen("downloads")
+        invalidate = getattr(downloads, "invalidate_snapshot", None)
+        if callable(invalidate):
+            invalidate()
+
     def action_refresh_active(self) -> None:
         refresh = getattr(self.screen, "refresh_snapshot", None)
         if callable(refresh):
@@ -674,12 +753,13 @@ class JuiceLyricsApp(App[None]):
             message = (
                 "n next catalogue page  •  p previous catalogue page  •  "
                 "PageDown/PageUp scroll the loaded results  •  "
-                "Home/End first/last loaded result  •  j/k select  •  Enter details"
+                "Home/End first/last loaded result  •  j/k select  •  Enter details  •  "
+                "a add selected song to queue"
             )
         elif section == "downloads":
             message = (
-                "↑/↓ or j/k select jobs  •  Home/End first/last job  •  "
-                "PgUp/PgDn move jobs  •  Enter track details  •  Esc job list  •  r refresh"
+                "↑/↓ or j/k select songs  •  Home/End first/last song  •  "
+                "PgUp/PgDn move queue  •  Enter track details  •  Esc queue  •  r refresh"
             )
         elif section == "library":
             message = (

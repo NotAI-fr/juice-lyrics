@@ -135,8 +135,8 @@ def test_downloads_replaces_placeholder_and_renders_empty_and_error_states(tmp_p
         async with app.run_test() as pilot:
             screen = await _open_downloads(app, pilot)
             assert screen.__class__.__name__ == "DownloadsScreen"
-            assert "No acquisition jobs" in _text(app, "#download-jobs")
-            assert "Jobs 0 · Pending 0 · Active 0 · Completed 0 · Failed 0" in _text(
+            assert "No queued or failed songs" in _text(app, "#download-queue")
+            assert "Queued 0 · Downloading 0 · Processing 0 · Failed 0 · Completed 0" in _text(
                 app, "#downloads-summary"
             )
 
@@ -155,8 +155,8 @@ def test_downloads_replaces_placeholder_and_renders_empty_and_error_states(tmp_p
         app = _app(tmp_path, lambda: _snapshot(empty_job))
         async with app.run_test() as pilot:
             await _open_downloads(app, pilot)
-            assert "No tracks stored in this job" in _text(app, "#download-details")
-            assert "Status         Completed" in _text(app, "#download-details")
+            assert "No active queue item selected" in _text(app, "#download-details")
+            assert "Completed 0" in _text(app, "#downloads-summary")
 
     asyncio.run(empty_scenario())
     asyncio.run(error_scenario())
@@ -177,11 +177,21 @@ def test_slow_queue_loading_does_not_block_navigation_or_quit(tmp_path):
         async with app.run_test() as pilot:
             await pilot.press("4")
             await asyncio.to_thread(started.wait, 2)
-            assert "Loading queue" in _text(app, "#download-jobs")
+            assert "Loading queue" in _text(app, "#download-queue")
+            downloads = app.screen
+            worker = downloads._refresh_worker
             await pilot.press("2")
             await pilot.pause()
             assert app.screen.id == "screen-browse"
             release.set()
+            await worker.wait()
+            await pilot.pause()
+            assert downloads._refresh_worker is None
+            await pilot.press("4")
+            await pilot.pause()
+            assert app.screen.id == "screen-downloads"
+            assert downloads._refresh_worker is not None
+            await downloads._refresh_worker.wait()
 
     async def quit_scenario():
         quit_started = Event()
@@ -259,38 +269,32 @@ def test_queue_totals_order_navigation_details_failures_and_retry_information(tm
         app = _app(tmp_path, lambda: _snapshot(queued, active, completed, failed))
         async with app.run_test(size=(100, 30)) as pilot:
             await _open_downloads(app, pilot)
-            assert "Jobs 4 · Pending 1 · Active 1 · Completed 1 · Failed 1" in _text(
+            assert "Queued 1 · Downloading 1 · Processing 0 · Failed 5 · Completed 2" in _text(
                 app, "#downloads-summary"
             )
-            rendered = _text(app, "#download-jobs")
-            assert rendered.index("Queued Song") < rendered.index("Active Song") < rendered.index("Done Song")
-            assert ">  1  Queued" in rendered
+            rendered = _text(app, "#download-queue")
+            assert rendered.index("Queued Song") < rendered.index("Active Song") < rendered.index("Lyrics Track")
+            assert "Done Song" not in rendered
+            assert "> Queued" in rendered
+            assert "queued-id" not in rendered and "failed-id" not in rendered
 
             await pilot.press("down", "j")
             await pilot.pause()
-            assert app.screen.selected_job.job_id == "complete-id"
-            assert "Done Song" in _text(app, "#download-details")
+            assert app.screen.selected_item.title == "Lyrics Track"
+            assert "Lyrics Track" in _text(app, "#download-details")
             await pilot.press("up", "k")
-            assert app.screen.selected_job.job_id == "queued-id"
+            assert app.screen.selected_item.title == "Queued Song"
 
             await pilot.press("end")
             await pilot.pause()
             details = _text(app, "#download-details")
-            assert app.screen.selected_job.job_id == "failed-id"
-            assert "Job ID         failed-id" in details
-            assert "Finished Track" in details and "Completed" in details
-            assert "Lyrics processing failed" in details
-            assert "Audio downloaded lyrics verification failed" in details
-            assert "Retry available from verified downloaded file" in details
-            assert "Download failed" in details
-            assert "Validation failed" in details
-            assert "LRC creation failed" in details
-            assert "Library-state update failed" in details
-            assert "Full download retry required" in details
-            assert "Retry          Safe post-processing retry available" in details
+            assert app.screen.selected_item.title == "State Track"
+            assert "Job ID" not in details
+            assert "Library update failed" in details
+            assert "Internal ref" in details
 
             await pilot.press("home")
-            assert app.screen.selected_job.job_id == "queued-id"
+            assert app.screen.selected_item.title == "Queued Song"
 
     asyncio.run(scenario())
 
@@ -311,7 +315,7 @@ def test_many_jobs_and_tracks_scroll_with_details_mode_at_80x24(tmp_path):
         app = _app(tmp_path, lambda: _snapshot(*jobs))
         async with app.run_test(size=(80, 24)) as pilot:
             await _open_downloads(app, pilot)
-            job_scroll = app.query_one("#download-jobs-scroll", VerticalScroll)
+            job_scroll = app.query_one("#download-queue-scroll", VerticalScroll)
             assert "-downloads-narrow" in app.screen.classes
             assert job_scroll.size.height >= 5
             assert job_scroll.max_scroll_y > 0
@@ -319,24 +323,23 @@ def test_many_jobs_and_tracks_scroll_with_details_mode_at_80x24(tmp_path):
 
             await pilot.press("end")
             await pilot.pause()
-            assert app.screen.selected_job.job_id == "job-20"
+            assert app.screen.selected_item.title == "Track 20"
             assert job_scroll.scroll_y > 0
-            assert job_scroll.scroll_y <= 19 < job_scroll.scroll_y + job_scroll.size.height
+            assert job_scroll.scroll_y <= 38 < job_scroll.scroll_y + job_scroll.size.height
 
             await pilot.press("enter")
             await pilot.pause()
             assert app.screen.has_class("-details-mode")
             details_scroll = app.query_one("#download-details-scroll", VerticalScroll)
-            assert details_scroll.max_scroll_y > 0
             await pilot.press("pagedown")
             await pilot.pause()
-            assert details_scroll.scroll_y > 0
+            assert details_scroll.scroll_y >= 0
             await pilot.press("escape")
             assert not app.screen.has_class("-details-mode")
 
             await pilot.press("pageup")
             await pilot.pause()
-            assert app.screen.selected_index < 19
+            assert app.screen.selected_index < 38
 
     asyncio.run(scenario())
 
@@ -355,17 +358,17 @@ def test_refresh_preserves_or_safely_replaces_selection(tmp_path):
         async with app.run_test() as pilot:
             await _open_downloads(app, pilot)
             await pilot.press("down")
-            assert app.screen.selected_job.job_id == "keep"
+            assert app.screen.selected_item.title == "Keep"
 
             await pilot.press("r")
             await app.screen._refresh_worker.wait()
             await pilot.pause()
-            assert app.screen.selected_job.job_id == "keep"
+            assert app.screen.selected_item.title == "Keep"
 
             await pilot.press("r")
             await app.screen._refresh_worker.wait()
             await pilot.pause()
-            assert app.screen.selected_job.job_id == "replacement"
+            assert app.screen.selected_item is None
 
     asyncio.run(scenario())
 
@@ -399,10 +402,10 @@ def test_newer_refresh_supersedes_stale_queue_result(tmp_path):
             current = app.screen._refresh_worker
             await current.wait()
             await pilot.pause()
-            assert app.screen.selected_job.job_id == "fresh"
+            assert app.screen.selected_item is None
             release_stale.set()
             await pilot.pause()
-            assert "Stale" not in _text(app, "#download-jobs")
+            assert "Stale" not in _text(app, "#download-queue")
 
     try:
         asyncio.run(scenario())

@@ -18,6 +18,16 @@ from juice_lyrics.services.catalogue import (
     LyricAvailability,
     SongDetails,
 )
+from juice_lyrics.services.download_queue import (
+    DownloadQueueItem,
+    DownloadQueueItemStatus,
+    DownloadQueueSnapshot,
+    PlannedQueueItem,
+    QueueAddPlan,
+    QueueAddResult,
+    QueueAddStatus,
+)
+from juice_lyrics.acquisition.models import AcquisitionItem
 from juice_lyrics.tui import JuiceLyricsApp
 
 
@@ -66,7 +76,16 @@ def _details(
     )
 
 
-def _app(tmp_path: Path, *, search, details=None, filters=None) -> JuiceLyricsApp:
+def _app(
+    tmp_path: Path,
+    *,
+    search,
+    details=None,
+    filters=None,
+    queue_plan=None,
+    queue_add=None,
+    downloads=None,
+) -> JuiceLyricsApp:
     return JuiceLyricsApp(
         Settings(music_dir=tmp_path / "music"),
         library_status_provider=lambda settings: LibraryStatus(
@@ -85,11 +104,35 @@ def _app(tmp_path: Path, *, search, details=None, filters=None) -> JuiceLyricsAp
                 CatalogueFilterOption("JW3", "JW3", 111),
             ),
         )),
+        queue_plan_provider=queue_plan or (lambda *args, **kwargs: QueueAddResult(
+            QueueAddStatus.INVALID_SELECTION, "Queue planning is not configured for this test."
+        )),
+        queue_add_provider=queue_add or (lambda plan: QueueAddResult(
+            QueueAddStatus.SAVE_FAILED, "Queue writing is not configured for this test."
+        )),
+        downloads_queue_provider=downloads or (lambda: DownloadQueueSnapshot((), 0, 0, 0, 0, 0)),
     )
 
 
 def _text(app: JuiceLyricsApp, selector: str) -> str:
     return str(app.query_one(selector).render())
+
+
+def _queue_plan(tmp_path: Path, result: CatalogueSearchResult) -> QueueAddPlan:
+    item = AcquisitionItem(
+        identifier=str(result.song_id),
+        title=result.title or "Unknown",
+        url="https://example.invalid/song.mp3",
+        destination=tmp_path / "music" / f"{result.title}.mp3",
+        metadata={"artist": "Juice WRLD", "category": result.category or "", "era": result.era or ""},
+    )
+    return QueueAddPlan((PlannedQueueItem(
+        item=item,
+        song_id=str(result.song_id),
+        artist="Juice WRLD",
+        category=result.category,
+        era=result.era,
+    ),))
 
 
 async def _open_browse(app: JuiceLyricsApp, pilot):
@@ -895,3 +938,188 @@ def test_filter_metadata_failure_disables_selectors_but_title_search_survives(tm
             assert calls == ["Rental"]
 
     asyncio.run(scenario())
+
+
+def test_add_to_queue_confirmation_is_cancel_first_and_uses_queue_wording(tmp_path):
+    calls = []
+    song = _result(1, "Rental")
+
+    def planner(settings, selections):
+        calls.append(selections)
+        return QueueAddResult(QueueAddStatus.READY, "Ready", plan=_queue_plan(tmp_path, selections[0]))
+
+    async def scenario():
+        app = _app(tmp_path, search=lambda *args, **kwargs: (song,), queue_plan=planner)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            await _submit(app, pilot, "rental")
+            browse = app.screen
+            await pilot.press("a")
+            await browse._queue_plan_worker.wait()
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "AddToQueueDialog"
+            body = _text(app, "#queue-confirm-body")
+            assert "Song         Rental" in body
+            assert str(tmp_path / "music" / "Rental.mp3") in body
+            assert "download queue" in body
+            assert "will not start downloading" in body
+            assert "job" not in body.lower()
+            assert "[Cancel]" in _text(app, "#queue-confirm-cancel")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app.screen.id == "screen-browse"
+            assert len(calls) == 1
+            await pilot.press("a")
+            await browse._queue_plan_worker.wait()
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen.id == "screen-browse"
+            assert len(calls) == 2
+
+    asyncio.run(scenario())
+
+
+def test_confirm_adds_once_preserves_browse_and_can_open_refreshed_downloads(tmp_path):
+    created = []
+    song = _result(1, "Rental")
+    queued = DownloadQueueItem(
+        reference="internal:0", song_id="1", title="Rental", artist="Juice WRLD",
+        category="unreleased", era="DRFL", destination=tmp_path / "music" / "Rental.mp3",
+        status=DownloadQueueItemStatus.QUEUED, bytes_written=0, expected_bytes=None,
+        failure_stage=None, error=None, retryable=True,
+        queued_at="2026-08-30T12:00:00+00:00",
+    )
+
+    def planner(settings, selections):
+        return QueueAddResult(QueueAddStatus.READY, "Ready", plan=_queue_plan(tmp_path, selections[0]))
+
+    def creator(plan):
+        created.append(plan)
+        return QueueAddResult(QueueAddStatus.ADDED, "Added 1 song to the download queue.", added_count=1)
+
+    def downloads():
+        items = (queued,) if created else ()
+        return DownloadQueueSnapshot(items, len(items), 0, 0, 0, 0)
+
+    async def scenario():
+        app = _app(tmp_path, search=lambda *args, **kwargs: (song,), queue_plan=planner,
+                   queue_add=creator, downloads=downloads)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            await _submit(app, pilot, "rental")
+            browse = app.screen
+            await pilot.press("a")
+            await browse._queue_plan_worker.wait()
+            await pilot.pause()
+            await pilot.press("y")
+            await app.screen._worker.wait()
+            await pilot.pause()
+            assert len(created) == 1
+            assert "Nothing has started" in _text(app, "#queue-confirm-status")
+            await pilot.press("y")
+            assert len(created) == 1
+            await pilot.press("v")
+            await pilot.pause()
+            if app.screen._refresh_worker is not None:
+                await app.screen._refresh_worker.wait()
+                await pilot.pause()
+            assert app.screen.id == "screen-downloads"
+            assert "Rental" in _text(app, "#download-queue")
+            await pilot.press("2")
+            await pilot.pause()
+            assert app.query_one("#browse-query", Input).value == "rental"
+            assert "> Rental" in _text(app, "#browse-results")
+
+    asyncio.run(scenario())
+
+
+def test_add_to_queue_rejections_and_input_guard(tmp_path):
+    plan_calls = []
+    available = _result(1, "Available")
+    unavailable = _result(2, "Unavailable", downloadable=False)
+
+    def planner(settings, selections):
+        plan_calls.append(selections[0].title)
+        return QueueAddResult(QueueAddStatus.ALREADY_QUEUED, "Available is already in the queue.")
+
+    async def scenario():
+        app = _app(tmp_path, search=lambda *args, **kwargs: (available, unavailable), queue_plan=planner)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            await _submit(app, pilot, "songs")
+            field = app.query_one("#browse-query", Input)
+            field.focus()
+            await pilot.press("a")
+            assert plan_calls == []
+            category = app.query_one("#browse-category", Select)
+            category.focus()
+            await pilot.press("enter")
+            assert category.expanded
+            await pilot.press("a")
+            assert plan_calls == []
+            await pilot.press("escape")
+            app.screen.set_focus(None)
+            await pilot.press("a")
+            await app.screen._queue_plan_worker.wait()
+            await pilot.pause()
+            assert "already in the queue" in _text(app, "#browse-status")
+            await pilot.press("down", "a")
+            assert plan_calls == ["Available"]
+            assert "Media unavailable" in _text(app, "#browse-status")
+
+    asyncio.run(scenario())
+
+
+def test_add_to_queue_store_failure_is_safe_and_slow_planning_does_not_block_navigation(tmp_path):
+    started = Event()
+    release = Event()
+    song = _result(1, "Rental")
+
+    def slow_planner(settings, selections):
+        started.set()
+        release.wait(timeout=5)
+        return QueueAddResult(QueueAddStatus.READY, "Ready", plan=_queue_plan(tmp_path, selections[0]))
+
+    async def navigation_scenario():
+        app = _app(tmp_path, search=lambda *args, **kwargs: (song,), queue_plan=slow_planner)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            await _submit(app, pilot, "rental")
+            browse = app.screen
+            await pilot.press("a")
+            await asyncio.to_thread(started.wait, 2)
+            assert "Checking destination" in _text(app, "#browse-status")
+            await pilot.press("4")
+            assert app.screen.id == "screen-downloads"
+            release.set()
+            await browse._queue_plan_worker.wait()
+            await pilot.pause()
+            assert app.screen.id == "screen-downloads"
+
+    async def failure_scenario():
+        planner = lambda settings, selections: QueueAddResult(
+            QueueAddStatus.READY, "Ready", plan=_queue_plan(tmp_path, selections[0])
+        )
+        creator = lambda plan: QueueAddResult(
+            QueueAddStatus.SAVE_FAILED, "Unable to save the queue: permission denied."
+        )
+        app = _app(tmp_path, search=lambda *args, **kwargs: (song,), queue_plan=planner, queue_add=creator)
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            await _submit(app, pilot, "rental")
+            browse = app.screen
+            await pilot.press("a")
+            await browse._queue_plan_worker.wait()
+            await pilot.pause()
+            await pilot.press("y")
+            await app.screen._worker.wait()
+            await pilot.pause()
+            assert "permission denied" in _text(app, "#queue-confirm-status")
+            assert app.screen.__class__.__name__ == "AddToQueueDialog"
+
+    try:
+        asyncio.run(navigation_scenario())
+        asyncio.run(failure_scenario())
+    finally:
+        release.set()

@@ -60,8 +60,9 @@ From an editable installation, launch the early read-only TUI shell with:
 juice-lyrics tui
 ```
 
-The experimental shell provides functional read-only Dashboard, Browse,
-Library, Downloads, and Settings screens. Press `/` to focus catalogue search and Enter to
+The experimental shell provides functional Dashboard, Browse, Library,
+Downloads, and Settings screens. Inspection remains read-only; Browse has one
+explicit Add to queue action. Press `/` to focus catalogue search and Enter to
 submit. Category and Era are keyboard-usable selectors populated from API
 metadata; choose All for no filter. Filter-only searches are supported. Results
 use the API's 50-song pages and show a permanently visible page, range, and
@@ -69,18 +70,22 @@ total bar. Use `n` for the next API page and `p` for the previous one. Arrows or
 `j`/`k` move one result, PageDown/PageUp move through the loaded page, and
 Home/End select its first/last result. The list scrolls to keep that selection
 visible. Enter loads full details and a lyric preview, while `r` refreshes the
-current API page. Global keys remain `1`–`5` for sections, `?` for help, and `q`
-to quit. Browse does not download media, create jobs, sync lyrics, edit settings,
-or modify the local library.
+current API page. Press `a` on a downloadable result to review its resolved
+destination and explicitly add it to the download queue. The cancel-first dialog
+states that adding does not start a download. Global keys remain `1`–`5` for
+sections, `?` for help, and `q` to quit. Browse does not run downloads, sync
+lyrics, edit settings, or modify the local library.
 It uses Textual's ANSI-color mode and ANSI palette names rather than a bundled
 theme. Exact terminal-background transparency can still vary with Textual's
 alternate-screen rendering and the terminal emulator.
 
-In Downloads, use arrows or `j`/`k` to select a job, Home/End for the first or
-last job, and PageUp/PageDown to move through longer job lists. Enter opens the
-selected job's scrollable track details and Escape returns to the job list.
-Press `r` to refresh the read-only queue snapshot. Run, Retry, Delete, Cancel,
-and Download actions are intentionally unavailable in this milestone.
+In Downloads, use arrows or `j`/`k` to select an individual queued song,
+Home/End for the first or last song, and PageUp/PageDown for longer queues.
+Enter opens track details and Escape returns to the queue. Press `r` to refresh.
+Completed backend records are counted but hidden from the active queue; failed
+songs remain visible. Download selected, Download all, Remove, Clear, Retry, and
+Cancel are intentionally unavailable in this milestone. Existing queued songs
+must still be run through the CLI.
 
 In Library, arrows or `j`/`k` select local MP3 tracks, Home/End select the first
 or last track, and PageUp/PageDown move through longer lists. Press `/` for a

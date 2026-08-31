@@ -134,7 +134,8 @@ Goal:
 Create the main application interface.
 
 Status: In progress. The responsive terminal-native shell and all five primary
-sections are integrated as read-only screens. Mutating workflows remain CLI-only.
+sections are integrated. Browse has an explicit confirmed Add to queue action;
+download execution and other mutations remain CLI-only.
 
 Screens:
 
@@ -177,8 +178,10 @@ Features:
 - Completed items.
 - Retry.
 
-Status: Read-only queue view complete. Run, Retry, Delete, and Cancel actions
-remain planned.
+Status: Track-oriented queue projection and Browse Add to queue are complete.
+Durable jobs remain internal, completed entries are hidden from the active
+queue, and failed entries remain visible. Download selected, Download all,
+Remove, Clear, Retry, and Cancel remain planned.
 
 ---
 
@@ -200,8 +203,8 @@ capability limitations. Editing remains planned.
 
 Recommended implementation order after the current checkpoint:
 
-1. Browse-to-download job creation
-2. Downloads Run/Retry/Delete actions
+1. Downloads Download selected / Download all execution
+2. Downloads Remove / Clear / Retry actions
 3. Library sync actions
 4. `999` command and naming migration
 5. Native FLAC support

@@ -298,6 +298,16 @@ Replace technical job management.
 
 The user should never need UUIDs.
 
+The primary view is a flat queue of songs. Persistent acquisition jobs remain
+an internal durability and execution detail; an internal reference may be shown
+only under troubleshooting details. Completed records contribute to the summary
+but are hidden from the active queue, while failed songs remain visible.
+
+Browse uses `a` to open an explicit Add to queue confirmation. The dialog shows
+the resolved destination and states that adding will not start a download.
+Future queue actions are Download selected, Download all, Remove, Clear, Retry,
+and Cancel.
+
 Example:
 
 

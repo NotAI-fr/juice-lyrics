@@ -117,6 +117,21 @@ Prefer:
 - Queue
 - Library
 
+## Downloads are a track queue
+
+Persistent acquisition jobs remain the durable backend mechanism for
+resumability, validation, recovery, and CLI compatibility. They are not the
+normal user-facing model. Frontends present one flat download queue containing
+individual songs and hide job UUIDs from ordinary workflows.
+
+Completed entries remain in durable storage but do not clutter the active
+queue. Failed entries remain visible and actionable until a future retry or
+remove action resolves them. Internal references may appear only in an advanced
+troubleshooting detail.
+
+The planned queue actions are Download selected, Download all, Remove, Clear,
+Retry, and Cancel. Each mutating action requires its own explicit safe workflow.
+
 The backend can remain technical while the user interface becomes friendly.
 
 ---
