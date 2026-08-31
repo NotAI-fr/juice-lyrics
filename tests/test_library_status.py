@@ -81,7 +81,7 @@ def test_library_status_counts_lyrics_changes_lrc_and_backups(tmp_path):
         changed: (True, "USLT (ordinary lyrics)"),
     }
     status = get_library_status(
-        Settings(music_dir=library),
+        Settings(music_dir=library, lyrics_dir=lrc.parent),
         state_file=state_file,
         backup_dir=backup_dir,
         verifier=results.__getitem__,
@@ -175,7 +175,7 @@ def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypa
     )
 
     snapshot = get_library_snapshot(
-        Settings(music_dir=library),
+        Settings(music_dir=library, lyrics_dir=lrc.parent),
         state_file=state_file,
         verifier=verification.__getitem__,
         duration_reader=lambda path: {synced: 180.0, plain: 181.5, missing: None}[path],
@@ -199,6 +199,41 @@ def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypa
     assert snapshot.tracks[1].state_status is LibraryStateStatus.CHANGED
     assert snapshot.tracks[2].match_status is LibraryMatchStatus.UNMATCHED
     assert snapshot.tracks[2].lyric_status is LibraryLyricStatus.NONE
+
+
+def test_library_snapshot_uses_configured_lrc_directory_not_legacy_state_path(tmp_path):
+    library = tmp_path / "Music" / "Juice WRLD" / "Unreleased"
+    library.mkdir(parents=True)
+    track = library / "Rental.mp3"
+    track.write_bytes(b"audio")
+    legacy = tmp_path / "Music" / "Juice WRLD" / "lyrics" / "Rental.lrc"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("[00:01.00] old\n", encoding="utf-8")
+    configured = tmp_path / "Music" / "lyrics"
+    state_file = tmp_path / "state.json"
+    state_file.write_text(json.dumps({
+        "files": {
+            "Rental.mp3": {
+                "sha256": sha256_file(track),
+                "song_id": 1,
+                "api_name": "Rental",
+                "lrc": str(legacy),
+            }
+        }
+    }), encoding="utf-8")
+
+    snapshot = get_library_snapshot(
+        Settings(music_dir=library, lyrics_dir=configured),
+        state_file=state_file,
+        verifier=lambda path: (True, "SYLT (1 synced line)"),
+        duration_reader=lambda path: 180.0,
+    )
+
+    item = snapshot.tracks[0]
+    assert item.lrc_path == configured / "Rental.lrc"
+    assert item.lrc_status is LibraryLrcStatus.MISSING
+    assert str(legacy) in (item.warning or "")
+    assert not configured.exists()
 
 
 def test_track_snapshot_handles_missing_library_and_malformed_state(tmp_path):

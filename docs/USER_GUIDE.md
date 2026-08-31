@@ -8,7 +8,23 @@ Run:
 juice-lyrics setup
 ```
 
-This creates/updates configuration and, when rmpc is detected, prepares the lyric directory and relevant rmpc settings.
+When rmpc is detected, setup generates synchronized LRC files and updates the
+rmpc lyrics setting after its normal confirmation. Merely loading configuration
+does not create the lyrics directory.
+
+## Configuration
+
+The application configuration is `~/.config/juice-lyrics/config.toml`. Embedded
+lyrics remain inside each audio file. External synchronized LRC files use one
+central directory shared across artists:
+
+```toml
+lyrics_dir = "~/Music/lyrics"
+```
+
+The default is `~/Music/lyrics`; an explicit `lyrics_dir` overrides it. Inspect
+the effective value with `juice-lyrics config show`. Native FLAC support remains
+planned separately.
 
 ## Normal day-to-day use
 
@@ -129,10 +145,18 @@ Default local library:
 ~/Music/Juice WRLD/Unreleased
 ```
 
-Default rmpc lyrics directory:
+Default external synchronized LRC directory:
 
 ```text
-~/Music/Juice WRLD/lyrics
+~/Music/lyrics
 ```
 
 Both should remain configurable.
+
+Existing LRC files from the previous default are not moved automatically. A
+safe no-overwrite manual migration is:
+
+```bash
+mkdir -p ~/Music/lyrics
+find ~/Music/Juice\ WRLD/lyrics -maxdepth 1 -type f -iname '*.lrc' -exec mv -n -t ~/Music/lyrics -- {} +
+```

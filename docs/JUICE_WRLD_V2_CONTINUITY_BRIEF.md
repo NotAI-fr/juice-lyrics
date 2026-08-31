@@ -52,7 +52,7 @@ Milestone reached:
 
 The current development branch is `v2-redesign` in
 `/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
-220 passing tests.
+235 passing tests.
 
 Completed and integrated:
 
@@ -80,14 +80,16 @@ functional Dashboard and Browse screens, canonical Category and Era
 selectors, correct case-sensitive API cache behavior, server-side catalogue
 pagination with scrollable 50-result pages, stable ID-based song details, and a
 Downloads screen with a flat track queue, song navigation, details, failure
-stages, retry eligibility, and an explicit Browse Add to queue flow that never
-starts a download, a read-only Library screen with local
+stages, retry eligibility, an explicit Browse Add to queue flow that never
+starts a download, and an explicitly confirmed Download selected action for one
+eligible queued song, a read-only Library screen with local
 track browsing, filters, details, and explicit sync previews, and a read-only
 Settings screen with effective configuration, paths, provenance, and rmpc state.
 
 All five primary TUI sections are functional. Browse may add one explicitly
-confirmed song to the queue; Downloads execution, retry, remove, clear, and
-cancel actions, configuration editing, and sync execution are not implemented.
+confirmed song to the queue; Downloads can execute one confirmed selected song.
+Download all, retry, remove, clear, and cancel actions, configuration editing,
+and sync execution are not implemented.
 Durable jobs remain an internal backend detail and completed entries are hidden
 from the active track queue. The legacy CLI remains the way to run downloads,
 delete jobs, and sync. Native FLAC support remains planned. The planned

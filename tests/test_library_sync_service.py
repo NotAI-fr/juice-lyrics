@@ -199,10 +199,10 @@ def test_frontend_preview_helper_is_dry_run_and_non_mutating(tmp_path):
     deps.state_loader = lambda: (_ for _ in ()).throw(AssertionError("mutating state loader called"))
     deps.embedder = lambda *args: (_ for _ in ()).throw(AssertionError("embed called"))
 
+    configured_lyrics = tmp_path / "central-lyrics"
     plan = get_library_sync_preview(
-        Settings(music_dir=tmp_path),
+        Settings(music_dir=tmp_path, lyrics_dir=configured_lyrics),
         rmpc_enabled=True,
-        lyrics_dir=tmp_path / "lyrics",
         state_file=state_file,
         dependencies=deps,
     )
@@ -210,6 +210,7 @@ def test_frontend_preview_helper_is_dry_run_and_non_mutating(tmp_path):
     assert plan.options.dry_run is True
     assert plan.ready_files == 1
     assert plan.synced_files == 1
+    assert plan.options.lyrics_dir == configured_lyrics
     assert saved == []
     assert path.read_bytes() == b"original"
     assert not backup_root.exists()
@@ -252,10 +253,16 @@ def test_synced_generates_lrc_but_plain_never_does(tmp_path):
 
     deps.lrc_writer = write_lrc
     deps.rmpc_notifier = lambda paths: len(paths)
-    options = _options(tmp_path, rmpc_enabled=True, lyrics_dir=tmp_path / "lyrics")
+    configured_lyrics = tmp_path / "central-lyrics"
+    options = LibrarySyncOptions.from_settings(
+        Settings(music_dir=tmp_path, lyrics_dir=configured_lyrics),
+        rmpc_enabled=True,
+    )
     result = execute_library_sync(plan_library_sync(options, dependencies=deps), dependencies=deps)
 
     assert lrc_calls == [synced]
+    assert (configured_lyrics / "Synced.lrc").is_file()
+    assert not (tmp_path / "lyrics").exists()
     assert result.lrc_files_generated == 1
     assert result.rmpc_notifications == 1
 

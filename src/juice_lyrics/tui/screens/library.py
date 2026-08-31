@@ -184,6 +184,14 @@ class LibraryScreen(HubScreen):
         self._set_status("Refreshing local MP3 library…")
         self._snapshot_worker = self._load_snapshot()
 
+    def invalidate_snapshot(self) -> None:
+        self.snapshot = None
+        self.preview = None
+        self._snapshot_worker = None
+        self._preview_worker = None
+        self._pending_snapshot = None
+        self._pending_preview = None
+
     @work(thread=True, exclusive=True, group="library-snapshot", exit_on_error=False)
     def _load_snapshot(self) -> SnapshotOutcome:
         try:
@@ -282,10 +290,16 @@ class LibraryScreen(HubScreen):
         self.preview = outcome.plan
         plan = outcome.plan
         lrc = plan.synced_files if plan.options.rmpc_enabled else 0
+        lrc_destination = (
+            f" · LRC dir {plan.options.lyrics_dir}"
+            if lrc and plan.options.lyrics_dir is not None
+            else ""
+        )
         self.query_one("#library-preview", Static).update(
             f"Preview only — no files changed · Current {plan.unchanged_files} · Update {plan.ready_files} "
             f"(Synced {plan.synced_files}, Plain {plan.plain_files}) · LRC {lrc} · "
             f"Unresolved {plan.unresolved_files} · No lyrics {plan.no_lyrics_files} · Errors {plan.analysis_failures}"
+            f"{lrc_destination}"
         )
         self._set_status("Sync preview complete. No files were changed.")
         self._render_details()

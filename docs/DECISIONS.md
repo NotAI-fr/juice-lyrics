@@ -37,6 +37,11 @@ rmpc does not read embedded ID3 lyrics.
 
 rmpc currently relies on external `.lrc` lyric files.
 
+All external synchronized LRC operations use the typed `lyrics_dir` setting.
+Its default is the artist-independent central directory `~/Music/lyrics`, while
+embedded lyrics remain inside the audio files. Loading settings never creates
+this directory; an explicit LRC-writing workflow may create it.
+
 Therefore:
 
 - SYLT lyrics should generate `.lrc` files.
@@ -129,8 +134,10 @@ queue. Failed entries remain visible and actionable until a future retry or
 remove action resolves them. Internal references may appear only in an advanced
 troubleshooting detail.
 
-The planned queue actions are Download selected, Download all, Remove, Clear,
-Retry, and Cancel. Each mutating action requires its own explicit safe workflow.
+Download selected is the first implemented queue execution action and requires
+a cancel-first confirmation for one eligible song. Download all, Remove, Clear,
+Retry, and Cancel remain planned. Each mutating action requires its own explicit
+safe workflow.
 
 The backend can remain technical while the user interface becomes friendly.
 

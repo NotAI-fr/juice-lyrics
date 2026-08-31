@@ -19,9 +19,9 @@ from ..config.settings import (
     DEFAULT_CACHE_TTL_HOURS,
     DEFAULT_DELAY,
     DEFAULT_DURATION_TOLERANCE,
+    DEFAULT_LYRICS_DIR,
     DEFAULT_MUSIC_DIR,
     DEFAULT_RMPC_CONFIG,
-    DEFAULT_RMPC_LYRICS_DIR,
     DEFAULT_TIMEOUT,
     STATE_FILE,
     Settings,
@@ -86,6 +86,7 @@ class SettingsSnapshot:
 
 _SETTING_SPECS = (
     ("music_dir", "Music directory", DEFAULT_MUSIC_DIR),
+    ("lyrics_dir", "External LRC directory", DEFAULT_LYRICS_DIR),
     ("api_base", "API base URL", DEFAULT_API_BASE),
     ("timeout", "Request timeout", DEFAULT_TIMEOUT),
     ("delay", "Request delay", DEFAULT_DELAY),
@@ -95,7 +96,7 @@ _SETTING_SPECS = (
 
 
 def _normalized_config_value(key: str, value: object) -> SettingScalar:
-    if key == "music_dir":
+    if key in {"music_dir", "lyrics_dir"}:
         return Path(str(value)).expanduser()
     if key == "api_base":
         return str(value).rstrip("/")
@@ -130,9 +131,18 @@ def _inspect_path(key: str, label: str, path: Path) -> SettingsPath:
     return SettingsPath(key, label, path, exists, warning)
 
 
-def _rmpc_configured(text: str) -> bool:
+def _rmpc_configured(text: str, lyrics_dir: Path) -> bool:
+    directory = re.search(
+        r'(?im)^\s*lyrics_dir\s*:\s*some\s*\(\s*"([^"]+)"\s*\)',
+        text,
+    )
+    configured_directory = (
+        Path(directory.group(1).replace(r'\"', '"').replace(r"\\", "\\")).expanduser()
+        if directory is not None
+        else None
+    )
     return (
-        re.search(r"(?im)^\s*lyrics_dir\s*:\s*some\s*\(", text) is not None
+        configured_directory == lyrics_dir.expanduser()
         and re.search(r"(?im)^\s*enable_lyrics_index\s*:\s*true\s*,?", text) is not None
         and re.search(r"(?im)^\s*enable_lyrics_hot_reload\s*:\s*true\s*,?", text) is not None
     )
@@ -140,6 +150,7 @@ def _rmpc_configured(text: str) -> bool:
 
 def _inspect_rmpc(
     config_path: Path,
+    lyrics_dir: Path,
     executable_finder: ExecutableFinder,
 ) -> IntegrationSnapshot:
     try:
@@ -148,7 +159,10 @@ def _inspect_rmpc(
         config_exists = config_path.exists()
         configured = False
         if config_exists:
-            configured = _rmpc_configured(config_path.read_text(encoding="utf-8"))
+            configured = _rmpc_configured(
+                config_path.read_text(encoding="utf-8"),
+                lyrics_dir,
+            )
     except Exception as exc:
         return IntegrationSnapshot(
             IntegrationStatus.UNABLE_TO_INSPECT,
@@ -178,13 +192,13 @@ def get_settings_snapshot(
     state_file: Path = STATE_FILE,
     backup_dir: Path = BACKUP_DIR,
     jobs_file: Path = ACQUISITION_JOBS_FILE,
-    lyrics_dir: Path = DEFAULT_RMPC_LYRICS_DIR,
     rmpc_config_path: Path = DEFAULT_RMPC_CONFIG,
     executable_finder: ExecutableFinder = shutil.which,
 ) -> SettingsSnapshot:
     """Inspect effective settings and environment without creating or changing files."""
 
     config_path = Path(config_path)
+    effective_lyrics_dir = Path(settings.lyrics_dir)
     config: dict[str, object] = {}
     try:
         config_exists = config_path.exists()
@@ -213,7 +227,7 @@ def get_settings_snapshot(
         _inspect_path(key, label, Path(path))
         for key, label, path in (
             ("music", "Music library", settings.music_dir),
-            ("lyrics", "rmpc lyrics", lyrics_dir),
+            ("lyrics", "External synchronized LRC files", effective_lyrics_dir),
             ("cache", "API cache", cache_dir),
             ("state", "Library state", state_file),
             ("backups", "Backups", backup_dir),
@@ -230,12 +244,16 @@ def get_settings_snapshot(
         config_exists=config_exists,
         values=values,
         paths=paths,
-        rmpc=_inspect_rmpc(Path(rmpc_config_path), executable_finder),
+        rmpc=_inspect_rmpc(
+            Path(rmpc_config_path),
+            effective_lyrics_dir,
+            executable_finder,
+        ),
         application_version=__version__,
         limitations=(
             "Local library scanning currently supports MP3 files only.",
             "Native FLAC support is planned but not implemented.",
-            "Browse and Downloads remain read-only in the TUI.",
+            "Settings inspection remains read-only in the TUI.",
             "Library sync execution remains CLI-only.",
             "Configuration changes remain CLI-only.",
         ),

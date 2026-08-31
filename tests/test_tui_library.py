@@ -380,6 +380,7 @@ def test_sync_preview_is_explicit_nonblocking_structured_and_handles_errors(tmp_
             assert "Preview only — no files changed" in preview_text
             assert "Current 1" in preview_text and "Update 2" in preview_text
             assert "Synced 1" in preview_text and "Plain 1" in preview_text and "LRC 1" in preview_text
+            assert f"LRC dir {screen.preview.options.lyrics_dir}" in preview_text
             await pilot.press("down")
             assert "Would update lyrics · Synced lyrics · Synced API" in _text(app, "#library-details")
 

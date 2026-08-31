@@ -21,6 +21,7 @@ from mutagen.id3 import ID3, ID3NoHeaderError, SYLT, USLT, Encoding
 from mutagen.mp3 import MP3
 
 from . import __version__
+from .config.settings import DEFAULT_LYRICS_DIR
 
 APP_NAME = "juice-lyrics"
 DEFAULT_API_BASE = "https://juicewrldapi.com/juicewrld"
@@ -63,13 +64,13 @@ CACHE_DIR = CACHE_HOME / APP_NAME
 DATA_DIR = DATA_HOME / APP_NAME
 BACKUP_DIR = DATA_DIR / "backups"
 STATE_FILE = DATA_DIR / "state.json"
-DEFAULT_RMPC_LYRICS_DIR = DEFAULT_MUSIC_DIR.parent / "lyrics"
 DEFAULT_RMPC_CONFIG = CONFIG_HOME / "rmpc" / "config.ron"
 
 
 class Settings:
     def __init__(self) -> None:
         self.music_dir = DEFAULT_MUSIC_DIR
+        self.lyrics_dir = DEFAULT_LYRICS_DIR
         self.api_base = DEFAULT_API_BASE
         self.timeout = DEFAULT_TIMEOUT
         self.delay = DEFAULT_DELAY
@@ -103,6 +104,8 @@ def load_settings(path_override: str | None = None, api_override: str | None = N
             data = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
             if data.get("music_dir"):
                 settings.music_dir = Path(str(data["music_dir"])).expanduser()
+            if data.get("lyrics_dir"):
+                settings.lyrics_dir = Path(str(data["lyrics_dir"])).expanduser()
             settings.api_base = str(data.get("api_base", settings.api_base)).rstrip("/")
             settings.timeout = int(data.get("timeout", settings.timeout))
             settings.delay = float(data.get("delay", settings.delay))
@@ -121,7 +124,7 @@ def write_default_config(force: bool = False) -> None:
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     if CONFIG_FILE.exists() and not force:
         raise RuntimeError(f"Config already exists: {CONFIG_FILE} (use --force to replace it)")
-    content = f'''# {APP_NAME} configuration\n\nmusic_dir = "{DEFAULT_MUSIC_DIR}"\napi_base = "{DEFAULT_API_BASE}"\ntimeout = {DEFAULT_TIMEOUT}\ndelay = {DEFAULT_DELAY}\nduration_tolerance = {DEFAULT_DURATION_TOLERANCE}\ncache_ttl_hours = {DEFAULT_CACHE_TTL_HOURS}\n'''
+    content = f'''# {APP_NAME} configuration\n\nmusic_dir = "{DEFAULT_MUSIC_DIR}"\nlyrics_dir = "{DEFAULT_LYRICS_DIR}"\napi_base = "{DEFAULT_API_BASE}"\ntimeout = {DEFAULT_TIMEOUT}\ndelay = {DEFAULT_DELAY}\nduration_tolerance = {DEFAULT_DURATION_TOLERANCE}\ncache_ttl_hours = {DEFAULT_CACHE_TTL_HOURS}\n'''
     CONFIG_FILE.write_text(content, encoding="utf-8")
 
 
@@ -548,8 +551,8 @@ def notify_rmpc_index(paths: list[Path]) -> int:
     return count
 
 
-def configured_rmpc_lyrics_dir() -> Path:
-    return DEFAULT_RMPC_LYRICS_DIR
+def configured_rmpc_lyrics_dir(settings: Settings) -> Path:
+    return settings.lyrics_dir
 
 
 def write_state_entry(state: dict[str, Any], path: Path, settings: Settings, analysis: dict[str, Any], lrc_path: Path | None) -> None:
@@ -579,14 +582,15 @@ def state_is_current(state: dict[str, Any], path: Path, settings: Settings, want
         return False
     if want_rmpc and entry.get("lyric_type") == "SYLT":
         lrc = Path(entry.get("lrc") or "")
-        if not lrc.is_file():
+        expected_lrc = settings.lyrics_dir / f"{path.stem}.lrc"
+        if lrc != expected_lrc or not expected_lrc.is_file():
             return False
     return True
 
 
 def embed_batch(settings: Settings, files: list[Path], use_color: bool, refresh: bool, dry_run: bool, yes: bool, with_rmpc: bool) -> int:
     state = load_state()
-    lyric_dir = configured_rmpc_lyrics_dir() if with_rmpc else None
+    lyric_dir = configured_rmpc_lyrics_dir(settings) if with_rmpc else None
     work: list[dict[str, Any]] = []
     skipped_unchanged = 0
     for index, path in enumerate(files, 1):
@@ -771,6 +775,8 @@ def load_settings(path_override: str | None = None, api_override: str | None = N
             data = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
             if data.get("music_dir"):
                 settings.music_dir = Path(str(data["music_dir"])).expanduser()
+            if data.get("lyrics_dir"):
+                settings.lyrics_dir = Path(str(data["lyrics_dir"])).expanduser()
             settings.api_base = str(data.get("api_base", settings.api_base)).rstrip("/")
             settings.timeout = int(data.get("timeout", settings.timeout))
             settings.delay = float(data.get("delay", settings.delay))
@@ -800,8 +806,7 @@ def command_setup(args: argparse.Namespace, settings: Settings, use_color: bool)
             print("Cancelled.")
             return 0
     if rmpc_available:
-        patch_rmpc_config(DEFAULT_RMPC_CONFIG, DEFAULT_RMPC_LYRICS_DIR)
-        DEFAULT_RMPC_LYRICS_DIR.mkdir(parents=True, exist_ok=True)
+        patch_rmpc_config(DEFAULT_RMPC_CONFIG, settings.lyrics_dir)
     files = find_mp3s(settings)
     return embed_batch(settings, files, use_color, args.refresh, False, True, rmpc_available)
 
@@ -815,7 +820,7 @@ def command_sync(args: argparse.Namespace, settings: Settings, use_color: bool) 
         dry_run=args.dry_run,
         refresh=args.refresh,
         rmpc_enabled=rmpc_enabled,
-        lyrics_dir=DEFAULT_RMPC_LYRICS_DIR if rmpc_enabled else None,
+        lyrics_dir=settings.lyrics_dir if rmpc_enabled else None,
         rmpc_config_path=DEFAULT_RMPC_CONFIG if rmpc_enabled else None,
         state_file=STATE_FILE,
     )
@@ -894,6 +899,7 @@ def command_status(settings: Settings, use_color: bool) -> int:
     )
     print_header("Library Status", use_color)
     print(f"Library:              {status.library_path}")
+    print(f"External LRC dir:     {settings.lyrics_dir}")
     print(f"MP3 files:            {status.track_count}")
     print(f"Embedded synced:      {status.embedded_synced_count}")
     print(f"Embedded plain:       {status.embedded_plain_count}")
@@ -1081,12 +1087,16 @@ def command_doctor(args: argparse.Namespace, settings: Settings, use_color: bool
     return 1 if problems else 0
 
 
-def command_config(args: argparse.Namespace) -> int:
+def command_config(args: argparse.Namespace, settings: Settings | None = None) -> int:
     if args.action == "init":
         write_default_config(args.force); print(f"Created {CONFIG_FILE}"); return 0
     if args.action == "show":
-        if CONFIG_FILE.exists(): print(CONFIG_FILE.read_text(encoding="utf-8"))
-        else: print(f"No config. Defaults are in use.\n{CONFIG_FILE}")
+        effective = settings or load_settings()
+        if CONFIG_FILE.exists():
+            print(CONFIG_FILE.read_text(encoding="utf-8").rstrip())
+        else:
+            print(f"No config. Defaults are in use.\n{CONFIG_FILE}")
+        print(f"Effective lyrics_dir: {effective.lyrics_dir}")
         return 0
     raise RuntimeError("Unknown config action")
 
@@ -1100,7 +1110,7 @@ def command_cache(args: argparse.Namespace) -> int:
 
 def command_rmpc_setup(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
     config_path = Path(args.config).expanduser() if args.config else DEFAULT_RMPC_CONFIG
-    lyrics_dir = Path(args.lyrics_dir).expanduser() if args.lyrics_dir else DEFAULT_RMPC_LYRICS_DIR
+    lyrics_dir = Path(args.lyrics_dir).expanduser() if args.lyrics_dir else settings.lyrics_dir
     if not lyrics_dir.is_absolute(): lyrics_dir = lyrics_dir.resolve()
     if shutil.which("rmpc") is None: raise RuntimeError("rmpc was not found in PATH")
     if not config_path.exists(): raise RuntimeError(f"rmpc config not found: {config_path}")
@@ -1110,7 +1120,6 @@ def command_rmpc_setup(args: argparse.Namespace, settings: Settings, use_color: 
         if not sys.stdin.isatty(): print("Non-interactive mode: use --yes."); return 2
         if input("Create LRC files and update rmpc config? [y/N] ").strip().lower() not in {"y", "yes"}:
             print("Cancelled. No changes made."); return 0
-    lyrics_dir.mkdir(parents=True, exist_ok=True)
     analyses = []
     files = find_mp3s(settings)
     for i, path in enumerate(files, 1):
@@ -1131,8 +1140,7 @@ def command_rmpc_setup(args: argparse.Namespace, settings: Settings, use_color: 
 
 
 def command_rmpc_sync(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    lyrics_dir = Path(args.lyrics_dir).expanduser() if args.lyrics_dir else DEFAULT_RMPC_LYRICS_DIR
-    lyrics_dir.mkdir(parents=True, exist_ok=True)
+    lyrics_dir = Path(args.lyrics_dir).expanduser() if args.lyrics_dir else settings.lyrics_dir
     generated = []
     for path in find_mp3s(settings):
         a = analyse(settings, path, args.refresh)
@@ -1144,7 +1152,7 @@ def command_rmpc_sync(args: argparse.Namespace, settings: Settings, use_color: b
 
 
 def command_rmpc_verify(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    lyrics_dir = Path(args.lyrics_dir).expanduser() if args.lyrics_dir else DEFAULT_RMPC_LYRICS_DIR
+    lyrics_dir = Path(args.lyrics_dir).expanduser() if args.lyrics_dir else settings.lyrics_dir
     files = sorted(lyrics_dir.glob("*.lrc")) if lyrics_dir.is_dir() else []
     good = bad = 0
     for path in files:
@@ -1418,7 +1426,7 @@ def _run_acquisition_job(job: AcquisitionJob, store: JobStore, settings: Setting
         integration = integrate_downloaded_mp3(
             result.item,
             song_fetcher=lambda song_id: _api_get_song(settings, song_id),
-            lyrics_dir=configured_rmpc_lyrics_dir(),
+            lyrics_dir=configured_rmpc_lyrics_dir(settings),
             settings=settings,
         )
         if integration.message:
@@ -1643,7 +1651,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.action == "setup": return command_rmpc_setup(args, settings, use_color)
             if args.action == "sync": return command_rmpc_sync(args, settings, use_color)
             if args.action == "verify": return command_rmpc_verify(args, settings, use_color)
-        if args.command == "config": return command_config(args)
+        if args.command == "config": return command_config(args, settings)
         if args.command == "cache": return command_cache(args)
         parser.error("Unknown command")
     except KeyboardInterrupt:

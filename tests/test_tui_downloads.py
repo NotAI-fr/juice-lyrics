@@ -10,6 +10,12 @@ from textual.containers import VerticalScroll
 from juice_lyrics.config.settings import Settings
 from juice_lyrics.services import (
     CatalogueFilterMetadata,
+    DownloadExecutionAction,
+    DownloadExecutionPlan,
+    DownloadExecutionResult,
+    DownloadExecutionStatus,
+    DownloadProgress,
+    DownloadQueueItemStatus,
     LibraryStatus,
     QueueFailureStage,
     QueueItem,
@@ -102,8 +108,17 @@ def _snapshot(*jobs: QueueJob) -> QueueSnapshot:
     )
 
 
-def _app(tmp_path: Path, provider) -> JuiceLyricsApp:
+def _app(tmp_path: Path, provider, *, plan=None, execute=None) -> JuiceLyricsApp:
     empty = _snapshot()
+    plan = plan or (lambda settings, reference: DownloadExecutionResult(
+        DownloadExecutionStatus.NOT_ELIGIBLE,
+        "Not eligible",
+    ))
+    execute = execute or (lambda settings, plan, **kwargs: DownloadExecutionResult(
+        DownloadExecutionStatus.FAILED,
+        "Execution provider was not configured",
+        plan=plan,
+    ))
     return JuiceLyricsApp(
         Settings(music_dir=tmp_path / "music"),
         library_status_provider=lambda settings: LibraryStatus(
@@ -111,12 +126,28 @@ def _app(tmp_path: Path, provider) -> JuiceLyricsApp:
         ),
         queue_snapshot_provider=lambda: empty,
         downloads_queue_provider=provider,
+        download_plan_provider=plan,
+        download_execution_provider=execute,
         catalogue_filters_provider=lambda *args, **kwargs: CatalogueFilterMetadata((), ()),
     )
 
 
 def _text(app: JuiceLyricsApp, selector: str) -> str:
     return str(app.query_one(selector).render())
+
+
+def _execution_plan(tmp_path: Path, reference: str, title: str = "Queued Song"):
+    return DownloadExecutionPlan(
+        reference=reference,
+        job_id=reference.rpartition(":")[0],
+        item_index=int(reference.rpartition(":")[2]),
+        song_id="94902",
+        title=title,
+        artist="Juice WRLD",
+        destination=tmp_path / f"{title}.mp3",
+        current_status=DownloadQueueItemStatus.QUEUED,
+        action=DownloadExecutionAction.START,
+    )
 
 
 async def _open_downloads(app: JuiceLyricsApp, pilot):
@@ -441,3 +472,252 @@ def test_downloads_screen_is_read_only_and_uses_no_live_dependencies(tmp_path, m
     assert not list(tmp_path.rglob("*.part"))
     assert not list(tmp_path.rglob("*.lrc"))
     assert not list(tmp_path.rglob("*.mp3"))
+
+
+def test_download_selected_confirmation_is_cancel_first_and_escape_is_safe(tmp_path):
+    queued = _job(1, "queue-record", (_item(tmp_path, "Queued Song", QueueStatus.PENDING),))
+    plan_calls = []
+    execution_calls = []
+
+    def planner(settings, reference):
+        plan_calls.append(reference)
+        plan = _execution_plan(tmp_path, reference)
+        return DownloadExecutionResult(DownloadExecutionStatus.READY, "Ready", plan=plan)
+
+    def execute(*args, **kwargs):
+        execution_calls.append(args)
+        return DownloadExecutionResult(DownloadExecutionStatus.COMPLETED, "finished")
+
+    async def scenario():
+        app = _app(tmp_path, lambda: _snapshot(queued), plan=planner, execute=execute)
+        async with app.run_test() as pilot:
+            downloads = await _open_downloads(app, pilot)
+            await pilot.press("d")
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "DownloadSelectedDialog"
+            body = _text(app, "#download-confirm-body")
+            assert "Song         Queued Song" in body
+            assert str(tmp_path / "Queued Song.mp3") in body
+            assert "write the media file" in body
+            assert "embed lyrics" in body
+            assert "job" not in body.lower()
+            assert "[Cancel]" in _text(app, "#download-confirm-cancel")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app.screen.id == "screen-downloads"
+            assert execution_calls == []
+
+            await pilot.press("d")
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen.id == "screen-downloads"
+            assert execution_calls == []
+            assert len(plan_calls) == 2
+
+    asyncio.run(scenario())
+
+
+def test_confirm_download_once_shows_progress_then_removes_completed_track(tmp_path):
+    started = Event()
+    continue_to_processing = Event()
+    processing = Event()
+    finish = Event()
+    completed = False
+    calls = []
+    queued = _job(1, "queue-record", (_item(tmp_path, "Queued Song", QueueStatus.PENDING),))
+    done = _job(1, "queue-record", (_item(tmp_path, "Queued Song", QueueStatus.COMPLETED),))
+
+    def provider():
+        return _snapshot(done if completed else queued)
+
+    def planner(settings, reference):
+        return DownloadExecutionResult(
+            DownloadExecutionStatus.READY,
+            "Ready",
+            plan=_execution_plan(tmp_path, reference),
+        )
+
+    def execute(settings, plan, *, progress):
+        nonlocal completed
+        calls.append(plan.reference)
+        progress(DownloadProgress(plan.reference, DownloadExecutionStatus.DOWNLOADING, 25, 100, "Downloading…"))
+        started.set()
+        continue_to_processing.wait(timeout=5)
+        progress(DownloadProgress(plan.reference, DownloadExecutionStatus.PROCESSING, 100, 100, "Processing lyrics and library metadata…"))
+        processing.set()
+        finish.wait(timeout=5)
+        completed = True
+        return DownloadExecutionResult(
+            DownloadExecutionStatus.COMPLETED,
+            "Queued Song finished downloading.",
+            plan=plan,
+        )
+
+    async def scenario():
+        app = _app(tmp_path, provider, plan=planner, execute=execute)
+        async with app.run_test() as pilot:
+            downloads = await _open_downloads(app, pilot)
+            await pilot.press("d")
+            await pilot.pause()
+            await pilot.press("y", "y")
+            await asyncio.to_thread(started.wait, 2)
+            await pilot.pause()
+            assert calls == ["queue-record:0"]
+            assert "Downloading" in _text(app, "#download-queue")
+            assert "25%" in _text(app, "#download-details")
+
+            continue_to_processing.set()
+            await asyncio.to_thread(processing.wait, 2)
+            await pilot.pause()
+            assert "Processing" in _text(app, "#download-queue")
+
+            execution_worker = downloads._execution_worker
+            assert execution_worker is not None
+            finish.set()
+            await execution_worker.wait()
+            await pilot.pause()
+            refresh = downloads._refresh_worker
+            if refresh is not None:
+                await refresh.wait()
+                await pilot.pause()
+            assert "No queued or failed songs" in _text(app, "#download-queue")
+            assert "Completed 1" in _text(app, "#downloads-summary")
+            assert "finished downloading" in _text(app, "#downloads-status")
+            assert app.get_screen("dashboard")._invalidated
+            assert app.get_screen("library").snapshot is None
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        continue_to_processing.set()
+        finish.set()
+
+
+def test_download_failure_stays_visible_and_ineligible_states_do_not_start(tmp_path):
+    failed_now = False
+    plan_calls = []
+    execution_calls = []
+    queued = _job(1, "queued", (_item(tmp_path, "Queued Song", QueueStatus.PENDING),))
+    failed = _job(
+        1,
+        "queued",
+        (_item(
+            tmp_path,
+            "Queued Song",
+            QueueStatus.FAILED,
+            failure_stage=QueueFailureStage.VALIDATION,
+            error="checksum mismatch",
+        ),),
+    )
+
+    def provider():
+        return _snapshot(failed if failed_now else queued)
+
+    def planner(settings, reference):
+        plan_calls.append(reference)
+        return DownloadExecutionResult(
+            DownloadExecutionStatus.READY,
+            "Ready",
+            plan=_execution_plan(tmp_path, reference),
+        )
+
+    def execute(settings, plan, *, progress):
+        nonlocal failed_now
+        execution_calls.append(plan.reference)
+        failed_now = True
+        return DownloadExecutionResult(
+            DownloadExecutionStatus.FAILED,
+            "File validation failed",
+            plan=plan,
+            failure_stage="File validation failed",
+            error="checksum mismatch",
+        )
+
+    async def failure_scenario():
+        app = _app(tmp_path, provider, plan=planner, execute=execute)
+        async with app.run_test() as pilot:
+            downloads = await _open_downloads(app, pilot)
+            await pilot.press("d")
+            await pilot.pause()
+            await pilot.press("y")
+            await pilot.pause()
+            if downloads._refresh_worker is not None:
+                await downloads._refresh_worker.wait()
+                await pilot.pause()
+            assert "Queued Song" in _text(app, "#download-queue")
+            assert "File validation failed: checksum mismatch" in _text(app, "#downloads-status")
+            await pilot.press("d")
+            assert "future Retry action" in _text(app, "#downloads-status")
+            assert len(plan_calls) == 1
+            assert execution_calls == ["queued:0"]
+
+    async def active_scenario():
+        active = _job(1, "active", (_item(tmp_path, "Moving", QueueStatus.DOWNLOADING),))
+        app = _app(tmp_path, lambda: _snapshot(active), plan=planner, execute=execute)
+        async with app.run_test() as pilot:
+            await _open_downloads(app, pilot)
+            await pilot.press("d")
+            assert "already downloading or processing" in _text(app, "#downloads-status")
+
+    asyncio.run(failure_scenario())
+    asyncio.run(active_scenario())
+
+
+def test_confirmed_download_survives_screen_switch_and_reloads_authoritative_queue(tmp_path):
+    started = Event()
+    release = Event()
+    completed = False
+    queued = _job(1, "queue-record", (_item(tmp_path, "Queued Song", QueueStatus.PENDING),))
+    done = _job(1, "queue-record", (_item(tmp_path, "Queued Song", QueueStatus.COMPLETED),))
+
+    def provider():
+        return _snapshot(done if completed else queued)
+
+    def planner(settings, reference):
+        return DownloadExecutionResult(
+            DownloadExecutionStatus.READY,
+            "Ready",
+            plan=_execution_plan(tmp_path, reference),
+        )
+
+    def execute(settings, plan, *, progress):
+        nonlocal completed
+        started.set()
+        release.wait(timeout=5)
+        completed = True
+        return DownloadExecutionResult(
+            DownloadExecutionStatus.COMPLETED,
+            "Queued Song finished downloading.",
+            plan=plan,
+        )
+
+    async def scenario():
+        app = _app(tmp_path, provider, plan=planner, execute=execute)
+        async with app.run_test() as pilot:
+            downloads = await _open_downloads(app, pilot)
+            await pilot.press("d")
+            await pilot.pause()
+            await pilot.press("y")
+            await asyncio.to_thread(started.wait, 2)
+            execution_worker = downloads._execution_worker
+            assert execution_worker is not None
+            await pilot.press("2")
+            assert app.screen.id == "screen-browse"
+            release.set()
+            await execution_worker.wait()
+            await pilot.pause()
+            assert app.screen.id == "screen-browse"
+            await pilot.press("4")
+            await pilot.pause()
+            refresh = downloads._refresh_worker
+            if refresh is not None:
+                await refresh.wait()
+                await pilot.pause()
+            assert "Completed 1" in _text(app, "#downloads-summary")
+            assert "No queued or failed songs" in _text(app, "#download-queue")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()

@@ -9,6 +9,7 @@ from juice_lyrics.acquisition import runner
 from juice_lyrics.acquisition.integration import integrate_downloaded_mp3
 from juice_lyrics.acquisition.jobs import JobStore
 from juice_lyrics.acquisition.models import AcquisitionItem, AcquisitionResult, AcquisitionState
+from juice_lyrics.config.settings import Settings
 
 
 def _item(path: Path) -> AcquisitionItem:
@@ -81,6 +82,41 @@ def test_success_backs_up_pristine_file_then_retains_verified_modification(
     assert result.backup_path.read_bytes() == pristine
     assert path.read_bytes() == b"verified metadata audio"
     assert (root / "manifest.json").is_file()
+
+
+def test_acquisition_uses_configured_central_lrc_directory(tmp_path, monkeypatch):
+    import juice_lyrics.acquisition.integration as integration
+
+    _isolated_backup(monkeypatch, tmp_path)
+    music = tmp_path / "Music" / "Juice WRLD" / "Unreleased"
+    configured_lyrics = tmp_path / "Music" / "lyrics"
+    old_derived_lyrics = tmp_path / "Music" / "Juice WRLD" / "lyrics"
+    path = music / "Rental.mp3"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"pristine")
+
+    monkeypatch.setattr(integration, "embed_lyrics", lambda *args: "SYLT")
+    monkeypatch.setattr(integration, "verify_file", lambda target: (True, "verified"))
+
+    def write_lrc(target, synced, song, output):
+        output.mkdir(parents=True, exist_ok=True)
+        result = output / f"{target.stem}.lrc"
+        result.write_text("[00:01.00] line\n", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(integration, "write_lrc", write_lrc)
+
+    result = integrate_downloaded_mp3(
+        _item(path),
+        song_fetcher=lambda _: _song(synced=True, plain=True),
+        settings=Settings(music_dir=music, lyrics_dir=configured_lyrics),
+        state={},
+        notify_rmpc=False,
+    )
+
+    assert result.lrc_path == configured_lyrics / "Rental.lrc"
+    assert result.lrc_path.is_file()
+    assert not old_derived_lyrics.exists()
 
 
 @pytest.mark.parametrize("failure_kind", ["verification_failure", "embed_exception", "verify_exception"])

@@ -16,9 +16,12 @@ from ..services.catalogue import (
     search_catalogue_page,
 )
 from ..services.download_queue import (
+    DownloadExecutionResult,
     DownloadQueueSnapshot,
     QueueAddResult,
     add_to_download_queue,
+    execute_selected_download,
+    plan_download_execution,
     plan_queue_additions,
     project_download_queue,
 )
@@ -37,6 +40,8 @@ QueueSnapshotProvider = Callable[[], QueueSnapshot]
 DownloadQueueProvider = Callable[[], DownloadQueueSnapshot]
 QueuePlanProvider = Callable[..., QueueAddResult]
 QueueAddProvider = Callable[..., QueueAddResult]
+DownloadPlanProvider = Callable[..., DownloadExecutionResult]
+DownloadExecutionProvider = Callable[..., DownloadExecutionResult]
 CatalogueSearchProvider = Callable[..., CataloguePage]
 CatalogueDetailsProvider = Callable[..., SongDetails | None]
 CatalogueFiltersProvider = Callable[..., CatalogueFilterMetadata]
@@ -314,6 +319,50 @@ class JuiceLyricsApp(App[None]):
     }
 
     #queue-confirm-actions QueueDialogAction:hover {
+        background: transparent;
+        text-style: bold;
+    }
+
+    DownloadSelectedDialog {
+        align: center middle;
+        background: transparent;
+    }
+
+    #download-confirm-dialog {
+        width: 76;
+        max-width: 92%;
+        height: auto;
+        padding: 1 2;
+        border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #download-confirm-title {
+        height: 2;
+        text-style: bold;
+        color: ansi_blue;
+    }
+
+    #download-confirm-body {
+        height: auto;
+    }
+
+    #download-confirm-actions {
+        height: 2;
+        layout: grid;
+        grid-size: 2 1;
+        grid-columns: 1fr 1fr;
+    }
+
+    #download-confirm-actions DownloadDialogAction {
+        background: transparent;
+        border: none;
+        color: ansi_blue;
+        text-style: bold;
+        text-align: center;
+    }
+
+    #download-confirm-actions DownloadDialogAction:hover {
         background: transparent;
         text-style: bold;
     }
@@ -662,6 +711,8 @@ class JuiceLyricsApp(App[None]):
         downloads_queue_provider: DownloadQueueProvider | None = None,
         queue_plan_provider: QueuePlanProvider = plan_queue_additions,
         queue_add_provider: QueueAddProvider = add_to_download_queue,
+        download_plan_provider: DownloadPlanProvider = plan_download_execution,
+        download_execution_provider: DownloadExecutionProvider = execute_selected_download,
         library_snapshot_provider: LibrarySnapshotProvider = get_library_snapshot,
         library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
         settings_snapshot_provider: SettingsSnapshotProvider = get_settings_snapshot,
@@ -684,6 +735,8 @@ class JuiceLyricsApp(App[None]):
         self.downloads_queue_provider = normalized_downloads_provider
         self.queue_plan_provider = queue_plan_provider
         self.queue_add_provider = queue_add_provider
+        self.download_plan_provider = download_plan_provider
+        self.download_execution_provider = download_execution_provider
         self.library_snapshot_provider = library_snapshot_provider
         self.library_preview_provider = library_preview_provider
         self.settings_snapshot_provider = settings_snapshot_provider
@@ -717,7 +770,12 @@ class JuiceLyricsApp(App[None]):
             "library",
         )
         self.install_screen(
-            DownloadsScreen(queue_provider=self.downloads_queue_provider),
+            DownloadsScreen(
+                self.settings,
+                queue_provider=self.downloads_queue_provider,
+                plan_provider=self.download_plan_provider,
+                execution_provider=self.download_execution_provider,
+            ),
             "downloads",
         )
         self.install_screen(
@@ -740,6 +798,13 @@ class JuiceLyricsApp(App[None]):
         if callable(invalidate):
             invalidate()
 
+    def invalidate_library_views(self) -> None:
+        for name in ("dashboard", "library"):
+            screen = self.get_screen(name)
+            invalidate = getattr(screen, "invalidate_snapshot", None)
+            if callable(invalidate):
+                invalidate()
+
     def action_refresh_active(self) -> None:
         refresh = getattr(self.screen, "refresh_snapshot", None)
         if callable(refresh):
@@ -759,7 +824,8 @@ class JuiceLyricsApp(App[None]):
         elif section == "downloads":
             message = (
                 "↑/↓ or j/k select songs  •  Home/End first/last song  •  "
-                "PgUp/PgDn move queue  •  Enter track details  •  Esc queue  •  r refresh"
+                "PgUp/PgDn move queue  •  Enter track details  •  d Download selected  •  "
+                "Esc queue  •  r refresh"
             )
         elif section == "library":
             message = (

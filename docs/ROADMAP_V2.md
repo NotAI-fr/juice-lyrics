@@ -178,10 +178,10 @@ Features:
 - Completed items.
 - Retry.
 
-Status: Track-oriented queue projection and Browse Add to queue are complete.
-Durable jobs remain internal, completed entries are hidden from the active
-queue, and failed entries remain visible. Download selected, Download all,
-Remove, Clear, Retry, and Cancel remain planned.
+Status: Track-oriented queue projection, Browse Add to queue, and explicitly
+confirmed Download selected are complete. Durable jobs remain internal,
+completed entries are hidden from the active queue, and failed entries remain
+visible. Download all, Remove, Clear, Retry, and Cancel remain planned.
 
 ---
 
@@ -203,7 +203,7 @@ capability limitations. Editing remains planned.
 
 Recommended implementation order after the current checkpoint:
 
-1. Downloads Download selected / Download all execution
+1. Downloads Download all execution
 2. Downloads Remove / Clear / Retry actions
 3. Library sync actions
 4. `999` command and naming migration

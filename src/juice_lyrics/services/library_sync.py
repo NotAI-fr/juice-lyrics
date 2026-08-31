@@ -10,7 +10,7 @@ from typing import Any
 
 from ..api.client import search_song_names
 from ..backup.manager import backup_file, make_backup_root, restore_file, write_manifest
-from ..config.settings import DEFAULT_RMPC_CONFIG, DEFAULT_RMPC_LYRICS_DIR, STATE_FILE, Settings
+from ..config.settings import DEFAULT_RMPC_CONFIG, STATE_FILE, Settings
 from ..library.matching import choose_candidate, search_title_for
 from ..library.scanner import find_mp3s
 from ..lyrics.engine import embed_lyrics, parse_synced_lyrics, verify_file, write_lrc
@@ -79,7 +79,11 @@ class LibrarySyncOptions:
             dry_run=dry_run,
             refresh=refresh,
             rmpc_enabled=rmpc_enabled,
-            lyrics_dir=Path(lyrics_dir) if lyrics_dir is not None else None,
+            lyrics_dir=(
+                Path(lyrics_dir)
+                if lyrics_dir is not None
+                else (Path(settings.lyrics_dir) if rmpc_enabled else None)
+            ),
             rmpc_config_path=Path(rmpc_config_path) if rmpc_config_path is not None else None,
             duration_tolerance=settings.duration_tolerance,
             state_file=Path(state_file),
@@ -233,7 +237,12 @@ def _state_is_current(
         return False
     if options.rmpc_enabled and entry.get("lyric_type") == SyncLyricType.SYNCED.value:
         lrc = Path(str(entry.get("lrc") or ""))
-        if not lrc.is_file():
+        expected_lrc = (
+            options.lyrics_dir / f"{path.stem}.lrc"
+            if options.lyrics_dir is not None
+            else None
+        )
+        if expected_lrc is None or lrc != expected_lrc or not expected_lrc.is_file():
             return False
     return True
 
@@ -301,8 +310,6 @@ def get_library_sync_preview(
 
     if rmpc_enabled is None:
         rmpc_enabled = shutil.which("rmpc") is not None and DEFAULT_RMPC_CONFIG.exists()
-    if rmpc_enabled and lyrics_dir is None:
-        lyrics_dir = DEFAULT_RMPC_LYRICS_DIR
     options = LibrarySyncOptions.from_settings(
         settings,
         dry_run=True,
@@ -349,19 +356,22 @@ def execute_library_sync(
             plan, tuple(initial_results), 0, plan.analysis_failures, 0, 0, 0, None
         )
 
-    if options.rmpc_enabled and options.lyrics_dir is not None:
-        if options.rmpc_config_path is not None:
-            text = options.rmpc_config_path.read_text(encoding="utf-8")
-            if str(options.lyrics_dir) not in text:
-                dependencies.rmpc_configurer(options.rmpc_config_path, options.lyrics_dir)
-        options.lyrics_dir.mkdir(parents=True, exist_ok=True)
-
     ready = [track for track in plan.tracks if track.outcome is MatchOutcome.MATCHED]
     if not ready:
         dependencies.state_saver(plan.state)
         return LibrarySyncResult(
             plan, tuple(initial_results), 0, plan.analysis_failures, 0, 0, 0, None
         )
+
+    if (
+        options.rmpc_enabled
+        and options.lyrics_dir is not None
+        and any(track.lyric_type is SyncLyricType.SYNCED for track in ready)
+        and options.rmpc_config_path is not None
+    ):
+        text = options.rmpc_config_path.read_text(encoding="utf-8")
+        if str(options.lyrics_dir) not in text:
+            dependencies.rmpc_configurer(options.rmpc_config_path, options.lyrics_dir)
 
     backup_root = dependencies.backup_root_factory()
     manifest: list[dict[str, Any]] = []

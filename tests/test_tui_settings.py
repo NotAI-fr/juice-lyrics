@@ -34,6 +34,7 @@ def _snapshot(
     music = tmp_path / f"music{suffix}"
     values = (
         SettingValue("music_dir", "Music directory", music, Path("/default/music"), SettingsSource.CONFIG),
+        SettingValue("lyrics_dir", "External LRC directory", tmp_path / "lyrics", Path("/default/lyrics"), SettingsSource.CONFIG),
         SettingValue("api_base", "API base URL", "https://api.example", "https://default.example", SettingsSource.DEFAULT),
         SettingValue("timeout", "Request timeout", 20, 20, SettingsSource.DEFAULT),
         SettingValue("delay", "Request delay", 0.15, 0.15, SettingsSource.CONFIG),
@@ -42,7 +43,7 @@ def _snapshot(
     )
     paths = (
         SettingsPath("music", "Music library", music, True),
-        SettingsPath("lyrics", "rmpc lyrics", tmp_path / "lyrics", False),
+        SettingsPath("lyrics", "External synchronized LRC files", tmp_path / "lyrics", False),
         SettingsPath("cache", "API cache", tmp_path / "cache", True),
         SettingsPath("state", "Library state", tmp_path / "data" / "state.json", False),
         SettingsPath("backups", "Backups", tmp_path / "data" / "backups", False),
@@ -73,7 +74,7 @@ def _snapshot(
         limitations=(
             "Local library scanning currently supports MP3 files only.",
             "Native FLAC support is planned but not implemented.",
-            "Browse and Downloads remain read-only in the TUI.",
+            "Settings inspection remains read-only in the TUI.",
             "Library sync execution remains CLI-only.",
             "Configuration changes remain CLI-only.",
         ),
@@ -117,11 +118,12 @@ def test_settings_replaces_placeholder_and_renders_configuration_paths_and_limit
             assert "config.toml" in configuration
             assert str(tmp_path / "config.toml") in _text(app, "#settings-detail")
             assert "Music directory" in configuration and "[Config file]" in configuration
+            assert "External LRC directory" in configuration and "[Config file]" in configuration
             assert "API base URL" in configuration and "[Default]" in configuration
             assert "Duration tolerance" in configuration and "[Runtime override]" in configuration
             paths = _text(app, "#settings-paths")
             assert "Music library" in paths and "[Exists]" in paths
-            assert "rmpc lyrics" in paths and "[Missing]" in paths
+            assert "External synchronized LRC files" in paths and "[Missing]" in paths
             assert "Detected and configured" in _text(app, "#settings-integrations")
             capabilities = _text(app, "#settings-capabilities")
             assert "MP3 files only" in capabilities and "FLAC support is planned" in capabilities

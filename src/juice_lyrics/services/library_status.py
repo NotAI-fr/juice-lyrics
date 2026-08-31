@@ -218,16 +218,27 @@ def get_library_snapshot(
                 matched_title = str(candidate_title).strip()
         matched = bool(matched_title or (entry is not None and entry.get("song_id") is not None))
 
-        lrc_path = None
-        if entry is not None and entry.get("lrc"):
-            lrc_path = Path(str(entry["lrc"]))
+        recorded_lrc = (
+            Path(str(entry["lrc"]))
+            if entry is not None and entry.get("lrc")
+            else None
+        )
+        lrc_path = (
+            Path(settings.lyrics_dir) / f"{path.stem}.lrc"
+            if lyric_status is LibraryLyricStatus.SYNCED
+            else None
+        )
         if lrc_path is None:
             lrc_status = LibraryLrcStatus.NONE
         elif lrc_path.is_file():
             lrc_status = LibraryLrcStatus.PRESENT
         else:
             lrc_status = LibraryLrcStatus.MISSING
-            track_warnings.append("Recorded external LRC file is missing.")
+            track_warnings.append("External LRC file is missing from the configured directory.")
+        if recorded_lrc is not None and lrc_path is not None and recorded_lrc != lrc_path:
+            track_warnings.append(
+                f"Library state records an LRC outside the configured directory: {recorded_lrc}"
+            )
 
         try:
             duration = duration_reader(path)
@@ -288,7 +299,11 @@ def get_library_status(
         entry = state_files.get(relative)
         if not isinstance(entry, dict) or entry.get("sha256") != sha256_file(path):
             new_or_changed += 1
-        if isinstance(entry, dict) and entry.get("lrc") and Path(entry["lrc"]).is_file():
+        if (
+            valid
+            and message.startswith("SYLT")
+            and (Path(settings.lyrics_dir) / f"{path.stem}.lrc").is_file()
+        ):
             lrc += 1
 
     backup_path = Path(backup_dir)

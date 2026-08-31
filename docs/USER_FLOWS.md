@@ -267,8 +267,8 @@ Planned follow-up interactions include Space to toggle multiple selections,
 `a` to add selected songs, and a bounded explicitly confirmed `A` action. The
 application will not bulk-fetch an unbounded catalogue merely to fill a queue.
 
-Future queue actions are Download selected, Download all, Remove, Clear queue,
-Retry failed, and Cancel active download.
+Download selected is implemented for one queued song. Download all, Remove,
+Clear queue, Retry failed, and Cancel active download remain future actions.
 
 v2:
 
@@ -295,7 +295,7 @@ Destination:
 
 ~/Music/Juice WRLD/Unreleased
 
-[Enter] Confirm
+[Download] Confirm
 [Esc] Cancel
 
 
@@ -320,6 +320,11 @@ After completion:
 ✓ Added to library
 ✓ Lyrics embedded
 ✓ rmpc lyrics ready
+
+The confirmation defaults to Cancel and explains that the operation may write
+the media file, embed lyrics, create an LRC file, update library state, and
+notify rmpc. Failed downloads remain in the queue with a readable failure;
+completed downloads leave the active queue but remain counted and durable.
 
 
 ---
@@ -500,14 +505,15 @@ Failed
 
 ---
 
-Actions:
+Current actions:
 
 
-r Retry
-
-d Remove
+d Download selected queued song
 
 enter Details
+
+
+Planned actions: Download all, Remove, Clear, Retry, and Cancel.
 
 
 ---

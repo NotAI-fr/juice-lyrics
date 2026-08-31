@@ -11,6 +11,7 @@ DEFAULT_TIMEOUT = 20
 DEFAULT_DELAY = 0.15
 DEFAULT_DURATION_TOLERANCE = 3.0
 DEFAULT_CACHE_TTL_HOURS = 24
+DEFAULT_LYRICS_DIR = Path.home() / "Music" / "lyrics"
 
 
 def xdg_dir(name: str, fallback: Path) -> Path:
@@ -26,12 +27,12 @@ DATA_DIR = DATA_HOME / APP_NAME
 BACKUP_DIR = DATA_DIR / "backups"
 STATE_FILE = DATA_DIR / "state.json"
 ACQUISITION_JOBS_FILE = DATA_DIR / "acquisition_jobs.json"
-DEFAULT_RMPC_LYRICS_DIR = DEFAULT_MUSIC_DIR.parent / "lyrics"
 DEFAULT_RMPC_CONFIG = CONFIG_HOME / "rmpc" / "config.ron"
 
 @dataclass
 class Settings:
     music_dir: Path = DEFAULT_MUSIC_DIR
+    lyrics_dir: Path = DEFAULT_LYRICS_DIR
     api_base: str = DEFAULT_API_BASE
     timeout: int = DEFAULT_TIMEOUT
     delay: float = DEFAULT_DELAY

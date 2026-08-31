@@ -6,6 +6,7 @@ from typing import Any
 
 from textual import work
 from textual.containers import Container, Grid
+from textual.events import ScreenResume
 from textual.widget import Widget
 from textual.widgets import Static
 from textual.worker import Worker, WorkerState
@@ -37,6 +38,7 @@ class DashboardScreen(HubScreen):
         self._library_status_provider = library_status_provider
         self._queue_snapshot_provider = queue_snapshot_provider
         self._refresh_worker: Worker[DashboardSnapshot] | None = None
+        self._invalidated = False
 
     def compose_content(self) -> Iterable[Widget]:
         with Grid(id="dashboard-panels"):
@@ -52,12 +54,20 @@ class DashboardScreen(HubScreen):
     def on_mount(self) -> None:
         self.refresh_snapshot()
 
+    def on_screen_resume(self, event: ScreenResume) -> None:
+        if self._invalidated:
+            self.refresh_snapshot()
+
     def refresh_snapshot(self) -> None:
+        self._invalidated = False
         self.query_one("#library-data", Static).update("Loading library status…")
         self.query_one("#queue-data", Static).update("Loading queue status…")
         self.query_one("#library-error", Static).update("")
         self.query_one("#queue-error", Static).update("")
         self._refresh_worker = self._load_snapshot()
+
+    def invalidate_snapshot(self) -> None:
+        self._invalidated = True
 
     @work(
         thread=True,

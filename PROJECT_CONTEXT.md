@@ -19,7 +19,7 @@ Default local library:
 
 Default rmpc lyric directory:
 
-`~/Music/Juice WRLD/lyrics`
+`~/Music/lyrics`
 
 These paths are defaults only and must remain configurable and portable.
 
@@ -53,7 +53,11 @@ Keep MPD + rmpc as the primary playback setup.
 
 Default lyrics directory:
 
-`~/Music/Juice WRLD/lyrics`
+`~/Music/lyrics`
+
+This is the application `lyrics_dir` setting and is intentionally shared across
+artists. Embedded lyrics remain in audio files; only synchronized external LRC
+files use this directory.
 
 Preserve unrelated rmpc configuration when modifying configuration files.
 
@@ -281,21 +285,22 @@ The latest development checkpoint reports:
 * Settings / Path CLI compatibility verified
 * responsive terminal-native Textual shell with `ansi_color=True`
 * all five main TUI sections are functional; Browse can explicitly add one selected song to the queue
+* Downloads can explicitly run one selected queued song after a cancel-first confirmation
 * canonical Category and Era selectors, filter-only searches, and correct case-sensitive API cache behaviour
 * server-side catalogue pagination with scrollable 50-result pages and stable ID-based song details
 * flat track-queue summaries, song navigation, details, structured failure stages, and retry eligibility
 * Library provides local track browsing, local filters, metadata/lyric/LRC/state details, and explicit read-only sync previews
 * Settings reports effective configuration, provenance where reliable, application paths, and rmpc integration without creating or changing files
-* TUI download execution, remove, clear, retry, cancel, configuration editing, and sync execution are not implemented
-* legacy CLI remains the way to download, delete jobs, and sync
-* 220 automated tests passing across the suite
+* TUI Download all, remove, clear, retry, cancel, configuration editing, and sync execution are not implemented
+* legacy CLI remains the way to run whole acquisition records, retry, delete jobs, and sync
+* 235 automated tests passing across the suite
 
 The repository for this checkpoint is `/home/nobloat/Downloads/juice-lyrics-codex`
 on branch `v2-redesign`. The planned product and executable name remains `999`,
 but no rename or migration has been performed. Native FLAC support remains
 planned.
 
-Recommended next milestones are: Downloads Download selected / Download all,
+Recommended next milestones are: Downloads Download all,
 Remove / Clear / Retry actions, Library sync actions, the `999`
 naming migration, native FLAC support, then beta polish and release testing.
 

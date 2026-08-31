@@ -400,6 +400,36 @@ def test_run_job_contains_failure_and_continues(tmp_path, monkeypatch):
     assert job.items[1].state is AcquisitionState.COMPLETE
 
 
+def test_run_job_can_execute_only_one_selected_item(tmp_path, monkeypatch):
+    store = JobStore(tmp_path / "jobs.json")
+    items = [_job_item(tmp_path, "first.mp3"), _job_item(tmp_path, "selected.mp3")]
+    items[0].identifier = "1"
+    items[1].identifier = "2"
+    job = store.create(items)
+    calls = []
+
+    monkeypatch.setattr("juice_lyrics.acquisition.runner.find_duplicate", lambda item: None)
+
+    def fake_download(item, policy, *, progress=None):
+        calls.append(item.identifier)
+        return AcquisitionResult(
+            item=item,
+            state=AcquisitionState.COMPLETE,
+            destination=item.destination,
+            bytes_written=10,
+        )
+
+    monkeypatch.setattr("juice_lyrics.acquisition.runner.download_to", fake_download)
+
+    summary = run_job(job, store, item_indexes={1})
+
+    assert calls == ["2"]
+    assert job.items[0].state is AcquisitionState.PENDING
+    assert job.items[1].state is AcquisitionState.COMPLETE
+    assert summary.completed == 1
+    assert summary.pending == 1
+
+
 
 def test_cli_acquire_parser_exposes_user_workflow():
     from juice_lyrics.cli import build_parser
@@ -1073,7 +1103,7 @@ def test_integrate_acquired_mp3_updates_state_json(tmp_path, monkeypatch):
     mp3.write_bytes(b"dummy mp3 payload")
     item = AcquisitionItem(identifier="101", title="Rental", url="https://example.invalid/rental.mp3", destination=mp3)
 
-    settings = Settings(music_dir=tmp_path)
+    settings = Settings(music_dir=tmp_path, lyrics_dir=tmp_path / "lyrics")
     result = integrate_downloaded_mp3(
         item,
         song_fetcher=lambda song_id: {
@@ -1113,7 +1143,7 @@ def test_later_sync_recognizes_acquired_file_as_already_processed(tmp_path, monk
     mp3.write_bytes(b"dummy mp3 payload")
     item = AcquisitionItem(identifier="101", title="Rental", url="https://example.invalid/rental.mp3", destination=mp3)
 
-    settings = Settings(music_dir=tmp_path)
+    settings = Settings(music_dir=tmp_path, lyrics_dir=tmp_path / "lyrics")
     integrate_downloaded_mp3(
         item,
         song_fetcher=lambda song_id: {
@@ -1238,8 +1268,5 @@ def test_state_synchronization_failure_marks_acquisition_item_failed(tmp_path, m
     assert loaded is not None
     assert loaded.items[0].state is AcquisitionState.FAILED
     assert "Failed to synchronize library state" in (loaded.items[0].error or "")
-
-
-
 
 

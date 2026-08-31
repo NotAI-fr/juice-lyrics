@@ -47,6 +47,8 @@ def integrate_downloaded_mp3(
     """
 
     path = item.destination
+    if lyrics_dir is None and settings is not None:
+        lyrics_dir = getattr(settings, "lyrics_dir", None)
     if path.suffix.lower() != ".mp3":
         return IntegrationResult(path=path, message="not an MP3; lyrics integration skipped")
 

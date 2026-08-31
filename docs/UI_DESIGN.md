@@ -352,7 +352,7 @@ Music Directory
 
 Lyrics Directory
 
-~/Music/Juice WRLD/lyrics
+~/Music/lyrics
 
 Player
 

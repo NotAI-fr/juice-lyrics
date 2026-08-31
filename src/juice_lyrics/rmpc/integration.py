@@ -2,8 +2,6 @@ from __future__ import annotations
 import re, shutil, subprocess
 from datetime import datetime
 from pathlib import Path
-from ..config.settings import DEFAULT_RMPC_CONFIG, DEFAULT_RMPC_LYRICS_DIR
-from ..lyrics.engine import write_lrc
 
 def rmpc_running()->bool:
     try: return subprocess.run(["rmpc","remote","query","active-tab"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=3,check=False).returncode==0

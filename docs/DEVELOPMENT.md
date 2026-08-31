@@ -61,8 +61,8 @@ juice-lyrics tui
 ```
 
 The experimental shell provides functional Dashboard, Browse, Library,
-Downloads, and Settings screens. Inspection remains read-only; Browse has one
-explicit Add to queue action. Press `/` to focus catalogue search and Enter to
+Downloads, and Settings screens. Browse has one explicit Add to queue action,
+and Downloads can explicitly run one selected queued song. Press `/` to focus catalogue search and Enter to
 submit. Category and Era are keyboard-usable selectors populated from API
 metadata; choose All for no filter. Filter-only searches are supported. Results
 use the API's 50-song pages and show a permanently visible page, range, and
@@ -83,9 +83,11 @@ In Downloads, use arrows or `j`/`k` to select an individual queued song,
 Home/End for the first or last song, and PageUp/PageDown for longer queues.
 Enter opens track details and Escape returns to the queue. Press `r` to refresh.
 Completed backend records are counted but hidden from the active queue; failed
-songs remain visible. Download selected, Download all, Remove, Clear, Retry, and
-Cancel are intentionally unavailable in this milestone. Existing queued songs
-must still be run through the CLI.
+songs remain visible. Press `d` to review a cancel-first confirmation for the
+selected queued song. Confirming runs the existing download, validation, lyric,
+LRC, state, backup, and rmpc pipeline; no download starts before confirmation.
+Download all, Remove, Clear, Retry, and Cancel remain unavailable. The CLI is
+still required for those existing acquisition-management workflows.
 
 In Library, arrows or `j`/`k` select local MP3 tracks, Home/End select the first
 or last track, and PageUp/PageDown move through longer lists. Press `/` for a
@@ -102,10 +104,20 @@ scanner is currently MP3-focused; native FLAC support remains planned.
 In Settings, arrows or `j`/`k` inspect effective configuration values, paths,
 and environment details; Home/End and PageUp/PageDown navigate longer content.
 The view reports the active config file, reliable default/config/runtime source
-labels, path existence, and whether rmpc is detected and configured. Press `r`
+labels, the effective central `lyrics_dir` (default `~/Music/lyrics`), path
+existence, and whether rmpc points at that directory. Press `r`
 to refresh. The screen is strictly read-only: configuration changes and setup
 remain CLI-only, no missing XDG paths are created, the scanner remains MP3-only,
 and native FLAC support remains planned.
+
+External synchronized LRC files are shared across artists in `lyrics_dir`;
+embedded synchronized/plain lyrics remain in the MP3. To migrate files created
+under the previous default without overwriting existing names:
+
+```bash
+mkdir -p ~/Music/lyrics
+find ~/Music/Juice\ WRLD/lyrics -maxdepth 1 -type f -iname '*.lrc' -exec mv -n -t ~/Music/lyrics -- {} +
+```
 
 ## Source of truth and Git workflow
 

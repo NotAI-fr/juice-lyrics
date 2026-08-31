@@ -1,7 +1,14 @@
 from pathlib import Path
 
 from juice_lyrics.acquisition.jobs import JobStore
-from juice_lyrics.acquisition.models import AcquisitionItem, AcquisitionState
+from juice_lyrics.acquisition.integration import IntegrationResult
+from juice_lyrics.acquisition.models import (
+    AcquisitionFailureStage,
+    AcquisitionItem,
+    AcquisitionResult,
+    AcquisitionState,
+)
+from juice_lyrics.acquisition.runner import AcquisitionRunSummary
 from juice_lyrics.acquisition.resolver import ResourceResolutionError
 from juice_lyrics.config.settings import Settings
 from juice_lyrics.services.acquisition_queue import (
@@ -13,10 +20,14 @@ from juice_lyrics.services.acquisition_queue import (
 )
 from juice_lyrics.services.catalogue import CatalogueSearchResult, LyricAvailability
 from juice_lyrics.services.download_queue import (
+    DownloadExecutionAction,
+    DownloadExecutionStatus,
     DownloadQueueItemStatus,
     QueueAddStatus,
     add_to_download_queue,
+    execute_selected_download,
     get_download_queue_snapshot,
+    plan_download_execution,
     plan_queue_additions,
     project_download_queue,
 )
@@ -174,3 +185,172 @@ def test_queue_plan_reports_unavailable_queued_downloaded_and_store_failures(tmp
     )
     assert failed.status is QueueAddStatus.SAVE_FAILED
     assert "permission denied" in failed.message
+
+
+def _stored_downloads(tmp_path: Path):
+    jobs_path = tmp_path / "jobs.json"
+    items = (
+        AcquisitionItem(
+            "101",
+            "First Song",
+            "https://example.test/first.mp3",
+            tmp_path / "music" / "First Song.mp3",
+            metadata={"artist": "Juice WRLD"},
+        ),
+        AcquisitionItem(
+            "202",
+            "Selected Song",
+            "https://example.test/selected.mp3",
+            tmp_path / "music" / "Selected Song.mp3",
+            expected_size=100,
+            metadata={"artist": "Juice WRLD"},
+        ),
+    )
+    job = JobStore(jobs_path).create(items, job_id="durable-job")
+    return jobs_path, job
+
+
+def test_download_execution_plan_maps_exact_item_and_detects_resume(tmp_path):
+    jobs_path, job = _stored_downloads(tmp_path)
+    settings = Settings(music_dir=tmp_path / "music")
+
+    ready = plan_download_execution(settings, f"{job.job_id}:1", jobs_path=jobs_path)
+
+    assert ready.status is DownloadExecutionStatus.READY
+    assert ready.plan is not None
+    assert ready.plan.item_index == 1
+    assert ready.plan.song_id == "202"
+    assert ready.plan.destination == tmp_path / "music" / "Selected Song.mp3"
+    assert ready.plan.action is DownloadExecutionAction.START
+
+    ready.plan.destination.parent.mkdir(parents=True)
+    ready.plan.destination.with_name("Selected Song.mp3.part").write_bytes(b"partial")
+    resumed = plan_download_execution(settings, ready.plan.reference, jobs_path=jobs_path)
+    assert resumed.plan is not None
+    assert resumed.plan.action is DownloadExecutionAction.RESUME
+
+    missing = plan_download_execution(settings, "durable-job:99", jobs_path=jobs_path)
+    assert missing.status is DownloadExecutionStatus.NOT_FOUND
+
+
+def test_execute_selected_download_delegates_exactly_one_item_and_reports_progress(tmp_path):
+    jobs_path, job = _stored_downloads(tmp_path)
+    settings = Settings(music_dir=tmp_path / "music")
+    planned = plan_download_execution(settings, f"{job.job_id}:1", jobs_path=jobs_path)
+    assert planned.plan is not None
+    progress = []
+    integrated = []
+
+    def integration(item, **kwargs):
+        integrated.append(item.identifier)
+        return IntegrationResult(item.destination, message="processed")
+
+    def runner(job, store, *, progress, postprocess, item_indexes, **kwargs):
+        assert item_indexes == {1}
+        assert job.items[0].state is AcquisitionState.PENDING
+        assert job.items[1].state is AcquisitionState.CHECKING_EXISTING
+        progress(1, 2, 50, 100)
+        result = AcquisitionResult(
+            job.items[1].item,
+            AcquisitionState.COMPLETE,
+            destination=job.items[1].item.destination,
+            bytes_written=100,
+        )
+        postprocess(result)
+        job.record_result(1, result)
+        store.save(job)
+        return AcquisitionRunSummary(job.job_id, 1, 0, 0, 1)
+
+    result = execute_selected_download(
+        settings,
+        planned.plan,
+        jobs_path=jobs_path,
+        runner=runner,
+        integration=integration,
+        progress=progress.append,
+    )
+
+    assert result.status is DownloadExecutionStatus.COMPLETED
+    assert integrated == ["202"]
+    assert [event.status for event in progress] == [
+        DownloadExecutionStatus.DOWNLOADING,
+        DownloadExecutionStatus.DOWNLOADING,
+        DownloadExecutionStatus.PROCESSING,
+    ]
+    assert progress[1].percent == 50
+    authoritative = JobStore(jobs_path).get(job.job_id)
+    assert authoritative is not None
+    assert authoritative.items[0].state is AcquisitionState.PENDING
+    assert authoritative.items[1].state is AcquisitionState.COMPLETE
+
+
+def test_execute_selected_download_preserves_structured_failure_and_rejects_second_start(tmp_path):
+    jobs_path, job = _stored_downloads(tmp_path)
+    settings = Settings(music_dir=tmp_path / "music")
+    planned = plan_download_execution(settings, f"{job.job_id}:1", jobs_path=jobs_path)
+    assert planned.plan is not None
+    calls = 0
+
+    def failing_runner(job, store, *, item_indexes, **kwargs):
+        nonlocal calls
+        calls += 1
+        entry = job.items[1]
+        entry.state = AcquisitionState.FAILED
+        entry.failure_stage = AcquisitionFailureStage.VALIDATION
+        entry.error = "checksum mismatch"
+        store.save(job)
+        return AcquisitionRunSummary(job.job_id, 0, 0, 1, 1)
+
+    failed = execute_selected_download(
+        settings,
+        planned.plan,
+        jobs_path=jobs_path,
+        runner=failing_runner,
+    )
+    second = execute_selected_download(
+        settings,
+        planned.plan,
+        jobs_path=jobs_path,
+        runner=failing_runner,
+    )
+
+    assert failed.status is DownloadExecutionStatus.FAILED
+    assert failed.message == "File validation failed"
+    assert failed.error == "checksum mismatch"
+    assert second.status is DownloadExecutionStatus.RETRY_REQUIRED
+    assert calls == 1
+
+
+def test_unexpected_runner_failure_is_persisted_and_exact_destination_is_rechecked(tmp_path):
+    jobs_path, job = _stored_downloads(tmp_path)
+    settings = Settings(music_dir=tmp_path / "music")
+    planned = plan_download_execution(settings, f"{job.job_id}:1", jobs_path=jobs_path)
+    assert planned.plan is not None
+
+    changed = JobStore(jobs_path).get(job.job_id)
+    assert changed is not None
+    changed.items[1].item.destination = tmp_path / "other" / "Unrelated.mp3"
+    JobStore(jobs_path).save(changed)
+    wrong_target = execute_selected_download(
+        settings,
+        planned.plan,
+        jobs_path=jobs_path,
+        runner=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("runner called")),
+    )
+    assert wrong_target.status is DownloadExecutionStatus.NOT_FOUND
+
+    changed.items[1].item.destination = planned.plan.destination
+    changed.items[1].state = AcquisitionState.PENDING
+    JobStore(jobs_path).save(changed)
+    failed = execute_selected_download(
+        settings,
+        planned.plan,
+        jobs_path=jobs_path,
+        runner=lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("runner stopped")),
+    )
+    assert failed.status is DownloadExecutionStatus.FAILED
+    assert failed.error == "runner stopped"
+    authoritative = JobStore(jobs_path).get(job.job_id)
+    assert authoritative is not None
+    assert authoritative.items[1].state is AcquisitionState.FAILED
+    assert authoritative.items[1].failure_stage is AcquisitionFailureStage.TRANSPORT

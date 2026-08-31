@@ -85,6 +85,7 @@ def run_job(
     policy: DownloadPolicy | None = None,
     progress: ItemProgressCallback | None = None,
     postprocess: PostprocessCallback | None = None,
+    item_indexes: set[int] | None = None,
 ) -> AcquisitionRunSummary:
     """Run a persistent acquisition job one item at a time.
 
@@ -101,6 +102,8 @@ def run_job(
             progress(index, total, written, remote_total)
 
     for index, entry in enumerate(job.items):
+        if item_indexes is not None and index not in item_indexes:
+            continue
         if entry.state in {AcquisitionState.COMPLETE, AcquisitionState.SKIPPED}:
             continue
 

@@ -14,14 +14,17 @@ from juice_lyrics.services.settings_snapshot import (
 
 
 def _snapshot(tmp_path, settings=None, **kwargs):
+    effective_settings = settings or Settings(
+        music_dir=tmp_path / "music",
+        lyrics_dir=tmp_path / "lyrics",
+    )
     return get_settings_snapshot(
-        settings or Settings(music_dir=tmp_path / "music"),
+        effective_settings,
         config_path=kwargs.pop("config_path", tmp_path / "config" / "config.toml"),
         cache_dir=tmp_path / "cache",
         state_file=tmp_path / "data" / "state.json",
         backup_dir=tmp_path / "data" / "backups",
         jobs_file=tmp_path / "data" / "jobs.json",
-        lyrics_dir=tmp_path / "lyrics",
         rmpc_config_path=kwargs.pop("rmpc_config_path", tmp_path / "rmpc" / "config.ron"),
         executable_finder=kwargs.pop("executable_finder", lambda name: None),
         **kwargs,
@@ -46,6 +49,7 @@ def test_explicit_config_and_runtime_overrides_have_reliable_provenance(tmp_path
     configured_music = tmp_path / "configured-music"
     config.write_text(
         f'music_dir = "{configured_music}"\n'
+        f'lyrics_dir = "{tmp_path / "configured-lyrics"}"\n'
         'api_base = "https://example.test/api/"\n'
         "timeout = 30\n"
         "delay = 0.25\n"
@@ -55,6 +59,7 @@ def test_explicit_config_and_runtime_overrides_have_reliable_provenance(tmp_path
     )
     settings = Settings(
         music_dir=configured_music,
+        lyrics_dir=tmp_path / "configured-lyrics",
         api_base="https://runtime.test/api",
         timeout=30,
         delay=0.25,
@@ -66,6 +71,7 @@ def test_explicit_config_and_runtime_overrides_have_reliable_provenance(tmp_path
 
     assert snapshot.config_exists is True
     assert values["music_dir"].source is SettingsSource.CONFIG
+    assert values["lyrics_dir"].source is SettingsSource.CONFIG
     assert values["timeout"].source is SettingsSource.CONFIG
     assert values["api_base"].source is SettingsSource.RUNTIME_OVERRIDE
 
@@ -73,14 +79,14 @@ def test_explicit_config_and_runtime_overrides_have_reliable_provenance(tmp_path
 @pytest.mark.parametrize(
     ("executable", "config_text", "expected"),
     [
-        ("/usr/bin/rmpc", 'lyrics_dir: Some("/lyrics"),\nenable_lyrics_index: true,\nenable_lyrics_hot_reload: true,', IntegrationStatus.DETECTED_CONFIGURED),
+        ("/usr/bin/rmpc", 'lyrics_dir: Some("{lyrics}"),\nenable_lyrics_index: true,\nenable_lyrics_hot_reload: true,', IntegrationStatus.DETECTED_CONFIGURED),
         ("/usr/bin/rmpc", "cache_dir: Some(\"/cache\"),", IntegrationStatus.DETECTED_NOT_CONFIGURED),
         (None, 'lyrics_dir: Some("/lyrics"),', IntegrationStatus.NOT_DETECTED),
     ],
 )
 def test_rmpc_detection_and_configuration_states(tmp_path, executable, config_text, expected):
     rmpc_config = tmp_path / "rmpc.ron"
-    rmpc_config.write_text(config_text, encoding="utf-8")
+    rmpc_config.write_text(config_text.format(lyrics=tmp_path / "lyrics"), encoding="utf-8")
     snapshot = _snapshot(
         tmp_path,
         rmpc_config_path=rmpc_config,
@@ -115,6 +121,28 @@ def test_paths_and_limitations_are_typed_and_read_only(tmp_path):
     assert any("FLAC" in item for item in snapshot.limitations)
     assert not (tmp_path / "cache").exists()
     assert not (tmp_path / "data").exists()
+
+
+def test_effective_lyrics_directory_is_a_typed_value_and_read_only_path(tmp_path):
+    configured = tmp_path / "shared" / "lyrics"
+    settings = Settings(music_dir=tmp_path / "music", lyrics_dir=configured)
+    snapshot = get_settings_snapshot(
+        settings,
+        config_path=tmp_path / "config.toml",
+        cache_dir=tmp_path / "cache",
+        state_file=tmp_path / "state.json",
+        backup_dir=tmp_path / "backups",
+        jobs_file=tmp_path / "jobs.json",
+        rmpc_config_path=tmp_path / "rmpc.ron",
+        executable_finder=lambda name: None,
+    )
+
+    values = {item.key: item for item in snapshot.values}
+    paths = {item.key: item for item in snapshot.paths}
+    assert values["lyrics_dir"].value == configured
+    assert values["lyrics_dir"].source is SettingsSource.RUNTIME_OVERRIDE
+    assert paths["lyrics"].path == configured
+    assert not configured.exists()
 
 
 def test_rmpc_inspection_failure_is_structured(tmp_path):
