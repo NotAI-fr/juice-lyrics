@@ -235,8 +235,9 @@ The job system should:
 
 Persistent jobs are an internal durability and execution mechanism. The normal
 product model is a flat download queue of songs; UUIDs should stay out of common
-workflows. Browse can explicitly add one selected song to this queue without
-starting it. Completed items remain stored but are hidden from the active queue,
+workflows. Browse can mark stable song IDs across pages of one search and
+explicitly add the marked set (or the current song) without starting it.
+Completed items remain stored but are hidden from the active queue,
 and failed items remain visible for future retry or removal.
 
 ## Acquisition → lyrics integration
@@ -290,16 +291,16 @@ The latest development checkpoint reports:
 * MP3 post-processing with ID3 SYLT/USLT and rmpc LRC integration verified
 * Settings / Path CLI compatibility verified
 * responsive terminal-native Textual shell with `ansi_color=True`
-* all five main TUI sections are functional; Browse can explicitly add one selected song to the queue
+* all five main TUI sections are functional; Browse can explicitly add one or several stable-ID selections to the queue
 * Downloads can explicitly run one selected queued song after a cancel-first confirmation
 * canonical Category and Era selectors, filter-only searches, and correct case-sensitive API cache behaviour
 * server-side catalogue pagination with scrollable 50-result pages and stable ID-based song details
 * flat track-queue summaries, song navigation, details, structured failure stages, and retry eligibility
 * Library provides local track browsing, local filters, metadata/lyric/LRC/state details, and explicit read-only sync previews
 * Settings reports effective configuration, provenance where reliable, application paths, and rmpc integration without creating or changing files
-* TUI Download all, remove, clear, retry, cancel, configuration editing, and sync execution are not implemented
+* TUI active-download cancel, configuration editing, and sync execution are not implemented
 * legacy CLI remains the way to run whole acquisition records, retry, delete jobs, and sync
-* 250 automated tests passing across the suite
+* 258 automated tests passing across the suite
 
 The repository for this checkpoint is `/home/nobloat/Downloads/juice-lyrics-codex`
 on branch `v2-redesign`. The planned product and executable name remains `999`,

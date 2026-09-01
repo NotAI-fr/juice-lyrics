@@ -256,16 +256,19 @@ Too technical.
 
 v2 user-facing model:
 
-Browse → select a song → press `a` → review destination → Add to queue
+Browse → mark songs with Space → press `a` → review eligible/skipped songs → Add to queue
 
 Adding a song creates durable internal acquisition state but does not begin a
 download. The Downloads screen shows individual tracks, not jobs or UUIDs.
 Completed tracks are hidden from the active queue; failed tracks remain visible
 for future Retry or Remove actions.
 
-Planned follow-up interactions include Space to toggle multiple selections,
-`a` to add selected songs, and a bounded explicitly confirmed `A` action. The
-application will not bulk-fetch an unbounded catalogue merely to fill a queue.
+Space toggles the highlighted song, `M` toggles downloadable songs on the
+visible API page, and `u` clears all marks. Marks may span pages of the same
+logical search, but a title, Category, or Era change clears them. `a` adds the
+marked set, or the highlighted song when nothing is marked, through a
+cancel-first confirmation. Adding never starts a download and the application
+does not bulk-fetch an unbounded catalogue merely to fill the queue.
 
 Download selected is implemented for one queued song. Download all, Remove,
 Clear queue, Retry failed, and Cancel active download remain future actions.

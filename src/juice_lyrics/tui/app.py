@@ -20,7 +20,8 @@ from ..services.download_queue import (
     DownloadExecutionResult,
     DownloadQueueSnapshot,
     QueueAddResult,
-    add_to_download_queue,
+    QueueBatchAddResult,
+    add_batch_to_download_queue,
     execute_selected_download,
     execute_selected_retry,
     remove_queue_item,
@@ -30,7 +31,7 @@ from ..services.download_queue import (
     execute_download_all,
     plan_download_execution,
     plan_download_retry,
-    plan_queue_additions,
+    plan_queue_batch_additions,
     project_download_queue,
 )
 from ..services.library_status import LibrarySnapshot, LibraryStatus, get_library_snapshot, get_library_status
@@ -46,8 +47,8 @@ from .screens.settings import SettingsScreen
 LibraryStatusProvider = Callable[[Any], LibraryStatus]
 QueueSnapshotProvider = Callable[[], QueueSnapshot]
 DownloadQueueProvider = Callable[[], DownloadQueueSnapshot]
-QueuePlanProvider = Callable[..., QueueAddResult]
-QueueAddProvider = Callable[..., QueueAddResult]
+QueuePlanProvider = Callable[..., QueueAddResult | QueueBatchAddResult]
+QueueAddProvider = Callable[..., QueueAddResult | QueueBatchAddResult]
 DownloadPlanProvider = Callable[..., DownloadExecutionResult]
 DownloadExecutionProvider = Callable[..., DownloadExecutionResult]
 CatalogueSearchProvider = Callable[..., CataloguePage]
@@ -252,6 +253,15 @@ class JuiceLyricsApp(App[None]):
         padding: 0 1;
     }
 
+    #browse-shortcuts {
+        height: 1;
+        padding: 0 1;
+        color: ansi_default;
+        text-style: dim;
+        overflow: hidden;
+        background: transparent;
+    }
+
     #browse-pagination PaginationControl {
         width: 100%;
         height: 1;
@@ -291,6 +301,7 @@ class JuiceLyricsApp(App[None]):
         width: 72;
         max-width: 92%;
         height: auto;
+        max-height: 92%;
         padding: 1 2;
         border: round ansi_cyan;
         background: transparent;
@@ -722,8 +733,8 @@ class JuiceLyricsApp(App[None]):
         catalogue_details_provider: CatalogueDetailsProvider = get_song_details_by_id,
         catalogue_filters_provider: CatalogueFiltersProvider = get_catalogue_filters,
         downloads_queue_provider: DownloadQueueProvider | None = None,
-        queue_plan_provider: QueuePlanProvider = plan_queue_additions,
-        queue_add_provider: QueueAddProvider = add_to_download_queue,
+        queue_plan_provider: QueuePlanProvider = plan_queue_batch_additions,
+        queue_add_provider: QueueAddProvider = add_batch_to_download_queue,
         download_plan_provider: DownloadPlanProvider = plan_download_execution,
         download_execution_provider: DownloadExecutionProvider = execute_selected_download,
         download_retry_plan_provider: Callable[..., Any] = plan_download_retry,
@@ -852,10 +863,13 @@ class JuiceLyricsApp(App[None]):
         section = getattr(self.screen, "section", None)
         if section == "browse":
             message = (
-                "n next catalogue page  •  p previous catalogue page  •  "
-                "PageDown/PageUp scroll the loaded results  •  "
-                "Home/End first/last loaded result  •  j/k select  •  Enter details  •  "
-                "a Add to queue (does not start downloading) · 4 Downloads"
+                "Navigation: ↑/↓ or j/k move results · PageDown/PageUp scroll the loaded results · "
+                "n next catalogue page · p previous catalogue page · Home/End first/last loaded result · "
+                "Enter details · Escape close/cancel\n"
+                "Selection: Space mark/unmark · M toggle downloadable songs on this page · u clear all marks. "
+                "Marks may span pages of one search; changing search or filters clears them.\n"
+                "Queue: a Add marked songs, or the current song when none are marked · 4 Downloads. "
+                "Marking does not add songs; adding does not start downloading. Downloads handles actual downloads."
             )
         elif section == "downloads":
             message = (

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import ceil
 from typing import Any
 
@@ -25,14 +25,24 @@ from ...services.catalogue import (
     LyricAvailability,
     SongDetails,
 )
-from ...services.download_queue import QueueAddPlan, QueueAddResult, QueueAddStatus
+from ...services.download_queue import (
+    QueueAddPlan,
+    QueueAddResult,
+    QueueAddStatus,
+    QueueBatchAddItemStatus,
+    QueueBatchAddPlan,
+    QueueBatchAddResult,
+    QueueBatchAddStatus,
+)
 from .base import HubScreen
 
 SearchProvider = Callable[..., CataloguePage | tuple[CatalogueSearchResult, ...]]
 DetailsProvider = Callable[..., SongDetails | None]
 FiltersProvider = Callable[..., CatalogueFilterMetadata]
-QueuePlanProvider = Callable[..., QueueAddResult]
-QueueAddProvider = Callable[[QueueAddPlan], QueueAddResult]
+QueuePlanResult = QueueAddResult | QueueBatchAddResult
+QueuePlan = QueueAddPlan | QueueBatchAddPlan
+QueuePlanProvider = Callable[..., QueuePlanResult]
+QueueAddProvider = Callable[[QueuePlan], QueuePlanResult]
 _PREVIEW_LINES = 6
 _PAGE_SIZE = 50
 
@@ -127,13 +137,14 @@ class FiltersOutcome:
 
 @dataclass(frozen=True, slots=True)
 class QueuePlanOutcome:
-    selection: CatalogueSearchResult
-    result: QueueAddResult | None = None
+    selections: tuple[CatalogueSearchResult, ...]
+    result: QueuePlanResult | None = None
+    marked: bool = False
     error: str | None = None
 
 
 class QueueDialogAction(Static):
-    can_focus = False
+    can_focus = True
 
     class Activated(Message):
         def __init__(self, action: str) -> None:
@@ -148,51 +159,89 @@ class QueueDialogAction(Static):
         self.post_message(self.Activated(self.action))
 
 
-class AddToQueueDialog(ModalScreen[QueueAddResult | None]):
-    """Explicit, cancel-first confirmation for one durable queue addition."""
+class AddToQueueDialog(ModalScreen[QueuePlanResult | None]):
+    """Explicit, cancel-first confirmation for one or more queue additions."""
 
-    def __init__(self, plan: QueueAddPlan, creator: QueueAddProvider) -> None:
+    def __init__(self, plan: QueuePlan, creator: QueueAddProvider, *, batch: bool = False) -> None:
         super().__init__()
         self.plan = plan
+        self._batch = batch
         self._creator = creator
         self._choice = "cancel"
         self._creating = False
-        self._created_result: QueueAddResult | None = None
-        self._worker: Worker[QueueAddResult] | None = None
+        self._created_result: QueuePlanResult | None = None
+        self._worker: Worker[QueuePlanResult] | None = None
+
+    @property
+    def _is_batch(self) -> bool:
+        return self._batch
+
+    @property
+    def _add_label(self) -> str:
+        return "Add selected" if self._is_batch else "Add to queue"
 
     def compose(self) -> ComposeResult:
-        planned = self.plan.items[0]
-        item = planned.item
         with Container(id="queue-confirm-dialog"):
-            yield Static("Add to download queue", id="queue-confirm-title")
-            yield Static(
-                "\n".join((
-                    f"Song         {item.title}",
-                    f"Artist       {planned.artist or 'Unknown'}",
-                    f"Category     {planned.category or 'Unknown'}",
-                    f"Era          {planned.era or 'Unknown'}",
-                    f"Destination  {item.destination}",
-                    "Availability Available",
-                    "",
-                    "This adds the song to your download queue. It will not start downloading yet.",
-                )),
-                id="queue-confirm-body",
-                markup=False,
-            )
+            if self._is_batch and isinstance(self.plan, QueueBatchAddPlan):
+                count = self.plan.selected_count
+                title = f"Add {count} selected song{'s' if count != 1 else ''} to Downloads"
+            else:
+                title = "Add to download queue"
+            yield Static(title, id="queue-confirm-title")
+            yield Static(self._body_text(), id="queue-confirm-body", markup=False)
             yield Static("Choose an action.", id="queue-confirm-status", markup=False)
             with Grid(id="queue-confirm-actions"):
-                yield QueueDialogAction("Add to queue", "confirm", id="queue-confirm-add")
+                yield QueueDialogAction(self._add_label, "confirm", id="queue-confirm-add")
                 yield QueueDialogAction("Cancel", "cancel", id="queue-confirm-cancel")
+
+    def _body_text(self) -> str:
+        if not self._is_batch:
+            planned = self.plan.items[0] if isinstance(self.plan, QueueAddPlan) else self.plan.eligible[0]
+            item = planned.item
+            return "\n".join((
+                f"Song         {item.title}",
+                f"Artist       {planned.artist or 'Unknown'}",
+                f"Category     {planned.category or 'Unknown'}",
+                f"Era          {planned.era or 'Unknown'}",
+                f"Destination  {item.destination}",
+                "Availability Available",
+                "",
+                "This adds the song to your download queue. It will not start downloading yet.",
+            ))
+        eligible = self.plan.eligible
+        preview = [item.title for item in self.plan.items[:3]]
+        if self.plan.selected_count > len(preview):
+            preview.append(f"…and {self.plan.selected_count - len(preview)} more")
+        queued = self.plan.count(QueueBatchAddItemStatus.ALREADY_QUEUED)
+        unavailable = self.plan.count(QueueBatchAddItemStatus.UNAVAILABLE) + self.plan.count(QueueBatchAddItemStatus.STALE)
+        local = self.plan.count(QueueBatchAddItemStatus.ALREADY_DOWNLOADED)
+        invalid = self.plan.count(QueueBatchAddItemStatus.INVALID)
+        destinations = {item.item.destination.parent for item in eligible}
+        destination = str(next(iter(destinations))) if len(destinations) == 1 else "Multiple configured destinations"
+        return "\n".join((
+            f"Selected {self.plan.selected_count} · Eligible {self.plan.eligible_count}",
+            f"Skipped: {queued} queued · {unavailable + invalid} unavailable · {local} downloaded",
+            f"Destination: {destination}",
+            "",
+            *preview,
+            "",
+            (
+                "This adds the song to Downloads. It does not start downloading."
+                if self.plan.selected_count == 1
+                else "This adds songs to Downloads. It does not start downloading."
+            ),
+        ))
 
     def on_mount(self) -> None:
         self._render_choice()
+        self.query_one("#queue-confirm-cancel", QueueDialogAction).focus()
 
     def _render_choice(self) -> None:
         if self._created_result is not None:
             self.query_one("#queue-confirm-add", Static).update("[v View Downloads]")
             self.query_one("#queue-confirm-cancel", Static).update("[Enter Close]")
             return
-        add = "[Add to queue]" if self._choice == "confirm" else "Add to queue"
+        add = f"[{self._add_label}]" if self._choice == "confirm" else self._add_label
         cancel = "[Cancel]" if self._choice == "cancel" else "Cancel"
         self.query_one("#queue-confirm-add", Static).update(add)
         self.query_one("#queue-confirm-cancel", Static).update(cancel)
@@ -229,6 +278,10 @@ class AddToQueueDialog(ModalScreen[QueueAddResult | None]):
         elif event.key in {"left", "right", "tab", "shift+tab"}:
             self._choice = "confirm" if self._choice == "cancel" else "cancel"
             self._render_choice()
+            self.query_one(
+                "#queue-confirm-add" if self._choice == "confirm" else "#queue-confirm-cancel",
+                QueueDialogAction,
+            ).focus()
         elif event.key == "enter":
             self._activate_choice()
         else:
@@ -247,10 +300,12 @@ class AddToQueueDialog(ModalScreen[QueueAddResult | None]):
         self._worker = self._create_queue_item()
 
     @work(thread=True, exclusive=True, group="queue-add", exit_on_error=False)
-    def _create_queue_item(self) -> QueueAddResult:
+    def _create_queue_item(self) -> QueuePlanResult:
         try:
             return self._creator(self.plan)
         except Exception as exc:
+            if isinstance(self.plan, QueueBatchAddPlan):
+                return QueueBatchAddResult(QueueBatchAddStatus.SAVE_FAILED, f"Unable to save Downloads: {exc}", plan=self.plan)
             return QueueAddResult(QueueAddStatus.SAVE_FAILED, f"Unable to save the queue: {exc}")
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
@@ -259,11 +314,15 @@ class AddToQueueDialog(ModalScreen[QueueAddResult | None]):
         if event.state is WorkerState.SUCCESS:
             result = event.worker.result
         elif event.state is WorkerState.ERROR:
-            result = QueueAddResult(QueueAddStatus.SAVE_FAILED, "Unable to save the queue.")
+            result = (
+                QueueBatchAddResult(QueueBatchAddStatus.SAVE_FAILED, "Unable to save Downloads.", plan=self.plan)
+                if isinstance(self.plan, QueueBatchAddPlan)
+                else QueueAddResult(QueueAddStatus.SAVE_FAILED, "Unable to save the queue.")
+            )
         else:
             return
         self._creating = False
-        if result.status is QueueAddStatus.ADDED:
+        if result.status in {QueueAddStatus.ADDED, QueueBatchAddStatus.ADDED}:
             self._created_result = result
             invalidate = getattr(self.app, "invalidate_download_queue", None)
             if callable(invalidate):
@@ -315,6 +374,10 @@ class BrowseScreen(HubScreen):
         self._filters_worker: Worker[FiltersOutcome] | None = None
         self._queue_plan_worker: Worker[QueuePlanOutcome] | None = None
         self._applying_filters = False
+        self.marked: dict[str, CatalogueSearchResult] = {}
+        self._marked_pages: dict[str, int] = {}
+        self._pending_confirmation_ids: tuple[str, ...] = ()
+        self._selection_notice: str | None = None
 
     def compose_content(self) -> Iterable[Widget]:
         with Grid(id="browse-controls"):
@@ -341,6 +404,7 @@ class BrowseScreen(HubScreen):
             yield PaginationControl("p Previous", -1, id="browse-previous")
             yield Static("No catalogue page loaded", id="browse-page-position", markup=False)
             yield PaginationControl("n Next", 1, id="browse-next")
+        yield Static("Space Mark · a Add current · M Mark page · u Clear · 4 Downloads · ? Help", id="browse-shortcuts", markup=False)
 
     def action_focus_search(self) -> None:
         self.query_one("#browse-query", Input).focus()
@@ -357,6 +421,7 @@ class BrowseScreen(HubScreen):
             self._filters_worker = self._load_filters()
         if self.results:
             self.call_after_refresh(self.set_focus, None)
+        self._update_shortcuts()
 
     def submit_search(self, *, refresh: bool) -> None:
         query = self.query_one("#browse-query", Input).value.strip()
@@ -370,6 +435,13 @@ class BrowseScreen(HubScreen):
         self._start_search(request)
 
     def _start_search(self, request: SearchRequest) -> None:
+        changed = self.last_request is not None and self._logical_search(self.last_request) != self._logical_search(request)
+        cleared = len(self.marked) if changed else 0
+        if changed:
+            self.marked.clear()
+            self._marked_pages.clear()
+            if cleared:
+                self._selection_notice = "Selection cleared because the search changed"
         self.last_request = request
         self.set_focus(None)
         self.results = ()
@@ -380,8 +452,14 @@ class BrowseScreen(HubScreen):
         self.query_one("#browse-details", Static).update("Waiting for results…")
         self.query_one("#browse-results-scroll", VerticalScroll).scroll_home(animate=False, immediate=True)
         self._update_pagination(None, loading_page=request.page)
-        self._set_status(self._loading_status(request))
+        prefix = f"{self._selection_notice} · " if self._selection_notice else ""
+        self._set_status(prefix + self._loading_status(request))
+        self._update_shortcuts()
         self._search_worker = self._run_search(request)
+
+    @staticmethod
+    def _logical_search(request: SearchRequest) -> tuple[str, str | None, str | None]:
+        return request.query, request.category, request.era
 
     def refresh_snapshot(self) -> None:
         if self.last_request is None:
@@ -444,12 +522,12 @@ class BrowseScreen(HubScreen):
             return DetailsOutcome(result, error=str(exc) or type(exc).__name__)
 
     @work(thread=True, exclusive=True, group="queue-plan", exit_on_error=False)
-    def _plan_queue_add(self, selection: CatalogueSearchResult) -> QueuePlanOutcome:
+    def _plan_queue_add(self, selections: tuple[CatalogueSearchResult, ...], marked: bool) -> QueuePlanOutcome:
         try:
-            result = self._queue_plan_provider(self.settings, (selection,))
-            return QueuePlanOutcome(selection, result)
+            result = self._queue_plan_provider(self.settings, selections)
+            return QueuePlanOutcome(selections, result, marked)
         except Exception as exc:
-            return QueuePlanOutcome(selection, error=str(exc) or type(exc).__name__)
+            return QueuePlanOutcome(selections, marked=marked, error=str(exc) or type(exc).__name__)
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         if event.worker is self._filters_worker:
@@ -479,23 +557,42 @@ class BrowseScreen(HubScreen):
     def _apply_queue_plan(self, outcome: QueuePlanOutcome) -> None:
         if self.app.screen is not self:
             return
-        if not self.results or self.results[self.selected_index] != outcome.selection:
+        if not outcome.marked and (
+            not self.results or not outcome.selections or self.results[self.selected_index] != outcome.selections[0]
+        ):
             self._set_status("Selection changed; press a again to add the current song.", error=True)
             return
         if outcome.error or outcome.result is None:
             self._set_status(f"Unable to check the queue: {outcome.error or 'Unknown error'}", error=True)
             return
-        if outcome.result.status is not QueueAddStatus.READY or outcome.result.plan is None:
+        ready = outcome.result.status in {QueueAddStatus.READY, QueueBatchAddStatus.READY}
+        if not ready or outcome.result.plan is None:
             self._set_status(outcome.result.message, error=True)
             return
+        if outcome.marked and len(outcome.selections) > 1 and not isinstance(outcome.result.plan, QueueBatchAddPlan):
+            self._set_status("The queue provider cannot safely add several selected songs.", error=True)
+            return
+        self._pending_confirmation_ids = tuple(
+            str(selection.song_id) for selection in outcome.selections if selection.song_id is not None
+        )
         self.app.push_screen(
-            AddToQueueDialog(outcome.result.plan, self._queue_add_provider),
+            AddToQueueDialog(
+                outcome.result.plan,
+                self._queue_add_provider,
+                batch=outcome.marked and isinstance(outcome.result.plan, QueueBatchAddPlan),
+            ),
             self._queue_dialog_closed,
         )
 
-    def _queue_dialog_closed(self, result: QueueAddResult | None) -> None:
-        if result is not None and result.status is QueueAddStatus.ADDED:
+    def _queue_dialog_closed(self, result: QueuePlanResult | None) -> None:
+        if result is not None and result.status in {QueueAddStatus.ADDED, QueueBatchAddStatus.ADDED}:
+            for song_id in self._pending_confirmation_ids:
+                self.marked.pop(song_id, None)
+                self._marked_pages.pop(song_id, None)
             self._set_status(f"{result.message} It has not started. Press 4 to view Downloads.")
+            self._render_results()
+            self._update_shortcuts()
+        self._pending_confirmation_ids = ()
 
     def _apply_search(self, outcome: SearchOutcome) -> None:
         if outcome.error:
@@ -512,7 +609,19 @@ class BrowseScreen(HubScreen):
         self.current_page = page
         self.results = page.results
         self.selected_index = 0
-        self.query_one("#browse-results-title", Static).update(f"Results · {len(self.results)} loaded")
+        visible = {
+            key: result
+            for result in self.results
+            if (key := self._song_key(result)) is not None
+        }
+        for key, marked_page in tuple(self._marked_pages.items()):
+            if marked_page != page.page:
+                continue
+            if key in visible:
+                self.marked[key] = visible[key]
+            elif key in self.marked:
+                self.marked[key] = replace(self.marked[key], media_path=None, downloadable=False)
+        self._update_results_title()
         self._update_pagination(page)
         if not self.results:
             self.query_one("#browse-results", Static).update("No catalogue results found.")
@@ -521,12 +630,13 @@ class BrowseScreen(HubScreen):
                 self._set_status(f"Page {outcome.request.page} is no longer available.", error=True)
             else:
                 self.query_one("#browse-details", Static).update("Try another title or filter.")
-                self._set_status(_empty_result_status(outcome.request))
+                self._set_status(self._with_selection_notice(_empty_result_status(outcome.request)))
             return
 
         self._render_results()
         self._render_summary(self.results[0])
-        self._set_status(self._result_status(outcome.request, page))
+        self._set_status(self._with_selection_notice(self._result_status(outcome.request, page)))
+        self._update_shortcuts()
         self.call_after_refresh(self._scroll_selection_into_view)
 
     def _apply_filters(self, outcome: FiltersOutcome) -> None:
@@ -570,6 +680,12 @@ class BrowseScreen(HubScreen):
             self._load_selected_details()
         elif event.key == "a":
             self._add_selected_to_queue()
+        elif event.key == "space":
+            self._toggle_mark()
+        elif event.key in {"M", "shift+m"}:
+            self._toggle_page_marks()
+        elif event.key == "u":
+            self._clear_marks()
         elif event.key == "n":
             self._change_page(next_page=True)
         elif event.key == "p":
@@ -588,15 +704,81 @@ class BrowseScreen(HubScreen):
         event.stop()
 
     def _add_selected_to_queue(self) -> None:
-        if not self.results:
+        if self.marked:
+            selections = tuple(self.marked.values())
+            marked = True
+        elif self.results:
+            selections = (self.results[self.selected_index],)
+            marked = False
+        else:
             self._set_status("Select a downloadable song first.", error=True)
             return
-        selection = self.results[self.selected_index]
-        if not selection.downloadable:
+        if not marked and not selections[0].downloadable:
             self._set_status("Media unavailable; this song cannot be added to the queue.", error=True)
             return
-        self._set_status("Checking destination and download queue…")
-        self._queue_plan_worker = self._plan_queue_add(selection)
+        count = len(selections)
+        self._set_status(
+            "Checking destination and download queue…"
+            if count == 1
+            else f"Checking {count} selected songs and Downloads…"
+        )
+        self._queue_plan_worker = self._plan_queue_add(selections, marked)
+
+    @staticmethod
+    def _song_key(result: CatalogueSearchResult) -> str | None:
+        return str(result.song_id) if result.song_id is not None else None
+
+    def _toggle_mark(self) -> None:
+        if not self.results:
+            return
+        result = self.results[self.selected_index]
+        key = self._song_key(result)
+        if key is None or not result.downloadable:
+            self._set_status("Media unavailable; this result cannot be marked.", error=True)
+            return
+        if key in self.marked:
+            self.marked.pop(key)
+            self._marked_pages.pop(key, None)
+        else:
+            self.marked[key] = result
+            self._marked_pages[key] = self.current_page.page if self.current_page is not None else 1
+        self._render_results()
+        self._update_results_title()
+        self._update_shortcuts()
+        if self.current_page is not None and self.last_request is not None:
+            self._set_status(self._result_status(self.last_request, self.current_page))
+
+    def _toggle_page_marks(self) -> None:
+        eligible = tuple(result for result in self.results if result.downloadable and self._song_key(result) is not None)
+        if not eligible:
+            self._set_status("No downloadable songs are visible on this page.", error=True)
+            return
+        all_marked = all(self._song_key(result) in self.marked for result in eligible)
+        for result in eligible:
+            key = self._song_key(result)
+            if key is None:
+                continue
+            if all_marked:
+                self.marked.pop(key, None)
+                self._marked_pages.pop(key, None)
+            else:
+                self.marked[key] = result
+                self._marked_pages[key] = self.current_page.page if self.current_page is not None else 1
+        self._render_results()
+        self._update_results_title()
+        self._update_shortcuts()
+        self._set_status(self._marked_label() if self.marked else "Selection cleared.")
+
+    def _clear_marks(self) -> None:
+        if not self.marked:
+            self._set_status("No songs are marked.")
+            return
+        self.marked.clear()
+        self._marked_pages.clear()
+        self._render_results()
+        self._update_results_title()
+        self._update_shortcuts()
+        self._set_status("Selection cleared.")
 
     def _change_page(self, *, next_page: bool) -> None:
         if self.current_page is None or self.last_request is None:
@@ -633,6 +815,7 @@ class BrowseScreen(HubScreen):
         self.selected_index = max(0, min(len(self.results) - 1, index))
         self._render_results()
         self._render_summary(self.results[self.selected_index])
+        self._update_shortcuts()
         if self.last_request is not None and self.current_page is not None:
             self._set_status(self._result_status(self.last_request, self.current_page))
         self.call_after_refresh(self._scroll_selection_into_view)
@@ -662,17 +845,19 @@ class BrowseScreen(HubScreen):
         lines: list[str] = []
         for index, result in enumerate(self.results):
             marker = ">" if index == self.selected_index else " "
+            song_key = self._song_key(result)
+            marked = "[x]" if song_key is not None and song_key in self.marked else "[ ]"
             title = result.title or "Unknown title"
             era = result.era or "Unknown era"
             category = result.category or "Unknown category"
             lyrics = _lyrics_label(result.lyrics)
             available = "Available" if result.downloadable else "Unavailable"
             if narrow:
-                lines.extend((f"{marker} {title}", f"  {era} · {category} · {lyrics} · {available}"))
+                lines.extend((f"{marker} {title} {marked}", f"    {era} · {category} · {lyrics} · {available}"))
             else:
                 length = result.length or "?"
                 lines.append(
-                    f"{marker} {title[:26]:26} {era[:10]:10} {category[:12]:12} "
+                    f"{marker} {title[:23]:23} {marked} {era[:10]:10} {category[:12]:12} "
                     f"{length[:7]:7} {lyrics:6} {available}"
                 )
         self.query_one("#browse-results", Static).update(
@@ -723,7 +908,11 @@ class BrowseScreen(HubScreen):
             f"Path           {path}",
             "",
             "Press Enter for full details and lyric preview.",
-            "Press a to add this song to the download queue." if result.downloadable else "Media unavailable.",
+            (
+                f"Press a to add {len(self.marked)} selected song{'s' if len(self.marked) != 1 else ''} to Downloads."
+                if self.marked
+                else "Press a to add this song to Downloads."
+            ) if result.downloadable else "Media unavailable.",
         )
         self.query_one("#browse-details", Static).update("\n".join(lines))
 
@@ -752,6 +941,47 @@ class BrowseScreen(HubScreen):
         status.update(message)
         status.set_class(error, "-error")
 
+    def _marked_label(self) -> str:
+        count = len(self.marked)
+        return f"{count} song{'s' if count != 1 else ''} marked"
+
+    def _with_selection_notice(self, message: str) -> str:
+        if self._selection_notice is None:
+            return message
+        notice = self._selection_notice
+        self._selection_notice = None
+        return f"{notice} · {message}"
+
+    def _update_results_title(self) -> None:
+        title = f"Results · {len(self.results)} loaded"
+        if self.marked:
+            title += f" · {self._marked_label()}"
+        self.query_one("#browse-results-title", Static).update(title)
+
+    def _update_shortcuts(self) -> None:
+        try:
+            shortcuts = self.query_one("#browse-shortcuts", Static)
+        except Exception:
+            return
+        count = len(self.marked)
+        narrow = self.size.width < 100
+        current_key = self._song_key(self.results[self.selected_index]) if self.results else None
+        toggle = "Unmark" if current_key is not None and current_key in self.marked else "Mark"
+        if narrow:
+            text = (
+                f"Space {toggle.lower()} · a add {count} · M page · u clear · ? help"
+                if count
+                else "Space mark · a add current · M page · u clear · ? help"
+            )
+        elif count:
+            text = (
+                f"Space {toggle} · a Add {count} selected song{'s' if count != 1 else ''} · M Toggle page · "
+                f"u Clear {count} · 4 Downloads · ? Help"
+            )
+        else:
+            text = "Space Mark · a Add current · M Mark page · u Clear · 4 Downloads · ? Help"
+        shortcuts.update(Text(text, no_wrap=True, overflow="ellipsis"))
+
     @staticmethod
     def _loading_status(request: SearchRequest) -> str:
         if request.query:
@@ -761,14 +991,16 @@ class BrowseScreen(HubScreen):
     def _result_status(self, request: SearchRequest, page: CataloguePage) -> str:
         filters = _filter_text(request.category, request.era)
         selected = min(len(page.results), self.selected_index + 1)
+        marked = f" · {self._marked_label()}" if self.marked else ""
         return (
             f"Result {selected} of {len(page.results)} loaded · n/p pages · "
-            f"j/k select · PgUp/PgDn scroll · Enter details"
-            f"{' · a Add to queue' if self.results and self.results[self.selected_index].downloadable else ''}.{filters}"
+            f"j/k select · PgUp/PgDn scroll · Enter details{marked}"
+            f"{' · a Add selected' if self.marked else ' · a Add current' if self.results and self.results[self.selected_index].downloadable else ''}.{filters}"
         )
 
     def on_resize(self, event: Resize) -> None:
         super().on_resize(event)
+        self._update_shortcuts()
         if self.results:
             self._render_results()
             self.call_after_refresh(self._scroll_selection_into_view)

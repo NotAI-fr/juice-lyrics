@@ -1,9 +1,9 @@
 # 999 Project State
 
 ## Current Status
-Backend services remain stable. The experimental Textual frontend supports one
-explicit confirmed Browse Add to queue action and one explicit confirmed
-Download selected action. The current working-tree checkpoint has 250 passing
+Backend services remain stable. The experimental Textual frontend supports
+explicit confirmed single- and multi-song Browse Add to queue actions and
+Download selected action. The current working-tree checkpoint has 258 passing
 tests.
 
 ## Current Branch
@@ -16,10 +16,11 @@ v2-redesign
 ## Completed and integrated
 
 - Typed read-only library-status, catalogue, acquisition-queue, and library-sync services.
-- Responsive terminal-native Textual shell with all five main sections functional; inspection remains read-only and Browse has one explicit Add to queue mutation.
+- Responsive terminal-native Textual shell with all five main sections functional; Browse supports explicit single- and batch Add to queue mutations.
 - Canonical Category and Era selectors, filter-only searches, correct case-sensitive API cache behavior, server-side catalogue pagination, scrollable 50-result pages, and stable ID-based song details.
 - Track-oriented Downloads queue summaries, song navigation, details, structured failures, and retry eligibility; durable jobs are hidden as an internal mechanism.
-- Explicit cancel-first Browse Add to queue flow; adding persists one queued song but never starts downloading.
+- Stable-ID Browse marks span pages within one logical search; Space toggles a song, `M` toggles the page, `u` clears marks, and search/filter changes clear hidden marks.
+- Explicit cancel-first Browse batch Add flow reports eligible and skipped songs, persists eligible songs atomically, and never starts downloading.
 - Explicit cancel-first Downloads `d` flow for one eligible queued song, delegated to the existing acquisition runner with responsive Downloading and Processing states.
 - Explicit cancel-first Downloads `A` flow for sequentially downloading all eligible queued songs; failed and active entries are skipped.
 - Library summary, local track navigation, typed lyric/match/LRC/state details, local filters, and explicit read-only sync preview.
@@ -37,10 +38,9 @@ retry failures, delete durable acquisition records, and sync the library.
 ## Current limitations
 
 - Configuration editing remains CLI-only.
-- TUI Cancel and multi-select remain unimplemented; `x` removes
+- Active-download Cancel remains unimplemented; `x` removes
   a waiting/failed song, `c` clears waiting/failed records, and `H` clears
   completed history without deleting downloaded files.
-- Browse currently adds one song at a time; multi-select remains planned.
 - Native FLAC support remains planned; lyric post-processing is currently MP3-only.
 - The planned executable/product name remains `999`; package, distribution, and
   data paths remain named `juice-lyrics`.

@@ -28,6 +28,9 @@ from juice_lyrics.services.download_queue import (
     DownloadRetryStatus,
     DownloadQueueItemStatus,
     QueueAddStatus,
+    QueueBatchAddItemStatus,
+    QueueBatchAddStatus,
+    add_batch_to_download_queue,
     add_to_download_queue,
     execute_selected_download,
     get_download_queue_snapshot,
@@ -39,6 +42,7 @@ from juice_lyrics.services.download_queue import (
     clear_download_queue,
     clear_completed_history,
     plan_queue_additions,
+    plan_queue_batch_additions,
     project_download_queue,
 )
 
@@ -80,17 +84,22 @@ def _job(number: int, job_id: str, items: tuple[QueueItem, ...]) -> QueueJob:
     )
 
 
-def _selection(*, downloadable: bool = True) -> CatalogueSearchResult:
+def _selection(
+    *,
+    downloadable: bool = True,
+    song_id: int | None = 94902,
+    title: str = "Lemon Glow",
+) -> CatalogueSearchResult:
     return CatalogueSearchResult(
         selection_index=1,
-        song_id=94902,
-        title="Lemon Glow",
+        song_id=song_id,
+        title=title,
         category="unreleased",
         era="DRFL",
         length="3:12",
         artists=("Juice WRLD",),
         producers=(),
-        media_path="Compilation/DRFL/Lemon Glow.mp3" if downloadable else None,
+        media_path=f"Compilation/DRFL/{title}.mp3" if downloadable else None,
         lyrics=LyricAvailability.SYNCED,
         downloadable=downloadable,
     )
@@ -252,6 +261,87 @@ def test_plan_and_confirm_adds_exactly_one_song_without_running_it(tmp_path, mon
     assert jobs[0].items[0].item.destination == music / "Lemon Glow.mp3"
     queue = get_download_queue_snapshot(jobs_path)
     assert [item.title for item in queue.items] == ["Lemon Glow"]
+
+
+def test_batch_add_plans_eligible_items_and_reports_skips_by_stable_id(tmp_path):
+    jobs_path = tmp_path / "jobs.json"
+    settings = Settings(music_dir=tmp_path / "music")
+    first = _selection(song_id=101, title="First")
+    second = _selection(song_id=202, title="Second")
+    unavailable = _selection(song_id=303, title="Unavailable", downloadable=False)
+    stale = _selection(song_id=None, title="Stale")
+
+    existing = plan_queue_additions(settings, (second,), jobs_path=jobs_path)
+    assert existing.plan is not None
+    assert add_to_download_queue(existing.plan, jobs_path=jobs_path).status is QueueAddStatus.ADDED
+
+    result = plan_queue_batch_additions(
+        settings,
+        (first, first, second, unavailable, stale),
+        jobs_path=jobs_path,
+    )
+    assert result.status is QueueBatchAddStatus.READY
+    assert result.plan is not None
+    assert [item.song_id for item in result.plan.eligible] == ["101"]
+    assert result.plan.count(QueueBatchAddItemStatus.ALREADY_QUEUED) == 2
+    assert result.plan.count(QueueBatchAddItemStatus.UNAVAILABLE) == 1
+    assert result.plan.count(QueueBatchAddItemStatus.STALE) == 1
+
+
+def test_batch_add_revalidates_then_atomically_persists_only_eligible_items(tmp_path, monkeypatch):
+    import juice_lyrics.acquisition.downloader as downloader
+    import juice_lyrics.acquisition.runner as runner
+
+    monkeypatch.setattr(downloader, "download_to", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("download ran")))
+    monkeypatch.setattr(runner, "run_job", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("runner ran")))
+    jobs_path = tmp_path / "jobs.json"
+    settings = Settings(music_dir=tmp_path / "music")
+    selections = (
+        _selection(song_id=101, title="First"),
+        _selection(song_id=202, title="Second"),
+        _selection(song_id=303, title="Unavailable", downloadable=False),
+    )
+    planned = plan_queue_batch_additions(settings, selections, jobs_path=jobs_path)
+    assert planned.plan is not None
+    result = add_batch_to_download_queue(planned.plan, jobs_path=jobs_path)
+    assert result.status is QueueBatchAddStatus.ADDED
+    assert result.added_count == 2
+    assert result.added_song_ids == ("101", "202")
+    jobs = JobStore(jobs_path).list()
+    assert len(jobs) == 1
+    assert [entry.item.identifier for entry in jobs[0].items] == ["101", "202"]
+    assert "1 unavailable" in result.message
+    download_all = plan_download_all(settings, jobs_path=jobs_path)
+    assert [item.song_id for item in download_all.eligible] == ["101", "202"]
+
+    repeated = add_batch_to_download_queue(planned.plan, jobs_path=jobs_path)
+    assert repeated.status is QueueBatchAddStatus.NOTHING_TO_ADD
+    assert "2 already queued" in repeated.message
+    assert len(JobStore(jobs_path).list()) == 1
+
+
+def test_batch_add_store_failure_reports_no_success_or_partial_write(tmp_path):
+    settings = Settings(music_dir=tmp_path / "music")
+    planned = plan_queue_batch_additions(
+        settings,
+        (_selection(song_id=101, title="First"), _selection(song_id=202, title="Second")),
+        jobs_path=tmp_path / "jobs.json",
+    )
+    assert planned.plan is not None
+
+    class BrokenStore:
+        def create(self, items):
+            tuple(items)
+            raise PermissionError
+
+    result = add_batch_to_download_queue(
+        planned.plan,
+        jobs_path=tmp_path / "jobs.json",
+        store_factory=lambda path: BrokenStore(),
+    )
+    assert result.status is QueueBatchAddStatus.SAVE_FAILED
+    assert result.added_count == 0
+    assert not (tmp_path / "jobs.json").exists()
 
 
 def test_queue_plan_reports_unavailable_queued_downloaded_and_store_failures(tmp_path):

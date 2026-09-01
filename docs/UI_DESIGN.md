@@ -303,10 +303,12 @@ an internal durability and execution detail; an internal reference may be shown
 only under troubleshooting details. Completed records contribute to the summary
 but are hidden from the active queue, while failed songs remain visible.
 
-Browse uses `a` to open an explicit Add to queue confirmation. The dialog shows
-the resolved destination and states that adding will not start a download.
-Future queue actions are Download selected, Download all, Remove, Clear, Retry,
-and Cancel.
+Browse uses Space to mark stable song IDs, `M` to toggle downloadable songs on
+the visible page, and `u` to clear marks. Marks may span pages of one logical
+search; search or filter changes clear them. `a` opens an explicit confirmation
+for the marked set, or the current song when nothing is marked. The dialog shows
+eligible/skipped counts and destination information and states that adding will
+not start a download.
 
 Example:
 

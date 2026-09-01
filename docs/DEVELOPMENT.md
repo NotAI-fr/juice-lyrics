@@ -66,7 +66,7 @@ tree; reinstall it deliberately after a checkpoint or use the explicit `.venv`
 command above.
 
 The experimental shell provides functional Dashboard, Browse, Library,
-Downloads, and Settings screens. Browse has one explicit Add to queue action,
+Downloads, and Settings screens. Browse has explicit single- and batch-selection Add to queue actions,
 and Downloads can explicitly run one selected queued song. Press `/` to focus catalogue search and Enter to
 submit. Category and Era are keyboard-usable selectors populated from API
 metadata; choose All for no filter. Filter-only searches are supported. Results
@@ -75,8 +75,11 @@ total bar. Use `n` for the next API page and `p` for the previous one. Arrows or
 `j`/`k` move one result, PageDown/PageUp move through the loaded page, and
 Home/End select its first/last result. The list scrolls to keep that selection
 visible. Enter loads full details and a lyric preview, while `r` refreshes the
-current API page. Press `a` on a downloadable result to review its resolved
-destination and explicitly add it to the download queue. The cancel-first dialog
+current API page. Space marks or unmarks the highlighted result, `M` toggles all
+downloadable songs on the current page, and `u` clears the marks. Marks may span
+pages of the same search; changing the title, Category, or Era clears them.
+Press `a` to review and add the marked songs, or the highlighted song when none
+are marked. The cancel-first dialog reports eligible and skipped songs and
 states that adding does not start a download. Global keys remain `1`–`5` for
 sections, `?` for help, and `q` to quit. Browse does not run downloads, sync
 lyrics, edit settings, or modify the local library.

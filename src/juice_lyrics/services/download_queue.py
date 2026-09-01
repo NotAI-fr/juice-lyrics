@@ -56,6 +56,22 @@ class QueueAddStatus(str, Enum):
     SAVE_FAILED = "save_failed"
 
 
+class QueueBatchAddItemStatus(str, Enum):
+    ELIGIBLE = "eligible"
+    ALREADY_QUEUED = "already_queued"
+    ALREADY_DOWNLOADED = "already_downloaded"
+    UNAVAILABLE = "unavailable"
+    STALE = "stale"
+    INVALID = "invalid"
+
+
+class QueueBatchAddStatus(str, Enum):
+    READY = "ready"
+    ADDED = "added"
+    NOTHING_TO_ADD = "nothing_to_add"
+    SAVE_FAILED = "save_failed"
+
+
 class DownloadExecutionAction(str, Enum):
     START = "start"
     RESUME = "resume"
@@ -155,6 +171,53 @@ class QueueAddResult:
     @property
     def ok(self) -> bool:
         return self.status in {QueueAddStatus.READY, QueueAddStatus.ADDED}
+
+
+@dataclass(frozen=True, slots=True)
+class QueueBatchAddItem:
+    song_id: str | None
+    title: str
+    status: QueueBatchAddItemStatus
+    message: str
+    planned: PlannedQueueItem | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class QueueBatchAddPlan:
+    items: tuple[QueueBatchAddItem, ...]
+
+    @property
+    def selected_count(self) -> int:
+        return len(self.items)
+
+    @property
+    def eligible(self) -> tuple[PlannedQueueItem, ...]:
+        return tuple(
+            item.planned
+            for item in self.items
+            if item.status is QueueBatchAddItemStatus.ELIGIBLE and item.planned is not None
+        )
+
+    @property
+    def eligible_count(self) -> int:
+        return len(self.eligible)
+
+    def count(self, status: QueueBatchAddItemStatus) -> int:
+        return sum(item.status is status for item in self.items)
+
+
+@dataclass(frozen=True, slots=True)
+class QueueBatchAddResult:
+    status: QueueBatchAddStatus
+    message: str
+    plan: QueueBatchAddPlan | None = None
+    added_count: int = 0
+    queue_references: tuple[str, ...] = ()
+    added_song_ids: tuple[str, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        return self.status in {QueueBatchAddStatus.READY, QueueBatchAddStatus.ADDED}
 
 
 @dataclass(frozen=True, slots=True)
@@ -497,6 +560,152 @@ def add_to_download_queue(
         f"Added {len(plan.items)} song{'s' if len(plan.items) != 1 else ''} to the download queue.",
         added_count=len(plan.items),
         queue_references=references,
+    )
+
+
+def _batch_add_message(added: int, plan: QueueBatchAddPlan) -> str:
+    parts = ["No songs added" if added == 0 else f"Added {added} song{'s' if added != 1 else ''}"]
+    already_queued = plan.count(QueueBatchAddItemStatus.ALREADY_QUEUED)
+    unavailable = plan.count(QueueBatchAddItemStatus.UNAVAILABLE) + plan.count(QueueBatchAddItemStatus.STALE)
+    downloaded = plan.count(QueueBatchAddItemStatus.ALREADY_DOWNLOADED)
+    invalid = plan.count(QueueBatchAddItemStatus.INVALID)
+    if already_queued:
+        parts.append(f"{already_queued} already queued")
+    if downloaded:
+        parts.append(f"{downloaded} already downloaded")
+    if unavailable:
+        parts.append(f"{unavailable} unavailable")
+    if invalid:
+        parts.append(f"{invalid} invalid")
+    return " · ".join(parts)
+
+
+def plan_queue_batch_additions(
+    settings: Settings,
+    selections: Sequence[CatalogueSearchResult],
+    *,
+    destination_dir: Path | None = None,
+    jobs_path: Path = DEFAULT_JOBS_FILE,
+    queue_reader: QueueReader = get_queue_snapshot,
+    resolver: Resolver = resolve_resource,
+    duplicate_finder: DuplicateFinder = find_duplicate,
+) -> QueueBatchAddResult:
+    """Plan a stable-ID batch queue addition without writing persistent state."""
+
+    if not selections:
+        return QueueBatchAddResult(QueueBatchAddStatus.NOTHING_TO_ADD, "Select one or more songs first.")
+    target_dir = Path(destination_dir or settings.music_dir).expanduser()
+    try:
+        snapshot = queue_reader(Path(jobs_path))
+    except PermissionError:
+        return QueueBatchAddResult(QueueBatchAddStatus.SAVE_FAILED, "Unable to inspect the queue: permission denied.")
+    except (JobStoreError, OSError) as exc:
+        return QueueBatchAddResult(QueueBatchAddStatus.SAVE_FAILED, f"Unable to inspect the queue: {exc}")
+
+    outcomes: list[QueueBatchAddItem] = []
+    seen_ids: set[str] = set()
+    seen_destinations: set[Path] = set()
+    for selection in selections:
+        song_id = str(selection.song_id) if selection.song_id is not None else None
+        title = selection.title or "Unknown song"
+        if song_id is None or not selection.title:
+            outcomes.append(QueueBatchAddItem(song_id, title, QueueBatchAddItemStatus.STALE, "Stable catalogue metadata is unavailable."))
+            continue
+        if song_id in seen_ids:
+            outcomes.append(QueueBatchAddItem(song_id, title, QueueBatchAddItemStatus.ALREADY_QUEUED, "Repeated selection was ignored."))
+            continue
+        seen_ids.add(song_id)
+        if not selection.downloadable or not selection.media_path:
+            outcomes.append(QueueBatchAddItem(song_id, title, QueueBatchAddItemStatus.UNAVAILABLE, "Media is unavailable."))
+            continue
+        try:
+            item = resolver(
+                _selection_resource(selection),
+                destination_dir=target_dir,
+                api_base=settings.api_base,
+            )
+        except (ResourceResolutionError, TypeError, ValueError) as exc:
+            outcomes.append(QueueBatchAddItem(song_id, title, QueueBatchAddItemStatus.INVALID, f"Unable to resolve download: {exc}"))
+            continue
+        if item.destination in seen_destinations:
+            outcomes.append(QueueBatchAddItem(song_id, title, QueueBatchAddItemStatus.ALREADY_QUEUED, "Another selection has the same destination."))
+            continue
+        seen_destinations.add(item.destination)
+        if _existing_queue_duplicate(item, snapshot) is not None:
+            outcomes.append(QueueBatchAddItem(song_id, title, QueueBatchAddItemStatus.ALREADY_QUEUED, "Already in Downloads."))
+            continue
+        duplicate = duplicate_finder(item, search_dir=target_dir)
+        if duplicate is not None:
+            outcomes.append(QueueBatchAddItem(song_id, title, QueueBatchAddItemStatus.ALREADY_DOWNLOADED, f"Already downloaded at {duplicate.path}."))
+            continue
+        planned = PlannedQueueItem(
+            item=item,
+            song_id=song_id,
+            artist=", ".join(selection.artists) or None,
+            category=selection.category,
+            era=selection.era,
+        )
+        outcomes.append(QueueBatchAddItem(song_id, title, QueueBatchAddItemStatus.ELIGIBLE, "Ready to add.", planned))
+
+    plan = QueueBatchAddPlan(tuple(outcomes))
+    status = QueueBatchAddStatus.READY if plan.eligible else QueueBatchAddStatus.NOTHING_TO_ADD
+    message = "Ready to add selected songs." if plan.eligible else _batch_add_message(0, plan)
+    return QueueBatchAddResult(status, message, plan=plan)
+
+
+def add_batch_to_download_queue(
+    plan: QueueBatchAddPlan,
+    *,
+    jobs_path: Path = DEFAULT_JOBS_FILE,
+    queue_reader: QueueReader = get_queue_snapshot,
+    duplicate_finder: DuplicateFinder = find_duplicate,
+    store_factory: StoreFactory = JobStore,
+) -> QueueBatchAddResult:
+    """Revalidate and atomically persist the still-eligible portion of a batch."""
+
+    if not plan.items:
+        return QueueBatchAddResult(QueueBatchAddStatus.NOTHING_TO_ADD, "Nothing was selected for Downloads.", plan=plan)
+    try:
+        snapshot = queue_reader(Path(jobs_path))
+        final_items: list[QueueBatchAddItem] = []
+        eligible: list[PlannedQueueItem] = []
+        for outcome in plan.items:
+            planned = outcome.planned
+            if outcome.status is not QueueBatchAddItemStatus.ELIGIBLE or planned is None:
+                final_items.append(outcome)
+                continue
+            if _existing_queue_duplicate(planned.item, snapshot) is not None:
+                final_items.append(QueueBatchAddItem(outcome.song_id, outcome.title, QueueBatchAddItemStatus.ALREADY_QUEUED, "Already in Downloads."))
+                continue
+            duplicate = duplicate_finder(planned.item, search_dir=planned.item.destination.parent)
+            if duplicate is not None:
+                final_items.append(QueueBatchAddItem(outcome.song_id, outcome.title, QueueBatchAddItemStatus.ALREADY_DOWNLOADED, f"Already downloaded at {duplicate.path}."))
+                continue
+            final_items.append(outcome)
+            eligible.append(planned)
+        final_plan = QueueBatchAddPlan(tuple(final_items))
+        if not eligible:
+            return QueueBatchAddResult(
+                QueueBatchAddStatus.NOTHING_TO_ADD,
+                _batch_add_message(0, final_plan),
+                plan=final_plan,
+            )
+        store = store_factory(Path(jobs_path))
+        job: AcquisitionJob = store.create(planned.item for planned in eligible)
+    except PermissionError:
+        return QueueBatchAddResult(QueueBatchAddStatus.SAVE_FAILED, "Unable to save Downloads: permission denied.", plan=plan)
+    except (JobStoreError, OSError) as exc:
+        return QueueBatchAddResult(QueueBatchAddStatus.SAVE_FAILED, f"Unable to save Downloads: {exc}", plan=plan)
+
+    references = tuple(f"{job.job_id}:{index}" for index in range(len(eligible)))
+    added_ids = tuple(planned.song_id for planned in eligible)
+    return QueueBatchAddResult(
+        QueueBatchAddStatus.ADDED,
+        _batch_add_message(len(eligible), final_plan),
+        plan=final_plan,
+        added_count=len(eligible),
+        queue_references=references,
+        added_song_ids=added_ids,
     )
 
 

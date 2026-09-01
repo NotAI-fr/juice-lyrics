@@ -137,10 +137,16 @@ queue. Failed entries remain visible and actionable until a future retry or
 remove action resolves them. Internal references may appear only in an advanced
 troubleshooting detail.
 
-Download selected is the first implemented queue execution action and requires
-a cancel-first confirmation for one eligible song. Download all, Remove, Clear,
-Retry, and Cancel remain planned. Each mutating action requires its own explicit
-safe workflow.
+Download selected, sequential Download all, Retry, Remove, Clear queue, and
+Clear completed history each use an explicit cancel-first workflow. Active
+download cancellation remains planned.
+
+Browse selection is an in-memory set keyed by stable catalogue song ID. Marks
+may span pages only within one logical search and are cleared when the search or
+server-side filters change. Batch Add revalidates queue and destination
+duplicates immediately before one atomic persistent write; it never starts a
+download. Durable acquisition jobs remain hidden behind this song-oriented
+operation.
 
 The backend can remain technical while the user interface becomes friendly.
 

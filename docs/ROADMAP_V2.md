@@ -134,8 +134,9 @@ Goal:
 Create the main application interface.
 
 Status: In progress. The responsive terminal-native shell and all five primary
-sections are integrated. Browse has an explicit confirmed Add to queue action;
-download execution and other mutations remain CLI-only.
+sections are integrated. Browse supports explicitly confirmed single- and
+multi-song Add to queue actions, and Downloads provides selected, sequential
+all, retry, and record-only cleanup actions.
 
 Screens:
 
@@ -149,8 +150,9 @@ Features:
 - Lyrics preview.
 - Download actions.
 
-Status: Read-only functionality complete, including server-side pagination and
-scrollable 50-result pages. Download actions remain planned.
+Status: Catalogue functionality is complete, including server-side pagination,
+scrollable 50-result pages, cross-page stable-ID marking, and explicitly
+confirmed batch Add to queue. Adding does not start downloads.
 
 ---
 
@@ -178,10 +180,11 @@ Features:
 - Completed items.
 - Retry.
 
-Status: Track-oriented queue projection, Browse Add to queue, and explicitly
-confirmed Download selected are complete. Durable jobs remain internal,
-completed entries are hidden from the active queue, and failed entries remain
-visible. Download all, Remove, Clear, Retry, and Cancel remain planned.
+Status: Track-oriented queue projection, Browse batch Add, explicitly confirmed
+Download selected, sequential Download all, Retry, and record-only cleanup are
+complete. Durable jobs remain internal, completed entries are hidden from the
+active queue, and failed entries remain visible. Active cancellation remains
+planned.
 
 ---
 

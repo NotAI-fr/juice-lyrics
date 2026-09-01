@@ -26,6 +26,11 @@ from juice_lyrics.services.download_queue import (
     QueueAddPlan,
     QueueAddResult,
     QueueAddStatus,
+    QueueBatchAddItem,
+    QueueBatchAddItemStatus,
+    QueueBatchAddPlan,
+    QueueBatchAddResult,
+    QueueBatchAddStatus,
 )
 from juice_lyrics.acquisition.models import AcquisitionItem
 from juice_lyrics.tui import JuiceLyricsApp
@@ -133,6 +138,25 @@ def _queue_plan(tmp_path: Path, result: CatalogueSearchResult) -> QueueAddPlan:
         category=result.category,
         era=result.era,
     ),))
+
+
+def _batch_plan(
+    tmp_path: Path,
+    results: tuple[CatalogueSearchResult, ...],
+    *,
+    extra: tuple[QueueBatchAddItem, ...] = (),
+) -> QueueBatchAddPlan:
+    items = []
+    for result in results:
+        single = _queue_plan(tmp_path, result).items[0]
+        items.append(QueueBatchAddItem(
+            str(result.song_id),
+            result.title or "Unknown",
+            QueueBatchAddItemStatus.ELIGIBLE,
+            "Ready to add.",
+            single,
+        ))
+    return QueueBatchAddPlan(tuple(items) + extra)
 
 
 async def _open_browse(app: JuiceLyricsApp, pilot):
@@ -1123,3 +1147,215 @@ def test_add_to_queue_store_failure_is_safe_and_slow_planning_does_not_block_nav
         asyncio.run(failure_scenario())
     finally:
         release.set()
+
+
+def test_browse_marks_cursor_and_page_selection_are_independent(tmp_path):
+    songs = (_result(1, "First"), _result(2, "Second"), _result(3, "Unavailable", downloadable=False))
+
+    async def scenario():
+        app = _app(tmp_path, search=lambda *args, **kwargs: songs)
+        async with app.run_test(size=(100, 30)) as pilot:
+            browse = await _open_browse(app, pilot)
+            await _submit(app, pilot, "songs")
+            await pilot.press("space")
+            assert set(browse.marked) == {"1"}
+            assert "First" in _text(app, "#browse-results") and "[x]" in _text(app, "#browse-results")
+            assert "1 song marked" in _text(app, "#browse-results-title")
+            assert "a Add 1 selected" in _text(app, "#browse-shortcuts")
+            await pilot.press("down")
+            assert set(browse.marked) == {"1"}
+            await pilot.press("space")
+            assert set(browse.marked) == {"1", "2"}
+            assert "2 songs marked" in _text(app, "#browse-results-title")
+            await pilot.press("M")
+            assert browse.marked == {}
+            await pilot.press("M")
+            assert set(browse.marked) == {"1", "2"}
+            await pilot.press("u")
+            assert browse.marked == {}
+            assert "Selection cleared" in _text(app, "#browse-status")
+
+    asyncio.run(scenario())
+
+
+def test_marks_span_pages_but_search_and_filter_changes_clear_them(tmp_path):
+    first = _result(1, "Page One")
+    second = _result(51, "Page Two")
+
+    def search(settings, query, **kwargs):
+        page = kwargs["page"]
+        return CataloguePage(
+            (first,) if page == 1 else (second,),
+            page,
+            50,
+            100,
+            page + 1 if page < 2 else None,
+            page - 1 if page > 1 else None,
+        )
+
+    async def scenario():
+        app = _app(tmp_path, search=search)
+        async with app.run_test() as pilot:
+            browse = await _open_browse(app, pilot)
+            await _submit(app, pilot, "songs")
+            await pilot.press("space")
+            await pilot.pause()
+            assert set(browse.marked) == {"1"}
+            await pilot.press("n")
+            await browse._search_worker.wait()
+            await pilot.pause()
+            await pilot.press("space")
+            assert set(browse.marked) == {"1", "51"}
+            await pilot.press("p")
+            await browse._search_worker.wait()
+            await pilot.pause()
+            assert set(browse.marked) == {"1", "51"}
+            query = app.query_one("#browse-query", Input)
+            query.value = "changed"
+            query.focus()
+            await pilot.press("enter")
+            await browse._search_worker.wait()
+            await pilot.pause()
+            assert browse.marked == {}
+            assert "Selection cleared because the search changed" in _text(app, "#browse-status")
+
+            browse.set_focus(None)
+            await pilot.press("space")
+            assert browse.marked
+            category = app.query_one("#browse-category", Select)
+            category.value = "unreleased"
+            await pilot.pause()
+            await browse._search_worker.wait()
+            await pilot.pause()
+            assert browse.marked == {}
+
+    asyncio.run(scenario())
+
+
+def test_batch_add_confirmation_is_cancel_first_and_captures_stable_targets(tmp_path):
+    songs = (_result(1, "First"), _result(2, "Second"), _result(9, "Already there"))
+    created = []
+
+    def planner(settings, selections):
+        plan = _batch_plan(tmp_path, tuple(selections[:2]), extra=(
+            QueueBatchAddItem("9", "Already there", QueueBatchAddItemStatus.ALREADY_QUEUED, "Already queued."),
+        ))
+        return QueueBatchAddResult(QueueBatchAddStatus.READY, "Ready", plan=plan)
+
+    def creator(plan):
+        created.append(plan)
+        return QueueBatchAddResult(
+            QueueBatchAddStatus.ADDED,
+            "Added 2 songs · 1 already queued",
+            plan=plan,
+            added_count=2,
+            added_song_ids=("1", "2"),
+        )
+
+    async def scenario():
+        app = _app(tmp_path, search=lambda *args, **kwargs: songs, queue_plan=planner, queue_add=creator)
+        async with app.run_test(size=(80, 24)) as pilot:
+            browse = await _open_browse(app, pilot)
+            await _submit(app, pilot, "songs")
+            await pilot.press("M", "a")
+            await browse._queue_plan_worker.wait()
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "AddToQueueDialog"
+            body = _text(app, "#queue-confirm-body")
+            assert "Selected 3 · Eligible 2" in body
+            assert "Skipped: 1 queued" in body
+            assert "does not start downloading" in body
+            assert "[Cancel]" in _text(app, "#queue-confirm-cancel")
+            dialog = app.screen
+            assert dialog.query_one("#queue-confirm-dialog").region.y >= 0
+            assert dialog.query_one("#queue-confirm-dialog").region.bottom <= 24
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app.screen is browse
+            assert set(browse.marked) == {"1", "2", "9"}
+            assert created == []
+
+            await pilot.press("a")
+            await browse._queue_plan_worker.wait()
+            await pilot.pause()
+            browse.selected_index = 1
+            await pilot.press("tab", "enter")
+            await app.screen._worker.wait()
+            await pilot.pause()
+            assert len(created) == 1
+            assert [item.song_id for item in created[0].eligible] == ["1", "2"]
+            assert "Added 2 songs" in _text(app, "#queue-confirm-status")
+            await pilot.press("y")
+            assert len(created) == 1
+            await pilot.press("enter")
+            await pilot.pause()
+            assert browse.marked == {}
+
+    asyncio.run(scenario())
+
+
+def test_browse_batch_help_shortcuts_and_unavailable_mark_guard(tmp_path):
+    messages = []
+    songs = (_result(1, "Available"), _result(2, "Unavailable", downloadable=False))
+
+    async def scenario():
+        app = _app(tmp_path, search=lambda *args, **kwargs: songs)
+        app.notify = lambda message, **kwargs: messages.append(str(message))
+        async with app.run_test(size=(80, 24)) as pilot:
+            browse = await _open_browse(app, pilot)
+            await _submit(app, pilot, "songs")
+            shortcuts = app.query_one("#browse-shortcuts")
+            assert shortcuts.region.height == 1
+            assert "a add current" in _text(app, "#browse-shortcuts").lower()
+            results_scroll = app.query_one("#browse-results-scroll", VerticalScroll)
+            assert results_scroll.region.height >= 5
+            await pilot.press("down", "space")
+            assert browse.marked == {}
+            assert "cannot be marked" in _text(app, "#browse-status")
+            app.action_show_help()
+            help_text = messages[-1]
+            assert "Space mark/unmark" in help_text
+            assert "M toggle downloadable songs" in help_text
+            assert "marked songs" in help_text
+            assert "adding does not start downloading" in help_text
+            assert "4 Downloads" in help_text
+
+    asyncio.run(scenario())
+
+
+def test_disappeared_mark_is_revalidated_as_unavailable_not_replaced_by_row_index(tmp_path):
+    original = _result(1, "Original")
+    replacement = _result(2, "Replacement")
+    planned = []
+
+    def search(settings, query, **kwargs):
+        return (replacement,) if kwargs.get("refresh") else (original,)
+
+    def planner(settings, selections):
+        planned.extend(selections)
+        plan = QueueBatchAddPlan((QueueBatchAddItem(
+            "1", "Original", QueueBatchAddItemStatus.UNAVAILABLE, "No longer available."
+        ),))
+        return QueueBatchAddResult(QueueBatchAddStatus.NOTHING_TO_ADD, "No songs added · 1 unavailable", plan=plan)
+
+    async def scenario():
+        app = _app(tmp_path, search=search, queue_plan=planner)
+        async with app.run_test() as pilot:
+            browse = await _open_browse(app, pilot)
+            await _submit(app, pilot, "song")
+            await pilot.press("space")
+            await pilot.pause()
+            await pilot.press("r")
+            await browse._search_worker.wait()
+            await pilot.pause()
+            assert set(browse.marked) == {"1"}
+            assert browse.results[0].song_id == 2
+            await pilot.press("a")
+            await browse._queue_plan_worker.wait()
+            await pilot.pause()
+            assert [item.song_id for item in planned] == [1]
+            assert not planned[0].downloadable
+            assert app.screen is browse
+            assert "unavailable" in _text(app, "#browse-status")
+
+    asyncio.run(scenario())
