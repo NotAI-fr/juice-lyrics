@@ -25,6 +25,16 @@ from ...services.download_queue import (
     DownloadRetryPlan,
     DownloadRetryResult,
     DownloadRetryStatus,
+    DownloadAllPlan,
+    DownloadAllResult,
+    DownloadBatchStatus,
+    plan_download_all,
+    execute_download_all,
+    QueueMutationResult,
+    QueueMutationStatus,
+    remove_queue_item,
+    clear_download_queue,
+    clear_completed_history,
     DownloadQueueItem,
     DownloadQueueItemStatus,
     DownloadQueueSnapshot,
@@ -36,6 +46,9 @@ PlanProvider = Callable[..., DownloadExecutionResult]
 ExecutionProvider = Callable[..., DownloadExecutionResult]
 RetryPlanProvider = Callable[..., DownloadRetryResult]
 RetryExecutionProvider = Callable[..., DownloadRetryResult]
+MutationProvider = Callable[..., QueueMutationResult]
+BatchPlanProvider = Callable[..., DownloadAllPlan | DownloadAllResult]
+BatchExecutionProvider = Callable[..., DownloadAllResult]
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +186,55 @@ class RetryFailedDialog(ModalScreen[DownloadRetryPlan | None]):
         event.prevent_default(); event.stop()
 
 
+class QueueCleanupDialog(ModalScreen[str | None]):
+    def __init__(self, action: str, body: str) -> None:
+        super().__init__(); self.action_name = action; self.body = body; self._confirmed = False
+    def compose(self) -> ComposeResult:
+        with Container(id="download-confirm-dialog"):
+            yield Static(self.action_name, id="download-confirm-title")
+            yield Static(self.body, id="download-confirm-body", markup=False)
+            with Grid(id="download-confirm-actions"):
+                yield DownloadDialogAction(self.action_name, "confirm", id="download-confirm-download")
+                yield DownloadDialogAction("Cancel", "cancel", id="download-confirm-cancel")
+    def on_mount(self) -> None:
+        self.query_one("#download-confirm-download", Static).update(self.action_name)
+        self.query_one("#download-confirm-cancel", Static).update("[Cancel]")
+    def on_download_dialog_action_activated(self, event: DownloadDialogAction.Activated) -> None:
+        if event.action == "cancel": self.dismiss(None)
+        elif not self._confirmed: self._confirmed = True; self.dismiss(self.action_name)
+    def on_key(self, event: Key) -> None:
+        if event.key in {"escape", "n", "enter"}: self.dismiss(None)
+        elif event.key == "y" and not self._confirmed: self._confirmed = True; self.dismiss(self.action_name)
+        else: return
+        event.prevent_default(); event.stop()
+
+
+class DownloadAllDialog(ModalScreen[DownloadAllPlan | None]):
+    def __init__(self, plan: DownloadAllPlan) -> None:
+        super().__init__(); self.plan = plan; self.confirmed = False
+    def compose(self) -> ComposeResult:
+        titles = "\n".join(f"  {item.title}" for item in self.plan.eligible[:8])
+        if len(self.plan.eligible) > 8: titles += f"\n  … and {len(self.plan.eligible) - 8} more"
+        body = f"{len(self.plan.eligible)} song(s) will download sequentially.\n\n{titles}\n\nFailed left for Retry: {self.plan.failed_count}\nActive left alone: {self.plan.active_count}\nCompleted history: {self.plan.completed_count}\n\nThis will write media and metadata."
+        with Container(id="download-confirm-dialog"):
+            yield Static("Download all", id="download-confirm-title")
+            yield Static(body, id="download-confirm-body", markup=False)
+            with Grid(id="download-confirm-actions"):
+                yield DownloadDialogAction("Download all", "confirm", id="download-confirm-download")
+                yield DownloadDialogAction("Cancel", "cancel", id="download-confirm-cancel")
+    def on_mount(self) -> None:
+        self.query_one("#download-confirm-download", Static).update("Download all")
+        self.query_one("#download-confirm-cancel", Static).update("[Cancel]")
+    def on_download_dialog_action_activated(self, event: DownloadDialogAction.Activated) -> None:
+        if event.action == "cancel": self.dismiss(None)
+        elif not self.confirmed: self.confirmed = True; self.dismiss(self.plan)
+    def on_key(self, event: Key) -> None:
+        if event.key in {"escape", "n", "enter"}: self.dismiss(None)
+        elif event.key == "y" and not self.confirmed: self.confirmed = True; self.dismiss(self.plan)
+        else: return
+        event.prevent_default(); event.stop()
+
+
 class DownloadsScreen(HubScreen):
     """Track-oriented view over the durable acquisition queue."""
 
@@ -185,6 +247,11 @@ class DownloadsScreen(HubScreen):
         execution_provider: ExecutionProvider,
         retry_plan_provider: RetryPlanProvider,
         retry_execution_provider: RetryExecutionProvider,
+        remove_provider: MutationProvider = remove_queue_item,
+        clear_provider: MutationProvider = clear_download_queue,
+        history_provider: MutationProvider = clear_completed_history,
+        batch_plan_provider: BatchPlanProvider = plan_download_all,
+        batch_execution_provider: BatchExecutionProvider = execute_download_all,
     ) -> None:
         super().__init__("downloads", "Downloads")
         self.settings = settings
@@ -193,6 +260,11 @@ class DownloadsScreen(HubScreen):
         self._execution_provider = execution_provider
         self._retry_plan_provider = retry_plan_provider
         self._retry_execution_provider = retry_execution_provider
+        self._remove_provider = remove_provider
+        self._clear_provider = clear_provider
+        self._history_provider = history_provider
+        self._batch_plan_provider = batch_plan_provider
+        self._batch_execution_provider = batch_execution_provider
         self.snapshot: DownloadQueueSnapshot | None = None
         self.items: tuple[DownloadQueueItem, ...] = ()
         self.selected_index = 0
@@ -202,6 +274,9 @@ class DownloadsScreen(HubScreen):
         self._execution_worker: Worker[DownloadExecutionResult] | None = None
         self._retry_plan_worker: Worker[DownloadRetryResult] | None = None
         self._retry_execution_worker: Worker[DownloadRetryResult] | None = None
+        self._mutation_worker: Worker[QueueMutationResult] | None = None
+        self._batch_plan_worker: Worker[DownloadAllPlan | DownloadAllResult] | None = None
+        self._batch_worker: Worker[DownloadAllResult] | None = None
         self._active_reference: str | None = None
         self._live_progress: DownloadProgress | None = None
         self._completion_message: tuple[str, bool] | None = None
@@ -218,7 +293,7 @@ class DownloadsScreen(HubScreen):
                 yield Static("Track details", classes="panel-title")
                 with VerticalScroll(id="download-details-scroll"):
                     yield Static("Select a queued song to inspect it.", id="download-details", markup=False)
-        yield Static("d Download selected · r refresh · Enter details", id="downloads-position", markup=False)
+        yield Static("d selected · A all · t retry · x remove · c clear · H history · r refresh · ? help", id="downloads-position", markup=False)
 
     def on_screen_resume(self, event: ScreenResume) -> None:
         if self.snapshot is None and self._refresh_worker is None:
@@ -261,6 +336,21 @@ class DownloadsScreen(HubScreen):
         if event.worker is self._retry_execution_worker:
             if event.state is WorkerState.SUCCESS: self._apply_retry_result(event.worker.result)
             elif event.state is WorkerState.ERROR: self._apply_retry_result(DownloadRetryResult(DownloadRetryStatus.FAILED, "Retry failed safely.", error=str(event.worker.error)))
+            return
+        if event.worker is self._mutation_worker:
+            self._mutation_worker = None
+            if event.state is WorkerState.SUCCESS: self._apply_mutation(event.worker.result)
+            elif event.state is WorkerState.ERROR: self._apply_mutation(QueueMutationResult(QueueMutationStatus.STORE_FAILED, "Queue update failed safely."))
+            return
+        if event.worker is self._batch_plan_worker:
+            self._batch_plan_worker = None
+            if event.state is WorkerState.SUCCESS: self._apply_batch_plan(event.worker.result)
+            else: self._set_status("Unable to prepare Download all.", error=True)
+            return
+        if event.worker is self._batch_worker:
+            self._batch_worker = None
+            if event.state is WorkerState.SUCCESS: self._apply_batch_result(event.worker.result)
+            else: self._set_status("Download all failed safely.", error=True)
             return
         if event.worker is self._execution_worker:
             if event.state is WorkerState.SUCCESS:
@@ -308,12 +398,12 @@ class DownloadsScreen(HubScreen):
         self._render_items()
         self._render_selected_details()
         if self.items:
-            status.update("Download queue · d Download selected")
+            self._update_context_status()
             self._update_position()
             self.call_after_refresh(self._scroll_selected_into_view)
         else:
-            status.update("The active download queue is empty.")
-            self.query_one("#downloads-position", Static).update("r refresh · Completed items stay in history")
+            status.update("Add songs from Browse with a")
+            self.query_one("#downloads-position", Static).update("a Browse add to queue · r refresh · ? help")
         if self._completion_message is not None:
             message, error = self._completion_message
             self._set_status(message, error=error)
@@ -373,8 +463,30 @@ class DownloadsScreen(HubScreen):
 
     def _update_position(self) -> None:
         if self.items:
-            suffix = "Esc queue · PgUp/PgDn details" if self._details_mode else "d Download selected · Enter details · r refresh"
-            self.query_one("#downloads-position", Static).update(f"Track {self.selected_index + 1} of {len(self.items)} · {suffix}")
+            item = self.selected_item
+            compact = self.size.width < 100
+            if compact:
+                actions = "d selected · A all · t retry · x remove · r refresh · ? help"
+            elif item and item.status is DownloadQueueItemStatus.FAILED:
+                actions = "t Retry failed · x Remove · A Download all · c Clear queue · H Clear history · r Refresh · ? Help"
+            else:
+                actions = "d Download selected · A Download all · x Remove · c Clear queue · H Clear history · r Refresh · ? Help"
+            self.query_one("#downloads-position", Static).update(f"Track {self.selected_index + 1} of {len(self.items)} · {actions}")
+
+    def _update_context_status(self) -> None:
+        if self._batch_worker or self._execution_worker or self._retry_execution_worker or self._completion_message is not None:
+            return
+        item = self.selected_item
+        if item is None:
+            self._set_status("Add songs from Browse with a")
+        elif item.status is DownloadQueueItemStatus.QUEUED:
+            self._set_status("Ready to download · d selected · A all")
+        elif item.status is DownloadQueueItemStatus.FAILED:
+            self._set_status("Download failed · t retry · x remove", error=True)
+        elif item.status is DownloadQueueItemStatus.DOWNLOADING:
+            self._set_status("Downloading · queue management is temporarily limited")
+        elif item.status is DownloadQueueItemStatus.PROCESSING:
+            self._set_status("Processing lyrics and library metadata")
 
     def on_key(self, event: Key) -> None:
         if event.key == "escape" and self._details_mode:
@@ -390,6 +502,14 @@ class DownloadsScreen(HubScreen):
             self._download_selected()
         elif event.key == "t":
             self._retry_selected()
+        elif event.key == "x":
+            self._remove_selected()
+        elif event.key == "c":
+            self._confirm_clear_queue()
+        elif event.key == "H":
+            self._confirm_clear_history()
+        elif event.key == "A":
+            self._download_all()
         elif event.key in ("pagedown", "pageup") and self._details_mode:
             scroll = self.query_one("#download-details-scroll", VerticalScroll)
             (scroll.scroll_page_down if event.key == "pagedown" else scroll.scroll_page_up)(animate=False)
@@ -417,6 +537,79 @@ class DownloadsScreen(HubScreen):
         if item is None or item.status is not DownloadQueueItemStatus.FAILED:
             self._set_status("Select a failed song to retry.", error=True); return
         self._retry_plan_worker = self._prepare_retry(item.reference)
+
+    def _remove_selected(self) -> None:
+        item = self.selected_item
+        if item is None or item.status not in {DownloadQueueItemStatus.QUEUED, DownloadQueueItemStatus.FAILED}:
+            self._set_status("Select a queued or failed song to remove.", error=True); return
+        body = f"Song         {item.title}\nStatus       {_status_label(item.status)}\nDestination  {item.destination or 'Unavailable'}\n\nThis removes the song from the queue. Downloaded music and lyrics will not be deleted."
+        self.app.push_screen(QueueCleanupDialog("Remove", body), self._cleanup_closed)
+
+    def _download_all(self) -> None:
+        if self._batch_plan_worker or self._batch_worker or self._execution_worker or self._retry_execution_worker:
+            self._set_status("Another download is already in progress.", error=True); return
+        self._set_status("Preparing Download all…")
+        self._batch_plan_worker = self._prepare_batch()
+
+    @work(thread=True, exclusive=True, group="download-all-plan", exit_on_error=False)
+    def _prepare_batch(self) -> DownloadAllPlan | DownloadAllResult:
+        return self._batch_plan_provider(self.settings)
+
+    def _apply_batch_plan(self, result: DownloadAllPlan | DownloadAllResult) -> None:
+        if isinstance(result, DownloadAllResult): self._set_status(result.message, error=True); return
+        if not result.eligible:
+            self._set_status(f"No eligible songs. Failed: {result.failed_count} · Active: {result.active_count}"); return
+        self.app.push_screen(DownloadAllDialog(result), self._batch_dialog_closed)
+
+    def _batch_dialog_closed(self, plan: DownloadAllPlan | None) -> None:
+        if plan is None or self._batch_worker is not None: return
+        self._batch_worker = self._execute_batch(plan)
+
+    @work(thread=True, exclusive=True, group="download-all", exit_on_error=False)
+    def _execute_batch(self, plan: DownloadAllPlan) -> DownloadAllResult:
+        return self._batch_execution_provider(self.settings, plan, progress=self._batch_progress)
+
+    def _batch_progress(self, progress: object) -> None:
+        try:
+            self.app.call_from_thread(self._set_status, f"Downloading {getattr(progress, 'completed', 0)} of {getattr(progress, 'total', 0)} · {getattr(progress, 'title', '')}")
+        except RuntimeError:
+            pass
+
+    def _apply_batch_result(self, result: DownloadAllResult) -> None:
+        self.snapshot = None; self._completion_message = (result.message, result.status is not DownloadBatchStatus.COMPLETED)
+        invalidate = getattr(self.app, "invalidate_library_views", None)
+        if callable(invalidate): invalidate()
+        if self.app.screen is self: self.refresh_snapshot()
+
+    def _confirm_clear_queue(self) -> None:
+        if self.snapshot is None or not (self.snapshot.queued_count or self.snapshot.failed_count):
+            self._set_status("The queue has no waiting or failed songs."); return
+        active = self.snapshot.downloading_count + self.snapshot.processing_count
+        body = f"Queued entries  {self.snapshot.queued_count}\nFailed entries  {self.snapshot.failed_count}\nActive retained {active}\n\nThis clears waiting and failed queue entries. Downloaded music and lyrics will not be deleted."
+        self.app.push_screen(QueueCleanupDialog("Clear queue", body), self._cleanup_closed)
+
+    def _confirm_clear_history(self) -> None:
+        if self.snapshot is None or self.snapshot.completed_count == 0:
+            self._set_status("There is no completed history to clear."); return
+        self.app.push_screen(QueueCleanupDialog("Clear history", f"Completed history  {self.snapshot.completed_count}\n\nThis removes completed download records only. Downloaded music and lyrics will remain."), self._cleanup_closed)
+
+    def _cleanup_closed(self, action: str | None) -> None:
+        if action is None or self._mutation_worker is not None: return
+        if action == "Remove":
+            item = self.selected_item
+            if item is None: return
+            self._mutation_worker = self._mutate(self._remove_provider, item.reference)
+        elif action == "Clear queue": self._mutation_worker = self._mutate(self._clear_provider)
+        else: self._mutation_worker = self._mutate(self._history_provider)
+
+    @work(thread=True, exclusive=True, group="queue-mutation", exit_on_error=False)
+    def _mutate(self, provider: MutationProvider, *args: object) -> QueueMutationResult:
+        return provider(*args)
+
+    def _apply_mutation(self, result: QueueMutationResult) -> None:
+        self._completion_message = (result.message, result.status is not QueueMutationStatus.COMPLETED)
+        self.snapshot = None
+        if self.app.screen is self: self.refresh_snapshot()
 
     @work(thread=True, exclusive=True, group="retry-plan", exit_on_error=False)
     def _prepare_retry(self, reference: str) -> DownloadRetryResult:
@@ -570,6 +763,7 @@ class DownloadsScreen(HubScreen):
         self.selected_index = max(0, min(len(self.items) - 1, index))
         self._render_items()
         self._render_selected_details()
+        self._update_context_status()
         self._update_position()
         self.call_after_refresh(self._scroll_selected_into_view)
 

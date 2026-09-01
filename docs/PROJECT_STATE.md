@@ -3,7 +3,7 @@
 ## Current Status
 Backend services remain stable. The experimental Textual frontend supports one
 explicit confirmed Browse Add to queue action and one explicit confirmed
-Download selected action. The current checkpoint has 235 passing tests.
+Download selected action. The current checkpoint has 242 passing tests.
 
 ## Current Branch
 v2-redesign
@@ -20,6 +20,7 @@ v2-redesign
 - Track-oriented Downloads queue summaries, song navigation, details, structured failures, and retry eligibility; durable jobs are hidden as an internal mechanism.
 - Explicit cancel-first Browse Add to queue flow; adding persists one queued song but never starts downloading.
 - Explicit cancel-first Downloads `d` flow for one eligible queued song, delegated to the existing acquisition runner with responsive Downloading and Processing states.
+- Explicit cancel-first Downloads `A` flow for sequentially downloading all eligible queued songs; failed and active entries are skipped.
 - Library summary, local track navigation, typed lyric/match/LRC/state details, local filters, and explicit read-only sync preview.
 - Settings configuration provenance, XDG/application paths, path-existence checks, rmpc integration status, and current capability limitations.
 - Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.
@@ -33,8 +34,9 @@ retry failures, delete durable acquisition records, and sync the library.
 ## Current limitations
 
 - Configuration editing remains CLI-only.
-- TUI Download all, Remove, Clear, and Cancel actions are not implemented; one
-  failed selected song can be retried explicitly with `t`.
+- TUI Cancel and multi-select remain unimplemented; `x` removes
+  a waiting/failed song, `c` clears waiting/failed records, and `H` clears
+  completed history without deleting downloaded files.
 - Browse currently adds one song at a time; multi-select remains planned.
 - Native FLAC support remains planned; lyric post-processing is currently MP3-only.
 - The planned executable/product name remains `999`; package, distribution, and
@@ -50,7 +52,7 @@ retry failures, delete durable acquisition records, and sync the library.
 ## Recommended next milestones
 
 1. Downloads Download all execution
-2. Downloads Remove / Clear / Cancel actions
+2. Downloads Download all, Cancel, and multi-select actions
 3. Library sync actions
 4. `999` command and naming migration
 5. Native FLAC support

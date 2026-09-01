@@ -91,6 +91,12 @@ finalized file may use processing-only retry; otherwise the existing downloader
 resume/redownload path is used. Download all, Remove, Clear, and Cancel remain
 unavailable. The CLI is still required for those acquisition-management
 workflows.
+Use `x` to remove a waiting/failed song, `c` to clear waiting and failed songs,
+and `H` to clear completed history. These record-only actions never delete
+downloaded music or lyrics; active downloads cannot be cancelled yet.
+Press `A` to review and sequentially download all eligible waiting songs.
+Failed and active entries are skipped and remain available for their explicit
+actions.
 
 In Library, arrows or `j`/`k` select local MP3 tracks, Home/End select the first
 or last track, and PageUp/PageDown move through longer lists. Press `/` for a

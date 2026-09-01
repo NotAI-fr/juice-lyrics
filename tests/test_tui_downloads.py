@@ -376,6 +376,28 @@ def test_many_jobs_and_tracks_scroll_with_details_mode_at_80x24(tmp_path):
     asyncio.run(scenario())
 
 
+def test_downloads_shortcuts_and_context_guidance_are_visible(tmp_path):
+    queued = _job(1, "queued", (_item(tmp_path, "Queued", QueueStatus.PENDING),))
+    failed = _job(2, "failed", (_item(tmp_path, "Failed", QueueStatus.FAILED, failure_stage=QueueFailureStage.TRANSPORT),))
+    messages = []
+    async def scenario():
+        app = _app(tmp_path, lambda: _snapshot(queued, failed))
+        app.notify = lambda message, **kwargs: messages.append(message)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_downloads(app, pilot)
+            bar = _text(app, "#downloads-position")
+            assert "d Download selected" in bar and "A Download all" in bar and "x Remove" in bar
+            assert "Ready to download" in _text(app, "#downloads-status")
+            await pilot.press("down"); await pilot.pause()
+            assert "t Retry failed" in _text(app, "#downloads-position")
+            assert "Download failed" in _text(app, "#downloads-status")
+            app.action_show_help()
+            help_text = messages[-1]
+            assert "A Download all" in help_text and "H Clear completed history" in help_text
+            assert "cleanup never deletes downloaded music or lyrics" in help_text
+    asyncio.run(scenario())
+
+
 def test_refresh_preserves_or_safely_replaces_selection(tmp_path):
     first = _job(1, "first", (_item(tmp_path, "First", QueueStatus.PENDING),))
     keep = _job(2, "keep", (_item(tmp_path, "Keep", QueueStatus.PENDING),))

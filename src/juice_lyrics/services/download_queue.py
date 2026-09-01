@@ -223,6 +223,73 @@ class DownloadRetryResult:
         return self.status in {DownloadRetryStatus.READY, DownloadRetryStatus.COMPLETED}
 
 
+class QueueMutationStatus(str, Enum):
+    READY = "ready"
+    COMPLETED = "completed"
+    NOT_FOUND = "not_found"
+    NOT_ELIGIBLE = "not_eligible"
+    ACTIVE = "active"
+    STORE_FAILED = "store_failed"
+
+
+@dataclass(frozen=True, slots=True)
+class QueueMutationPlan:
+    action: str
+    reference: str | None = None
+    count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class QueueMutationResult:
+    status: QueueMutationStatus
+    message: str
+    removed_count: int = 0
+    retained_active_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadAllPlan:
+    eligible: tuple[DownloadExecutionPlan, ...]
+    failed_count: int
+    active_count: int
+    completed_count: int
+    skipped_count: int
+
+
+class DownloadBatchStatus(str, Enum):
+    READY = "ready"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    STORE_FAILED = "store_failed"
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadBatchItemResult:
+    reference: str
+    title: str
+    status: DownloadBatchStatus
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadBatchProgress:
+    completed: int
+    total: int
+    reference: str
+    title: str
+    status: DownloadExecutionStatus
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadAllResult:
+    status: DownloadBatchStatus
+    message: str
+    completed_count: int = 0
+    failed_count: int = 0
+    skipped_count: int = 0
+    items: tuple[DownloadBatchItemResult, ...] = ()
+
+
 QueueReader = Callable[[Path], QueueSnapshot]
 Resolver = Callable[..., AcquisitionItem]
 DuplicateFinder = Callable[..., DuplicateMatch | None]
@@ -440,6 +507,94 @@ def _parse_queue_reference(reference: str) -> tuple[str, int] | None:
     return job_id, int(index_text)
 
 
+def _mutation_error(exc: Exception) -> QueueMutationResult:
+    return QueueMutationResult(QueueMutationStatus.STORE_FAILED, f"Unable to update the download queue: {exc}")
+
+
+def remove_queue_item(
+    reference: str,
+    *,
+    jobs_path: Path = DEFAULT_JOBS_FILE,
+    store_factory: StoreFactory = JobStore,
+) -> QueueMutationResult:
+    parsed = _parse_queue_reference(reference)
+    if parsed is None:
+        return QueueMutationResult(QueueMutationStatus.NOT_FOUND, "This queued song no longer exists.")
+    job_id, index = parsed
+    with _EXECUTION_CLAIM_LOCK:
+        if reference in _ACTIVE_EXECUTIONS:
+            return QueueMutationResult(QueueMutationStatus.ACTIVE, "This song is currently being processed and cannot be removed.")
+        try:
+            store = store_factory(Path(jobs_path)); job = store.get(job_id)
+            if job is None or index < 0 or index >= len(job.items):
+                return QueueMutationResult(QueueMutationStatus.NOT_FOUND, "This queued song no longer exists.")
+            entry = job.items[index]
+            if entry.state in {AcquisitionState.CHECKING_EXISTING, AcquisitionState.DOWNLOADING, AcquisitionState.DOWNLOADED, AcquisitionState.VALIDATING, AcquisitionState.IMPORTED}:
+                return QueueMutationResult(QueueMutationStatus.ACTIVE, "This song is currently being processed and cannot be removed.")
+            if entry.state in {AcquisitionState.COMPLETE, AcquisitionState.SKIPPED}:
+                return QueueMutationResult(QueueMutationStatus.NOT_ELIGIBLE, "Completed songs are managed as history.")
+            title = entry.item.title
+            job.items.pop(index)
+            if job.items:
+                store.save(job)
+            else:
+                store.delete(job_id)
+            return QueueMutationResult(QueueMutationStatus.COMPLETED, f"Removed {title} from the download queue.", removed_count=1)
+        except PermissionError:
+            return QueueMutationResult(QueueMutationStatus.STORE_FAILED, "Unable to update the download queue: permission denied.")
+        except (JobStoreError, OSError) as exc:
+            return _mutation_error(exc)
+
+
+def clear_download_queue(*, jobs_path: Path = DEFAULT_JOBS_FILE, store_factory: StoreFactory = JobStore) -> QueueMutationResult:
+    removed = retained = 0
+    with _EXECUTION_CLAIM_LOCK:
+        try:
+            store = store_factory(Path(jobs_path))
+            for job in list(store.list()):
+                kept = []
+                for index, entry in enumerate(job.items):
+                    ref = f"{job.job_id}:{index}"
+                    if entry.state in {AcquisitionState.COMPLETE, AcquisitionState.SKIPPED}:
+                        kept.append(entry); continue
+                    if entry.state in {AcquisitionState.CHECKING_EXISTING, AcquisitionState.DOWNLOADING, AcquisitionState.DOWNLOADED, AcquisitionState.VALIDATING, AcquisitionState.IMPORTED} or ref in _ACTIVE_EXECUTIONS:
+                        kept.append(entry); retained += 1
+                    else:
+                        removed += 1
+                if len(kept) != len(job.items):
+                    if kept:
+                        job.items = kept; store.save(job)
+                    else:
+                        store.delete(job.job_id)
+            message = f"Cleared {removed} waiting or failed song(s)."
+            if retained: message += f" Retained {retained} active song(s)."
+            return QueueMutationResult(QueueMutationStatus.COMPLETED, message, removed_count=removed, retained_active_count=retained)
+        except PermissionError:
+            return QueueMutationResult(QueueMutationStatus.STORE_FAILED, "Unable to update the download queue: permission denied.")
+        except (JobStoreError, OSError) as exc:
+            return _mutation_error(exc)
+
+
+def clear_completed_history(*, jobs_path: Path = DEFAULT_JOBS_FILE, store_factory: StoreFactory = JobStore) -> QueueMutationResult:
+    removed = 0
+    with _EXECUTION_CLAIM_LOCK:
+        try:
+            store = store_factory(Path(jobs_path))
+            for job in list(store.list()):
+                kept = [entry for entry in job.items if entry.state not in {AcquisitionState.COMPLETE, AcquisitionState.SKIPPED}]
+                removed += len(job.items) - len(kept)
+                if len(kept) != len(job.items):
+                    if kept:
+                        job.items = kept; store.save(job)
+                    else:
+                        store.delete(job.job_id)
+            return QueueMutationResult(QueueMutationStatus.COMPLETED, f"Cleared {removed} completed history entr{'y' if removed == 1 else 'ies'}.", removed_count=removed)
+        except PermissionError:
+            return QueueMutationResult(QueueMutationStatus.STORE_FAILED, "Unable to update the download queue: permission denied.")
+        except (JobStoreError, OSError) as exc:
+            return _mutation_error(exc)
+
+
 def _execution_failure(
     status: DownloadExecutionStatus,
     message: str,
@@ -506,6 +661,65 @@ def plan_download_execution(
             action=action,
         ),
     )
+
+
+def plan_download_all(
+    settings: Settings,
+    *,
+    jobs_path: Path = DEFAULT_JOBS_FILE,
+    store_factory: StoreFactory = JobStore,
+) -> DownloadAllPlan | DownloadAllResult:
+    """Plan eligible queued songs from the authoritative persistent queue."""
+    try:
+        snapshot = get_queue_snapshot(jobs_path)
+    except (JobStoreError, OSError) as exc:
+        return DownloadAllResult(DownloadBatchStatus.STORE_FAILED, f"Unable to read the download queue: {exc}")
+    eligible: list[DownloadExecutionPlan] = []
+    failed = active = completed = skipped = 0
+    for job in snapshot.jobs:
+        for index, item in enumerate(job.items):
+            status = _status(item.status)
+            reference = f"{job.job_id}:{index}"
+            if status in {DownloadQueueItemStatus.COMPLETED}: completed += 1; continue
+            if status is DownloadQueueItemStatus.FAILED: failed += 1; continue
+            if status in {DownloadQueueItemStatus.DOWNLOADING, DownloadQueueItemStatus.PROCESSING}: active += 1; continue
+            if item.destination is None or not item.identifier:
+                skipped += 1; continue
+            if reference in _ACTIVE_EXECUTIONS:
+                active += 1; continue
+            metadata = dict(item.metadata)
+            eligible.append(DownloadExecutionPlan(reference, job.job_id, index, item.identifier, item.title or "Unknown song", metadata.get("artist"), item.destination, DownloadQueueItemStatus.QUEUED, DownloadExecutionAction.RESUME if item.destination.with_name(item.destination.name + ".part").is_file() else DownloadExecutionAction.START))
+    return DownloadAllPlan(tuple(eligible), failed, active, completed, skipped)
+
+
+def execute_download_all(
+    settings: Settings,
+    plan: DownloadAllPlan,
+    *,
+    jobs_path: Path = DEFAULT_JOBS_FILE,
+    runner: Runner = run_job,
+    integration: Integration = integrate_downloaded_mp3,
+    song_fetcher: SongFetcher = get_song,
+    lyrics_dir: Path | None = None,
+    progress: Callable[[DownloadBatchProgress], None] | None = None,
+) -> DownloadAllResult:
+    results: list[DownloadBatchItemResult] = []
+    completed = failed = skipped = 0
+    for position, execution_plan in enumerate(plan.eligible, 1):
+        if progress:
+            progress(DownloadBatchProgress(position - 1, len(plan.eligible), execution_plan.reference, execution_plan.title, DownloadExecutionStatus.READY))
+        current = plan_download_execution(settings, execution_plan.reference, jobs_path=jobs_path)
+        if current.plan is None:
+            skipped += 1
+            results.append(DownloadBatchItemResult(execution_plan.reference, execution_plan.title, DownloadBatchStatus.FAILED, current.message))
+            continue
+        result = execute_selected_download(settings, current.plan, jobs_path=jobs_path, runner=runner, integration=integration, song_fetcher=song_fetcher, lyrics_dir=lyrics_dir, progress=(lambda update, pos=position: progress(DownloadBatchProgress(pos, len(plan.eligible), execution_plan.reference, execution_plan.title, update.status)) if progress else None))
+        if result.status is DownloadExecutionStatus.COMPLETED:
+            completed += 1; batch_status = DownloadBatchStatus.COMPLETED
+        else:
+            failed += 1; batch_status = DownloadBatchStatus.FAILED
+        results.append(DownloadBatchItemResult(execution_plan.reference, execution_plan.title, batch_status, result.message))
+    return DownloadAllResult(DownloadBatchStatus.COMPLETED if failed == 0 else DownloadBatchStatus.FAILED, f"Download all finished · {completed} completed · {failed} failed · {skipped} skipped", completed, failed, skipped, tuple(results))
 
 
 def _verified_retry_file(entry: Any) -> bool:

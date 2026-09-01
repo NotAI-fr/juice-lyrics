@@ -22,6 +22,11 @@ from ..services.download_queue import (
     add_to_download_queue,
     execute_selected_download,
     execute_selected_retry,
+    remove_queue_item,
+    clear_download_queue,
+    clear_completed_history,
+    plan_download_all,
+    execute_download_all,
     plan_download_execution,
     plan_download_retry,
     plan_queue_additions,
@@ -379,6 +384,7 @@ class JuiceLyricsApp(App[None]):
     #downloads-position {
         height: 2;
         padding: 0 1;
+        overflow: hidden;
     }
 
     #downloads-status.-error {
@@ -717,6 +723,11 @@ class JuiceLyricsApp(App[None]):
         download_execution_provider: DownloadExecutionProvider = execute_selected_download,
         download_retry_plan_provider: Callable[..., Any] = plan_download_retry,
         download_retry_execution_provider: Callable[..., Any] = execute_selected_retry,
+        queue_remove_provider: Callable[..., Any] = remove_queue_item,
+        queue_clear_provider: Callable[..., Any] = clear_download_queue,
+        queue_history_provider: Callable[..., Any] = clear_completed_history,
+        download_all_plan_provider: Callable[..., Any] = plan_download_all,
+        download_all_execution_provider: Callable[..., Any] = execute_download_all,
         library_snapshot_provider: LibrarySnapshotProvider = get_library_snapshot,
         library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
         settings_snapshot_provider: SettingsSnapshotProvider = get_settings_snapshot,
@@ -743,6 +754,11 @@ class JuiceLyricsApp(App[None]):
         self.download_execution_provider = download_execution_provider
         self.download_retry_plan_provider = download_retry_plan_provider
         self.download_retry_execution_provider = download_retry_execution_provider
+        self.queue_remove_provider = queue_remove_provider
+        self.queue_clear_provider = queue_clear_provider
+        self.queue_history_provider = queue_history_provider
+        self.download_all_plan_provider = download_all_plan_provider
+        self.download_all_execution_provider = download_all_execution_provider
         self.library_snapshot_provider = library_snapshot_provider
         self.library_preview_provider = library_preview_provider
         self.settings_snapshot_provider = settings_snapshot_provider
@@ -783,6 +799,11 @@ class JuiceLyricsApp(App[None]):
                 execution_provider=self.download_execution_provider,
                 retry_plan_provider=self.download_retry_plan_provider,
                 retry_execution_provider=self.download_retry_execution_provider,
+                remove_provider=self.queue_remove_provider,
+                clear_provider=self.queue_clear_provider,
+                history_provider=self.queue_history_provider,
+                batch_plan_provider=self.download_all_plan_provider,
+                batch_execution_provider=self.download_all_execution_provider,
             ),
             "downloads",
         )
@@ -827,13 +848,15 @@ class JuiceLyricsApp(App[None]):
                 "n next catalogue page  •  p previous catalogue page  •  "
                 "PageDown/PageUp scroll the loaded results  •  "
                 "Home/End first/last loaded result  •  j/k select  •  Enter details  •  "
-                "a add selected song to queue"
+                "a Add to queue (does not start downloading) · 4 Downloads"
             )
         elif section == "downloads":
             message = (
-                "↑/↓ or j/k select songs  •  Home/End first/last song  •  "
-                "PgUp/PgDn move queue  •  Enter track details  •  d Download selected  •  "
-                "t Retry failed  •  Esc queue  •  r refresh"
+                "Navigation: 1–5 sections · ↑/↓ or j/k select · PageUp/PageDown queue · Home/End first/last · Enter details · Escape return/cancel\n"
+                "Download actions: d Download selected · A Download all eligible queued songs · t Retry failed\n"
+                "Queue management: x Remove selected · c Clear queue · H Clear completed history · r Refresh\n"
+                "General: ? Help · q Quit. Download selected and Download all differ; failed songs require Retry. "
+                "Completed songs are hidden from the active queue; cleanup never deletes downloaded music or lyrics. Jobs are internal."
             )
         elif section == "library":
             message = (

@@ -764,7 +764,7 @@ class BrowseScreen(HubScreen):
         return (
             f"Result {selected} of {len(page.results)} loaded · n/p pages · "
             f"j/k select · PgUp/PgDn scroll · Enter details"
-            f"{' · a add to queue' if self.results and self.results[self.selected_index].downloadable else ''}.{filters}"
+            f"{' · a Add to queue' if self.results and self.results[self.selected_index].downloadable else ''}.{filters}"
         )
 
     def on_resize(self, event: Resize) -> None:

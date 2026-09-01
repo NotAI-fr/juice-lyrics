@@ -22,6 +22,7 @@ from juice_lyrics.services.catalogue import CatalogueSearchResult, LyricAvailabi
 from juice_lyrics.services.download_queue import (
     DownloadExecutionAction,
     DownloadExecutionStatus,
+    DownloadAllResult,
     DownloadRetryAction,
     DownloadRetryStatus,
     DownloadQueueItemStatus,
@@ -31,6 +32,10 @@ from juice_lyrics.services.download_queue import (
     get_download_queue_snapshot,
     plan_download_execution,
     plan_download_retry,
+    plan_download_all,
+    remove_queue_item,
+    clear_download_queue,
+    clear_completed_history,
     plan_queue_additions,
     project_download_queue,
 )
@@ -154,6 +159,46 @@ def test_retry_plan_chooses_resume_or_download_again_for_transport_failure(tmp_p
     destination.with_name("song.mp3.part").write_bytes(b"partial")
     result = plan_download_retry(settings, "transport-job:0", jobs_path=jobs_path)
     assert result.plan is not None and result.plan.action is DownloadRetryAction.RESUME_DOWNLOAD
+
+
+def test_queue_cleanup_is_record_only_and_preserves_files(tmp_path):
+    jobs_path = tmp_path / "jobs.json"
+    queued_path = tmp_path / "queued.mp3"; queued_path.write_bytes(b"audio")
+    done_path = tmp_path / "done.mp3"; done_path.write_bytes(b"audio")
+    store = JobStore(jobs_path)
+    job = store.create([AcquisitionItem("q", "Queued", "url", queued_path), AcquisitionItem("d", "Done", "url", done_path)], job_id="cleanup")
+    job.items[1].state = AcquisitionState.COMPLETE; store.save(job)
+    removed = remove_queue_item("cleanup:0", jobs_path=jobs_path)
+    assert removed.removed_count == 1 and queued_path.exists() and done_path.exists()
+    history = clear_completed_history(jobs_path=jobs_path)
+    assert history.removed_count == 1 and done_path.exists()
+
+
+def test_clear_queue_keeps_active_and_completed_history(tmp_path):
+    jobs_path = tmp_path / "jobs.json"; store = JobStore(jobs_path)
+    job = store.create([AcquisitionItem("q", "Queued", "url", tmp_path / "q.mp3"), AcquisitionItem("a", "Active", "url", tmp_path / "a.mp3")], job_id="clear")
+    job.items[1].state = AcquisitionState.DOWNLOADING; store.save(job)
+    result = clear_download_queue(jobs_path=jobs_path)
+    assert result.removed_count == 1 and result.retained_active_count == 1
+    remaining = JobStore(jobs_path).get("clear"); assert remaining is not None and len(remaining.items) == 1
+
+
+def test_download_all_plan_includes_only_waiting_songs(tmp_path):
+    jobs_path = tmp_path / "jobs.json"; store = JobStore(jobs_path)
+    job = store.create([
+        AcquisitionItem("q", "Queued", "url", tmp_path / "q.mp3"),
+        AcquisitionItem("f", "Failed", "url", tmp_path / "f.mp3"),
+        AcquisitionItem("a", "Active", "url", tmp_path / "a.mp3"),
+        AcquisitionItem("d", "Done", "url", tmp_path / "d.mp3"),
+    ], job_id="batch")
+    job.items[1].state = AcquisitionState.FAILED
+    job.items[2].state = AcquisitionState.DOWNLOADING
+    job.items[3].state = AcquisitionState.COMPLETE
+    store.save(job)
+    planned = plan_download_all(Settings(music_dir=tmp_path / "music"), jobs_path=jobs_path)
+    assert not isinstance(planned, DownloadAllResult)
+    assert [item.title for item in planned.eligible] == ["Queued"]
+    assert (planned.failed_count, planned.active_count, planned.completed_count) == (1, 1, 1)
 
 
 def test_plan_and_confirm_adds_exactly_one_song_without_running_it(tmp_path, monkeypatch):
