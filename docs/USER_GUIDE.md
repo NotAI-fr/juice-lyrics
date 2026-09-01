@@ -26,6 +26,10 @@ The default is `~/Music/lyrics`; an explicit `lyrics_dir` overrides it. Inspect
 the effective value with `juice-lyrics config show`. Native FLAC support remains
 planned separately.
 
+This setting is the sole destination for new external LRC files. Read-only
+commands do not create the directory, rmpc configuration is not treated as an
+output-path override, and historical state records cannot redirect a new write.
+
 ## Normal day-to-day use
 
 After adding or changing local songs:

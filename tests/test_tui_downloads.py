@@ -14,6 +14,9 @@ from juice_lyrics.services import (
     DownloadExecutionPlan,
     DownloadExecutionResult,
     DownloadExecutionStatus,
+    DownloadAllPlan,
+    DownloadAllResult,
+    DownloadBatchStatus,
     DownloadProgress,
     DownloadQueueItemStatus,
     LibraryStatus,
@@ -22,6 +25,8 @@ from juice_lyrics.services import (
     QueueJob,
     QueueSnapshot,
     QueueStatus,
+    QueueMutationResult,
+    QueueMutationStatus,
 )
 from juice_lyrics.services.download_queue import DownloadRetryAction, DownloadRetryPlan, DownloadRetryResult, DownloadRetryStatus
 from juice_lyrics.tui import JuiceLyricsApp
@@ -109,7 +114,7 @@ def _snapshot(*jobs: QueueJob) -> QueueSnapshot:
     )
 
 
-def _app(tmp_path: Path, provider, *, plan=None, execute=None) -> JuiceLyricsApp:
+def _app(tmp_path: Path, provider, *, plan=None, execute=None, batch_plan=None, batch_execute=None, history=None) -> JuiceLyricsApp:
     empty = _snapshot()
     plan = plan or (lambda settings, reference: DownloadExecutionResult(
         DownloadExecutionStatus.NOT_ELIGIBLE,
@@ -129,6 +134,9 @@ def _app(tmp_path: Path, provider, *, plan=None, execute=None) -> JuiceLyricsApp
         downloads_queue_provider=provider,
         download_plan_provider=plan,
         download_execution_provider=execute,
+        download_all_plan_provider=batch_plan or (lambda settings: DownloadAllPlan((), 0, 0, 0, 0)),
+        download_all_execution_provider=batch_execute or (lambda settings, plan, **kwargs: DownloadAllResult(DownloadBatchStatus.COMPLETED, "Download all finished")),
+        queue_history_provider=history or (lambda: None),
         catalogue_filters_provider=lambda *args, **kwargs: CatalogueFilterMetadata((), ()),
     )
 
@@ -396,6 +404,116 @@ def test_downloads_shortcuts_and_context_guidance_are_visible(tmp_path):
             assert "A Download all" in help_text and "H Clear completed history" in help_text
             assert "cleanup never deletes downloaded music or lyrics" in help_text
     asyncio.run(scenario())
+
+
+def test_one_song_download_all_cancel_then_confirm_runs_once(tmp_path):
+    queued = _job(1, "one-song", (_item(tmp_path, "Only Song", QueueStatus.PENDING),))
+    execution_plan = _execution_plan(tmp_path, "one-song:0", "Only Song")
+    batch = DownloadAllPlan((execution_plan,), 0, 0, 0, 0)
+    calls = []
+    snapshots = [_snapshot(queued), _snapshot(_job(1, "done", (_item(tmp_path, "Only Song", QueueStatus.COMPLETED),)))]
+
+    def provider():
+        return snapshots[0] if len(snapshots) == 1 else snapshots.pop(0)
+
+    def execute_batch(settings, plan, **kwargs):
+        calls.append(len(plan.eligible))
+        return DownloadAllResult(DownloadBatchStatus.COMPLETED, "Download all finished · 1 completed · 0 failed · 0 skipped", 1)
+
+    async def scenario():
+        app = _app(tmp_path, provider, batch_plan=lambda settings: batch, batch_execute=execute_batch)
+        async with app.run_test() as pilot:
+            downloads = await _open_downloads(app, pilot)
+            await pilot.press("shift+a"); await pilot.pause()
+            if downloads._batch_plan_worker is not None:
+                await downloads._batch_plan_worker.wait(); await pilot.pause()
+            assert app.screen.__class__.__name__ == "DownloadAllDialog", (_text(app, "#downloads-status"), downloads._batch_plan_worker)
+            assert "1 song will download sequentially" in _text(app, "#download-confirm-body")
+            await pilot.press("enter"); await pilot.pause()
+            assert calls == []
+            await pilot.press("shift+a"); await pilot.pause()
+            if downloads._batch_plan_worker is not None:
+                await downloads._batch_plan_worker.wait(); await pilot.pause()
+            await pilot.press("y"); await pilot.pause(0.2)
+            assert calls == [1]
+            assert "1 completed" in _text(app, "#downloads-status")
+
+    asyncio.run(scenario())
+
+
+def test_clear_history_modal_is_centered_cancel_first_and_keyboard_confirmable(tmp_path):
+    completed = _job(1, "history", (_item(tmp_path, "Finished", QueueStatus.COMPLETED),))
+    snapshots = [_snapshot(completed), _snapshot()]
+    calls = []
+    audio = tmp_path / "Finished.mp3"
+    lrc = tmp_path / "Finished.lrc"
+    audio.write_bytes(b"audio")
+    lrc.write_text("lyrics", encoding="utf-8")
+
+    def provider():
+        return snapshots[0] if len(snapshots) == 1 else snapshots.pop(0)
+
+    def clear_history():
+        calls.append("clear")
+        return QueueMutationResult(QueueMutationStatus.COMPLETED, "Cleared 1 completed history entry.", removed_count=1)
+
+    async def scenario():
+        app = _app(tmp_path, provider, history=clear_history)
+        async with app.run_test(size=(80, 24)) as pilot:
+            downloads = await _open_downloads(app, pilot)
+            shortcut = downloads.query_one("#downloads-position")
+            await pilot.press("shift+h"); await pilot.pause()
+            assert app.screen.__class__.__name__ == "QueueCleanupDialog"
+            dialog = app.query_one("#download-confirm-dialog")
+            assert abs(dialog.region.center[0] - 40) <= 1
+            assert abs(dialog.region.center[1] - 12) <= 1
+            assert dialog.region.bottom <= shortcut.region.y
+            assert app.focused is not None and app.focused.id == "download-confirm-cancel"
+            assert "Downloaded music and lyrics will remain" in _text(app, "#download-confirm-body")
+            assert "Clear history" in _text(app, "#download-confirm-download")
+            await pilot.press("enter"); await pilot.pause()
+            assert calls == [] and app.screen.id == "screen-downloads"
+
+            await pilot.press("shift+h"); await pilot.pause()
+            await pilot.press("2"); await pilot.pause()
+            assert app.screen.__class__.__name__ == "QueueCleanupDialog"
+            await pilot.press("tab"); await pilot.pause()
+            assert app.focused is not None and app.focused.id == "download-confirm-download"
+            await pilot.press("enter"); await pilot.pause(0.2)
+            assert calls == ["clear"]
+            assert audio.read_bytes() == b"audio"
+            assert lrc.read_text(encoding="utf-8") == "lyrics"
+
+    asyncio.run(scenario())
+
+
+def test_clear_history_escape_n_and_y_are_safe_and_exactly_once(tmp_path):
+    completed = _job(1, "history", (_item(tmp_path, "Finished", QueueStatus.COMPLETED),))
+
+    async def cancel_scenario(key):
+        calls = []
+        app = _app(tmp_path, lambda: _snapshot(completed), history=lambda: calls.append("clear"))
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _open_downloads(app, pilot)
+            await pilot.press("shift+h"); await pilot.pause()
+            await pilot.press(key); await pilot.pause()
+            assert app.screen.id == "screen-downloads" and calls == []
+
+    async def confirm_scenario():
+        calls = []
+        def clear():
+            calls.append("clear")
+            return QueueMutationResult(QueueMutationStatus.COMPLETED, "Cleared history", removed_count=1)
+        app = _app(tmp_path, lambda: _snapshot(completed), history=clear)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _open_downloads(app, pilot)
+            await pilot.press("shift+h"); await pilot.pause()
+            await pilot.press("y", "y"); await pilot.pause(0.2)
+            assert calls == ["clear"]
+
+    asyncio.run(cancel_scenario("escape"))
+    asyncio.run(cancel_scenario("n"))
+    asyncio.run(confirm_scenario())
 
 
 def test_refresh_preserves_or_safely_replaces_selection(tmp_path):

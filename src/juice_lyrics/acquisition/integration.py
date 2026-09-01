@@ -11,6 +11,7 @@ from ..backup.manager import (
     restore_file,
     write_manifest,
 )
+from ..config.settings import resolve_lyrics_dir
 from ..lyrics.engine import embed_lyrics, parse_synced_lyrics, verify_file, write_lrc
 from ..rmpc.integration import notify_rmpc_index
 from ..state import load_state, save_state, sha256_file
@@ -47,8 +48,13 @@ def integrate_downloaded_mp3(
     """
 
     path = item.destination
-    if lyrics_dir is None and settings is not None:
-        lyrics_dir = getattr(settings, "lyrics_dir", None)
+    # Current settings are authoritative.  The optional argument remains for
+    # compatibility with lower-level callers that do not have a Settings
+    # object, but it may not override configured output during acquisition.
+    if settings is not None:
+        lyrics_dir = resolve_lyrics_dir(settings)
+    elif lyrics_dir is not None:
+        lyrics_dir = Path(lyrics_dir).expanduser()
     if path.suffix.lower() != ".mp3":
         return IntegrationResult(path=path, message="not an MP3; lyrics integration skipped")
 

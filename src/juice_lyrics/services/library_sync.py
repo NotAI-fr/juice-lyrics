@@ -10,7 +10,7 @@ from typing import Any
 
 from ..api.client import search_song_names
 from ..backup.manager import backup_file, make_backup_root, restore_file, write_manifest
-from ..config.settings import DEFAULT_RMPC_CONFIG, STATE_FILE, Settings
+from ..config.settings import DEFAULT_RMPC_CONFIG, STATE_FILE, Settings, resolve_lyrics_dir
 from ..library.matching import choose_candidate, search_title_for
 from ..library.scanner import find_mp3s
 from ..lyrics.engine import embed_lyrics, parse_synced_lyrics, verify_file, write_lrc
@@ -61,6 +61,12 @@ class LibrarySyncOptions:
     duration_tolerance: float = 3.0
     state_file: Path = STATE_FILE
 
+    def __post_init__(self) -> None:
+        # A plan may contain historical state paths, but all new LRC output is
+        # derived from current settings at the application boundary.
+        authoritative = resolve_lyrics_dir(self.settings) if self.rmpc_enabled else None
+        object.__setattr__(self, "lyrics_dir", authoritative)
+
     @classmethod
     def from_settings(
         cls,
@@ -79,11 +85,7 @@ class LibrarySyncOptions:
             dry_run=dry_run,
             refresh=refresh,
             rmpc_enabled=rmpc_enabled,
-            lyrics_dir=(
-                Path(lyrics_dir)
-                if lyrics_dir is not None
-                else (Path(settings.lyrics_dir) if rmpc_enabled else None)
-            ),
+            lyrics_dir=resolve_lyrics_dir(settings) if rmpc_enabled else None,
             rmpc_config_path=Path(rmpc_config_path) if rmpc_config_path is not None else None,
             duration_tolerance=settings.duration_tolerance,
             state_file=Path(state_file),

@@ -38,6 +38,9 @@ rmpc does not read embedded ID3 lyrics.
 rmpc currently relies on external `.lrc` lyric files.
 
 All external synchronized LRC operations use the typed `lyrics_dir` setting.
+The resolved setting is the only write authority: rmpc configuration and
+historical state or queue records may be inspected but cannot redirect new LRC
+output. Read-only operations and plans never create the directory.
 Its default is the artist-independent central directory `~/Music/lyrics`, while
 embedded lyrics remain inside the audio files. Loading settings never creates
 this directory; an explicit LRC-writing workflow may create it.

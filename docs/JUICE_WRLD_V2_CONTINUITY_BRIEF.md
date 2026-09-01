@@ -52,7 +52,7 @@ Milestone reached:
 
 The current development branch is `v2-redesign` in
 `/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
-235 passing tests.
+250 passing tests.
 
 Completed and integrated:
 

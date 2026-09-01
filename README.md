@@ -142,13 +142,15 @@ This prevents common version mix-ups such as selecting `Starstruck (v1)` for `St
 
 ## rmpc
 
-The normal `setup`/`sync` workflow uses:
+External synchronized LRC files use the configured `lyrics_dir`. Its default is:
 
 ```text
-~/Music/Juice WRLD/lyrics
+~/Music/lyrics
 ```
 
-and safely patches the relevant rmpc lyrics settings while preserving the rest of the user's `config.ron`.
+This central directory is shared across artists. Read-only commands do not create
+it; it is created only when an explicitly requested operation writes an LRC.
+rmpc configuration is not used as the application's output-path authority.
 
 The advanced commands remain available:
 
@@ -190,6 +192,17 @@ python -m venv .venv
 . .venv/bin/activate
 pip install -e .
 ```
+
+For development checkpoints, invoke the repository environment explicitly:
+
+```bash
+.venv/bin/juice-lyrics tui
+```
+
+If `command -v juice-lyrics` points at an older pipx installation, that command
+will not contain current uncommitted source changes. Reinstall it deliberately or
+keep using `.venv/bin/juice-lyrics`; changing the repository cannot update an
+already installed copy.
 
 ## Development
 

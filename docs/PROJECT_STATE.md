@@ -3,7 +3,8 @@
 ## Current Status
 Backend services remain stable. The experimental Textual frontend supports one
 explicit confirmed Browse Add to queue action and one explicit confirmed
-Download selected action. The current checkpoint has 242 passing tests.
+Download selected action. The current working-tree checkpoint has 250 passing
+tests.
 
 ## Current Branch
 v2-redesign
@@ -25,6 +26,8 @@ v2-redesign
 - Settings configuration provenance, XDG/application paths, path-existence checks, rmpc integration status, and current capability limitations.
 - Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.
 - External synchronized LRC files use the authoritative `lyrics_dir` setting, defaulting to the shared `~/Music/lyrics` directory.
+- Historical state paths and rmpc configuration cannot redirect new LRC output;
+  read-only operations do not create either the central or legacy directory.
 
 ## Available through the CLI
 

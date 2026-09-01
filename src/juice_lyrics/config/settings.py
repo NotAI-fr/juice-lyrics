@@ -12,6 +12,8 @@ DEFAULT_DELAY = 0.15
 DEFAULT_DURATION_TOLERANCE = 3.0
 DEFAULT_CACHE_TTL_HOURS = 24
 DEFAULT_LYRICS_DIR = Path.home() / "Music" / "lyrics"
+# Historical compatibility sentinel only; never use this as an output default.
+LEGACY_IMPLICIT_LYRICS_DIR = Path.home() / "Music" / "Juice WRLD" / "lyrics"
 
 
 def xdg_dir(name: str, fallback: Path) -> Path:
@@ -38,7 +40,35 @@ class Settings:
     delay: float = DEFAULT_DELAY
     duration_tolerance: float = DEFAULT_DURATION_TOLERANCE
     cache_ttl_hours: float = DEFAULT_CACHE_TTL_HOURS
+    # Set by configuration loading when lyrics_dir was deliberately supplied.
+    # It lets the compatibility guard distinguish an intentional legacy path
+    # from the pre-lyrics_dir implicit default.
+    lyrics_dir_explicit: bool = False
 
     @property
     def songs_endpoint(self) -> str:
         return self.api_base.rstrip("/") + "/songs/"
+
+
+def resolve_lyrics_dir(
+    settings: Settings,
+    *,
+    explicit_override: str | Path | None = None,
+) -> Path:
+    """Resolve the sole destination for newly written external LRC files.
+
+    The old application default was derived from ``DEFAULT_MUSIC_DIR``.  A
+    stale in-memory settings object using that implicit value must not recreate
+    the old artist-specific directory.  An explicit TOML value (or an explicit
+    advanced-command override) remains respected, including that exact path.
+    """
+
+    if explicit_override is not None:
+        return Path(explicit_override).expanduser()
+    resolved = Path(settings.lyrics_dir).expanduser()
+    if (
+        resolved == LEGACY_IMPLICIT_LYRICS_DIR
+        and not settings.lyrics_dir_explicit
+    ):
+        return DEFAULT_LYRICS_DIR
+    return resolved

@@ -59,6 +59,12 @@ This is the application `lyrics_dir` setting and is intentionally shared across
 artists. Embedded lyrics remain in audio files; only synchronized external LRC
 files use this directory.
 
+The resolved setting is the sole write authority. Read-only inspection and
+planning do not create the directory; rmpc configuration and historical state
+paths cannot redirect new output. During development use the repository entry
+point (`.venv/bin/juice-lyrics`) so a stale separately installed package is not
+mistaken for the current working tree.
+
 Preserve unrelated rmpc configuration when modifying configuration files.
 
 Advanced commands:
@@ -293,7 +299,7 @@ The latest development checkpoint reports:
 * Settings reports effective configuration, provenance where reliable, application paths, and rmpc integration without creating or changing files
 * TUI Download all, remove, clear, retry, cancel, configuration editing, and sync execution are not implemented
 * legacy CLI remains the way to run whole acquisition records, retry, delete jobs, and sync
-* 235 automated tests passing across the suite
+* 250 automated tests passing across the suite
 
 The repository for this checkpoint is `/home/nobloat/Downloads/juice-lyrics-codex`
 on branch `v2-redesign`. The planned product and executable name remains `999`,

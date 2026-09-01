@@ -207,8 +207,6 @@ def test_library_snapshot_uses_configured_lrc_directory_not_legacy_state_path(tm
     track = library / "Rental.mp3"
     track.write_bytes(b"audio")
     legacy = tmp_path / "Music" / "Juice WRLD" / "lyrics" / "Rental.lrc"
-    legacy.parent.mkdir(parents=True)
-    legacy.write_text("[00:01.00] old\n", encoding="utf-8")
     configured = tmp_path / "Music" / "lyrics"
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps({
@@ -233,6 +231,7 @@ def test_library_snapshot_uses_configured_lrc_directory_not_legacy_state_path(tm
     assert item.lrc_path == configured / "Rental.lrc"
     assert item.lrc_status is LibraryLrcStatus.MISSING
     assert str(legacy) in (item.warning or "")
+    assert not legacy.parent.exists()
     assert not configured.exists()
 
 

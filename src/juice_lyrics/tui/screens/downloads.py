@@ -65,7 +65,7 @@ class ExecutionPlanOutcome:
 
 
 class DownloadDialogAction(Static):
-    can_focus = False
+    can_focus = True
 
     class Activated(Message):
         def __init__(self, action: str) -> None:
@@ -113,6 +113,8 @@ class DownloadSelectedDialog(ModalScreen[DownloadExecutionPlan | None]):
 
     def on_mount(self) -> None:
         self._render_choice()
+        cancel = self.query_one("#download-confirm-cancel", DownloadDialogAction)
+        self.call_after_refresh(cancel.focus)
 
     def _render_choice(self) -> None:
         download = "[Download]" if self._choice == "confirm" else "Download"
@@ -141,6 +143,8 @@ class DownloadSelectedDialog(ModalScreen[DownloadExecutionPlan | None]):
         elif event.key in {"left", "right", "tab", "shift+tab"}:
             self._choice = "confirm" if self._choice == "cancel" else "cancel"
             self._render_choice()
+            target = "#download-confirm-download" if self._choice == "confirm" else "#download-confirm-cancel"
+            self.query_one(target, DownloadDialogAction).focus()
         elif event.key == "enter":
             self._activate()
         else:
@@ -188,7 +192,11 @@ class RetryFailedDialog(ModalScreen[DownloadRetryPlan | None]):
 
 class QueueCleanupDialog(ModalScreen[str | None]):
     def __init__(self, action: str, body: str) -> None:
-        super().__init__(); self.action_name = action; self.body = body; self._confirmed = False
+        super().__init__()
+        self.action_name = action
+        self.body = body
+        self._choice = "cancel"
+        self._confirmed = False
     def compose(self) -> ComposeResult:
         with Container(id="download-confirm-dialog"):
             yield Static(self.action_name, id="download-confirm-title")
@@ -197,16 +205,54 @@ class QueueCleanupDialog(ModalScreen[str | None]):
                 yield DownloadDialogAction(self.action_name, "confirm", id="download-confirm-download")
                 yield DownloadDialogAction("Cancel", "cancel", id="download-confirm-cancel")
     def on_mount(self) -> None:
-        self.query_one("#download-confirm-download", Static).update(self.action_name)
-        self.query_one("#download-confirm-cancel", Static).update("[Cancel]")
+        self._render_choice()
+        cancel = self.query_one("#download-confirm-cancel", DownloadDialogAction)
+        self.call_after_refresh(cancel.focus)
+
+    def _render_choice(self) -> None:
+        confirm = f"[{self.action_name}]" if self._choice == "confirm" else self.action_name
+        cancel = "[Cancel]" if self._choice == "cancel" else "Cancel"
+        self.query_one("#download-confirm-download", Static).update(confirm)
+        self.query_one("#download-confirm-cancel", Static).update(cancel)
+
     def on_download_dialog_action_activated(self, event: DownloadDialogAction.Activated) -> None:
-        if event.action == "cancel": self.dismiss(None)
-        elif not self._confirmed: self._confirmed = True; self.dismiss(self.action_name)
+        if self._confirmed:
+            return
+        self._choice = event.action
+        self._render_choice()
+        self._activate()
+
     def on_key(self, event: Key) -> None:
-        if event.key in {"escape", "n", "enter"}: self.dismiss(None)
-        elif event.key == "y" and not self._confirmed: self._confirmed = True; self.dismiss(self.action_name)
-        else: return
-        event.prevent_default(); event.stop()
+        if self._confirmed:
+            event.prevent_default()
+            event.stop()
+            return
+        if event.key in {"escape", "n"}:
+            self.dismiss(None)
+        elif event.key == "y":
+            self._choice = "confirm"
+            self._render_choice()
+            self._activate()
+        elif event.key in {"left", "right", "tab", "shift+tab"}:
+            self._choice = "confirm" if self._choice == "cancel" else "cancel"
+            self._render_choice()
+            target = "#download-confirm-download" if self._choice == "confirm" else "#download-confirm-cancel"
+            self.query_one(target, DownloadDialogAction).focus()
+        elif event.key == "enter":
+            self._activate()
+        elif event.key in {"1", "2", "3", "4", "5"}:
+            pass
+        else:
+            return
+        event.prevent_default()
+        event.stop()
+
+    def _activate(self) -> None:
+        if self._choice == "cancel":
+            self.dismiss(None)
+        elif not self._confirmed:
+            self._confirmed = True
+            self.dismiss(self.action_name)
 
 
 class DownloadAllDialog(ModalScreen[DownloadAllPlan | None]):
@@ -215,7 +261,8 @@ class DownloadAllDialog(ModalScreen[DownloadAllPlan | None]):
     def compose(self) -> ComposeResult:
         titles = "\n".join(f"  {item.title}" for item in self.plan.eligible[:8])
         if len(self.plan.eligible) > 8: titles += f"\n  … and {len(self.plan.eligible) - 8} more"
-        body = f"{len(self.plan.eligible)} song(s) will download sequentially.\n\n{titles}\n\nFailed left for Retry: {self.plan.failed_count}\nActive left alone: {self.plan.active_count}\nCompleted history: {self.plan.completed_count}\n\nThis will write media and metadata."
+        count = len(self.plan.eligible)
+        body = f"{count} {'song' if count == 1 else 'songs'} will download sequentially.\n\n{titles}\n\nFailed left for Retry: {self.plan.failed_count}\nActive left alone: {self.plan.active_count}\nCompleted history: {self.plan.completed_count}\n\nThis will write media and metadata."
         with Container(id="download-confirm-dialog"):
             yield Static("Download all", id="download-confirm-title")
             yield Static(body, id="download-confirm-body", markup=False)
@@ -338,16 +385,24 @@ class DownloadsScreen(HubScreen):
             elif event.state is WorkerState.ERROR: self._apply_retry_result(DownloadRetryResult(DownloadRetryStatus.FAILED, "Retry failed safely.", error=str(event.worker.error)))
             return
         if event.worker is self._mutation_worker:
+            if event.state not in {WorkerState.SUCCESS, WorkerState.ERROR}:
+                return
             self._mutation_worker = None
             if event.state is WorkerState.SUCCESS: self._apply_mutation(event.worker.result)
             elif event.state is WorkerState.ERROR: self._apply_mutation(QueueMutationResult(QueueMutationStatus.STORE_FAILED, "Queue update failed safely."))
             return
         if event.worker is self._batch_plan_worker:
+            if event.state not in {WorkerState.SUCCESS, WorkerState.ERROR}:
+                return
             self._batch_plan_worker = None
             if event.state is WorkerState.SUCCESS: self._apply_batch_plan(event.worker.result)
-            else: self._set_status("Unable to prepare Download all.", error=True)
+            else:
+                detail = str(event.worker.error) if event.worker.error else "Unknown planning error"
+                self._set_status(f"Unable to prepare Download all: {detail}", error=True)
             return
         if event.worker is self._batch_worker:
+            if event.state not in {WorkerState.SUCCESS, WorkerState.ERROR}:
+                return
             self._batch_worker = None
             if event.state is WorkerState.SUCCESS: self._apply_batch_result(event.worker.result)
             else: self._set_status("Download all failed safely.", error=True)
@@ -506,9 +561,9 @@ class DownloadsScreen(HubScreen):
             self._remove_selected()
         elif event.key == "c":
             self._confirm_clear_queue()
-        elif event.key == "H":
+        elif event.key in {"H", "shift+h"}:
             self._confirm_clear_history()
-        elif event.key == "A":
+        elif event.key in {"A", "shift+a"}:
             self._download_all()
         elif event.key in ("pagedown", "pageup") and self._details_mode:
             scroll = self.query_one("#download-details-scroll", VerticalScroll)

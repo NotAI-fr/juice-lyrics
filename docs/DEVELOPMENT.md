@@ -54,11 +54,16 @@ Keep the runtime dependency set small.
 
 ### Experimental Textual interface
 
-From an editable installation, launch the early read-only TUI shell with:
+From the repository's editable installation, launch the TUI with:
 
 ```bash
-juice-lyrics tui
+.venv/bin/juice-lyrics tui
 ```
+
+Use `command -v juice-lyrics` before manual regression testing. A separately
+installed pipx copy is a frozen package snapshot and does not follow this working
+tree; reinstall it deliberately after a checkpoint or use the explicit `.venv`
+command above.
 
 The experimental shell provides functional Dashboard, Browse, Library,
 Downloads, and Settings screens. Browse has one explicit Add to queue action,
@@ -127,6 +132,12 @@ under the previous default without overwriting existing names:
 mkdir -p ~/Music/lyrics
 find ~/Music/Juice\ WRLD/lyrics -maxdepth 1 -type f -iname '*.lrc' -exec mv -n -t ~/Music/lyrics -- {} +
 ```
+
+`lyrics_dir` is the sole application destination for new LRC output. Its default
+is `~/Music/lyrics`. Configuration loading, status, verification, TUI screens,
+and planning do not create it; an authorized LRC write creates it immediately
+before output. rmpc's configured path and historical state/job metadata are
+inspection data only and cannot redirect new application output.
 
 ## Source of truth and Git workflow
 

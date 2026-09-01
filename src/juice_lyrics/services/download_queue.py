@@ -20,7 +20,7 @@ from ..acquisition.models import (
 from ..acquisition.resolver import ResourceResolutionError, resolve_resource
 from ..acquisition.runner import AcquisitionRunSummary, run_job
 from ..api.client import get_song
-from ..config.settings import Settings
+from ..config.settings import Settings, resolve_lyrics_dir
 from .acquisition_queue import (
     QueueFailureStage,
     QueueItem,
@@ -844,7 +844,7 @@ def execute_selected_download(
             return integration(
                 entry.item,
                 song_fetcher=lambda song_id: song_fetcher(settings, song_id),
-                lyrics_dir=Path(lyrics_dir) if lyrics_dir is not None else settings.lyrics_dir,
+                lyrics_dir=resolve_lyrics_dir(settings),
                 settings=settings,
             )
 
@@ -946,7 +946,7 @@ def execute_selected_retry(
         def postprocess(result: AcquisitionResult) -> IntegrationResult:
             if progress:
                 progress(DownloadProgress(plan.reference, DownloadExecutionStatus.PROCESSING, result.bytes_written, entry.item.expected_size, "Processing lyrics and library metadata…"))
-            return integration(entry.item, song_fetcher=lambda song_id: song_fetcher(settings, song_id), lyrics_dir=Path(lyrics_dir) if lyrics_dir is not None else settings.lyrics_dir, settings=settings)
+            return integration(entry.item, song_fetcher=lambda song_id: song_fetcher(settings, song_id), lyrics_dir=resolve_lyrics_dir(settings), settings=settings)
         runner(job, store, policy=DownloadPolicy(), progress=report, postprocess=postprocess, item_indexes={plan.item_index})
         authoritative = store.get(plan.job_id)
         final = authoritative.items[plan.item_index] if authoritative is not None and plan.item_index < len(authoritative.items) else None

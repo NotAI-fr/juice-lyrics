@@ -7,7 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from ..config.settings import BACKUP_DIR, STATE_FILE, Settings
+from ..config.settings import BACKUP_DIR, STATE_FILE, Settings, resolve_lyrics_dir
 from ..library.scanner import find_mp3s
 from ..library.matching import local_duration
 from ..lyrics.engine import verify_file
@@ -224,7 +224,7 @@ def get_library_snapshot(
             else None
         )
         lrc_path = (
-            Path(settings.lyrics_dir) / f"{path.stem}.lrc"
+            resolve_lyrics_dir(settings) / f"{path.stem}.lrc"
             if lyric_status is LibraryLyricStatus.SYNCED
             else None
         )
@@ -302,7 +302,7 @@ def get_library_status(
         if (
             valid
             and message.startswith("SYLT")
-            and (Path(settings.lyrics_dir) / f"{path.stem}.lrc").is_file()
+            and (resolve_lyrics_dir(settings) / f"{path.stem}.lrc").is_file()
         ):
             lrc += 1
 

@@ -25,6 +25,7 @@ from ..config.settings import (
     DEFAULT_TIMEOUT,
     STATE_FILE,
     Settings,
+    resolve_lyrics_dir,
 )
 
 SettingScalar: TypeAlias = str | int | float | Path
@@ -198,7 +199,7 @@ def get_settings_snapshot(
     """Inspect effective settings and environment without creating or changing files."""
 
     config_path = Path(config_path)
-    effective_lyrics_dir = Path(settings.lyrics_dir)
+    effective_lyrics_dir = resolve_lyrics_dir(settings)
     config: dict[str, object] = {}
     try:
         config_exists = config_path.exists()
@@ -213,13 +214,17 @@ def get_settings_snapshot(
     except Exception as exc:
         raise RuntimeError(f"Could not read config {config_path}: {exc}") from exc
 
+    effective_values = {
+        key: (effective_lyrics_dir if key == "lyrics_dir" else getattr(settings, key))
+        for key, _, _ in _SETTING_SPECS
+    }
     values = tuple(
         SettingValue(
             key,
             label,
-            getattr(settings, key),
+            effective_values[key],
             default,
-            _source_for(key, getattr(settings, key), default, config),
+            _source_for(key, effective_values[key], default, config),
         )
         for key, label, default in _SETTING_SPECS
     )

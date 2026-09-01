@@ -5,6 +5,7 @@ from typing import Any
 
 from textual.app import App
 from textual.binding import Binding
+from textual.screen import ModalScreen
 
 from ..services.acquisition_queue import QueueSnapshot, get_queue_snapshot
 from ..services.catalogue import (
@@ -330,7 +331,10 @@ class JuiceLyricsApp(App[None]):
         text-style: bold;
     }
 
-    DownloadSelectedDialog {
+    DownloadSelectedDialog,
+    RetryFailedDialog,
+    QueueCleanupDialog,
+    DownloadAllDialog {
         align: center middle;
         background: transparent;
     }
@@ -338,6 +342,7 @@ class JuiceLyricsApp(App[None]):
     #download-confirm-dialog {
         width: 76;
         max-width: 92%;
+        max-height: 88%;
         height: auto;
         padding: 1 2;
         border: round ansi_cyan;
@@ -817,6 +822,8 @@ class JuiceLyricsApp(App[None]):
         self.push_screen("dashboard")
 
     def action_show_section(self, section: str) -> None:
+        if isinstance(self.screen, ModalScreen):
+            return
         if self.screen.name == section:
             return
         self.switch_screen(section)

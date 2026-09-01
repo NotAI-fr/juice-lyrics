@@ -23,6 +23,7 @@ from juice_lyrics.services.download_queue import (
     DownloadExecutionAction,
     DownloadExecutionStatus,
     DownloadAllResult,
+    DownloadAllPlan,
     DownloadRetryAction,
     DownloadRetryStatus,
     DownloadQueueItemStatus,
@@ -33,6 +34,7 @@ from juice_lyrics.services.download_queue import (
     plan_download_execution,
     plan_download_retry,
     plan_download_all,
+    execute_download_all,
     remove_queue_item,
     clear_download_queue,
     clear_completed_history,
@@ -199,6 +201,31 @@ def test_download_all_plan_includes_only_waiting_songs(tmp_path):
     assert not isinstance(planned, DownloadAllResult)
     assert [item.title for item in planned.eligible] == ["Queued"]
     assert (planned.failed_count, planned.active_count, planned.completed_count) == (1, 1, 1)
+
+
+def test_download_all_executes_exactly_one_eligible_song(tmp_path):
+    jobs_path = tmp_path / "jobs.json"
+    item = AcquisitionItem("one", "One Song", "https://example.test/one.mp3", tmp_path / "One Song.mp3")
+    job = JobStore(jobs_path).create([item], job_id="one-song")
+    settings = Settings(music_dir=tmp_path, lyrics_dir=tmp_path / "lyrics")
+    planned = plan_download_all(settings, jobs_path=jobs_path)
+    assert isinstance(planned, DownloadAllPlan)
+    assert len(planned.eligible) == 1
+    calls = []
+
+    def runner(job, store, *, item_indexes, **kwargs):
+        calls.append(tuple(item_indexes))
+        result = AcquisitionResult(job.items[0].item, AcquisitionState.COMPLETE, destination=job.items[0].item.destination, bytes_written=10)
+        job.record_result(0, result)
+        store.save(job)
+        return AcquisitionRunSummary(job.job_id, 1, 0, 0, 0)
+
+    result = execute_download_all(settings, planned, jobs_path=jobs_path, runner=runner)
+    assert calls == [(0,)]
+    assert result.completed_count == 1
+    assert result.failed_count == 0
+    assert result.skipped_count == 0
+    assert "1 completed" in result.message
 
 
 def test_plan_and_confirm_adds_exactly_one_song_without_running_it(tmp_path, monkeypatch):
