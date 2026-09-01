@@ -22,12 +22,15 @@ from juice_lyrics.services.catalogue import CatalogueSearchResult, LyricAvailabi
 from juice_lyrics.services.download_queue import (
     DownloadExecutionAction,
     DownloadExecutionStatus,
+    DownloadRetryAction,
+    DownloadRetryStatus,
     DownloadQueueItemStatus,
     QueueAddStatus,
     add_to_download_queue,
     execute_selected_download,
     get_download_queue_snapshot,
     plan_download_execution,
+    plan_download_retry,
     plan_queue_additions,
     project_download_queue,
 )
@@ -114,6 +117,43 @@ def test_internal_jobs_flatten_into_tracks_and_completed_stays_out_of_active_que
     assert broken.retryable
     assert broken.artist == "Juice WRLD"
     assert broken.status is DownloadQueueItemStatus.FAILED
+
+
+def test_retry_plan_uses_verified_finalized_file_for_processing_only(tmp_path):
+    jobs_path = tmp_path / "jobs.json"
+    destination = tmp_path / "Lemon Glow.mp3"
+    destination.write_bytes(b"pristine")
+    item = AcquisitionItem("94902", "Lemon Glow", "https://example.test/song", destination)
+    job = JobStore(jobs_path).create([item], job_id="retry-job")
+    entry = job.items[0]
+    entry.state = AcquisitionState.FAILED
+    entry.failure_stage = AcquisitionFailureStage.LYRICS
+    entry.error = "lyrics verification failed"
+    import hashlib
+    entry.retry_file_size = destination.stat().st_size
+    entry.retry_file_sha256 = hashlib.sha256(destination.read_bytes()).hexdigest()
+    JobStore(jobs_path).save(job)
+
+    result = plan_download_retry(Settings(music_dir=tmp_path / "music"), "retry-job:0", jobs_path=jobs_path)
+    assert result.status is DownloadRetryStatus.READY
+    assert result.plan is not None
+    assert result.plan.action is DownloadRetryAction.PROCESS_ONLY
+    assert result.plan.song_id == "94902"
+
+
+def test_retry_plan_chooses_resume_or_download_again_for_transport_failure(tmp_path):
+    jobs_path = tmp_path / "jobs.json"
+    destination = tmp_path / "song.mp3"
+    item = AcquisitionItem("1", "Song", "https://example.test/song", destination)
+    job = JobStore(jobs_path).create([item], job_id="transport-job")
+    entry = job.items[0]; entry.state = AcquisitionState.FAILED; entry.failure_stage = AcquisitionFailureStage.TRANSPORT
+    JobStore(jobs_path).save(job)
+    settings = Settings(music_dir=tmp_path / "music")
+    result = plan_download_retry(settings, "transport-job:0", jobs_path=jobs_path)
+    assert result.plan is not None and result.plan.action is DownloadRetryAction.DOWNLOAD_AGAIN
+    destination.with_name("song.mp3.part").write_bytes(b"partial")
+    result = plan_download_retry(settings, "transport-job:0", jobs_path=jobs_path)
+    assert result.plan is not None and result.plan.action is DownloadRetryAction.RESUME_DOWNLOAD
 
 
 def test_plan_and_confirm_adds_exactly_one_song_without_running_it(tmp_path, monkeypatch):

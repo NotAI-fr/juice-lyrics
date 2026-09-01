@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum
+import hashlib
 from pathlib import Path
 from threading import Lock
 
@@ -70,6 +71,22 @@ class DownloadExecutionStatus(str, Enum):
     NOT_ELIGIBLE = "not_eligible"
     ALREADY_RUNNING = "already_running"
     RETRY_REQUIRED = "retry_required"
+    STORE_FAILED = "store_failed"
+
+
+class DownloadRetryAction(str, Enum):
+    RESUME_DOWNLOAD = "resume_download"
+    DOWNLOAD_AGAIN = "download_again"
+    PROCESS_ONLY = "process_only"
+
+
+class DownloadRetryStatus(str, Enum):
+    READY = "ready"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    NOT_FOUND = "not_found"
+    NOT_ELIGIBLE = "not_eligible"
+    ALREADY_RUNNING = "already_running"
     STORE_FAILED = "store_failed"
 
 
@@ -181,6 +198,31 @@ class DownloadExecutionResult:
         return self.status in {DownloadExecutionStatus.READY, DownloadExecutionStatus.COMPLETED}
 
 
+@dataclass(frozen=True, slots=True)
+class DownloadRetryPlan:
+    reference: str
+    job_id: str
+    item_index: int
+    song_id: str
+    title: str
+    destination: Path
+    previous_failure: str
+    action: DownloadRetryAction
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadRetryResult:
+    status: DownloadRetryStatus
+    message: str
+    plan: DownloadRetryPlan | None = None
+    failure_stage: str | None = None
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status in {DownloadRetryStatus.READY, DownloadRetryStatus.COMPLETED}
+
+
 QueueReader = Callable[[Path], QueueSnapshot]
 Resolver = Callable[..., AcquisitionItem]
 DuplicateFinder = Callable[..., DuplicateMatch | None]
@@ -192,6 +234,7 @@ SongFetcher = Callable[[Settings, int], dict[str, object]]
 
 
 _EXECUTION_CLAIM_LOCK = Lock()
+_ACTIVE_EXECUTIONS: set[str] = set()
 
 
 def _metadata(item: QueueItem) -> dict[str, str]:
@@ -465,6 +508,56 @@ def plan_download_execution(
     )
 
 
+def _verified_retry_file(entry: Any) -> bool:
+    destination = entry.item.destination
+    if not destination.is_file() or entry.retry_file_size is None or not entry.retry_file_sha256:
+        return False
+    try:
+        digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+        return destination.stat().st_size == entry.retry_file_size and digest == entry.retry_file_sha256.lower()
+    except OSError:
+        return False
+
+
+def plan_download_retry(
+    settings: Settings,
+    reference: str,
+    *,
+    jobs_path: Path = DEFAULT_JOBS_FILE,
+    store_factory: StoreFactory = JobStore,
+) -> DownloadRetryResult:
+    parsed = _parse_queue_reference(reference)
+    if parsed is None:
+        return DownloadRetryResult(DownloadRetryStatus.NOT_FOUND, "This queue item no longer exists.")
+    job_id, item_index = parsed
+    try:
+        job = store_factory(Path(jobs_path)).get(job_id)
+    except PermissionError:
+        return DownloadRetryResult(DownloadRetryStatus.STORE_FAILED, "Unable to read the download queue: permission denied.")
+    except (JobStoreError, OSError) as exc:
+        return DownloadRetryResult(DownloadRetryStatus.STORE_FAILED, f"Unable to read the download queue: {exc}")
+    if job is None or item_index < 0 or item_index >= len(job.items):
+        return DownloadRetryResult(DownloadRetryStatus.NOT_FOUND, "This queue item no longer exists.")
+    entry = job.items[item_index]
+    if entry.state is not AcquisitionState.FAILED:
+        if entry.state in {AcquisitionState.COMPLETE, AcquisitionState.SKIPPED}:
+            return DownloadRetryResult(DownloadRetryStatus.NOT_ELIGIBLE, "This song is already completed.")
+        return DownloadRetryResult(DownloadRetryStatus.ALREADY_RUNNING, "This song is already downloading or processing.")
+    if not entry.item.url or not entry.item.identifier or not entry.item.destination.name:
+        return DownloadRetryResult(DownloadRetryStatus.NOT_ELIGIBLE, "This song cannot be retried because its download resource is incomplete.")
+    if entry.failure_stage is not None and entry.failure_stage.is_post_processing and _verified_retry_file(entry):
+        action = DownloadRetryAction.PROCESS_ONLY
+    elif entry.item.destination.with_name(entry.item.destination.name + ".part").is_file():
+        action = DownloadRetryAction.RESUME_DOWNLOAD
+    else:
+        action = DownloadRetryAction.DOWNLOAD_AGAIN
+    return DownloadRetryResult(
+        DownloadRetryStatus.READY,
+        "Ready to retry processing only." if action is DownloadRetryAction.PROCESS_ONLY else ("Ready to resume download." if action is DownloadRetryAction.RESUME_DOWNLOAD else "Ready to download again."),
+        plan=DownloadRetryPlan(reference, job_id, item_index, entry.item.identifier, entry.item.title, entry.item.destination, entry.error or "Previous attempt failed.", action),
+    )
+
+
 def execute_selected_download(
     settings: Settings,
     plan: DownloadExecutionPlan,
@@ -476,6 +569,7 @@ def execute_selected_download(
     song_fetcher: SongFetcher = get_song,
     lyrics_dir: Path | None = None,
     progress: ExecutionProgressCallback | None = None,
+    _allow_failed: bool = False,
 ) -> DownloadExecutionResult:
     """Execute exactly one confirmed queue item through the existing runner."""
 
@@ -485,6 +579,8 @@ def execute_selected_download(
         # This closes the same-process double-submit race without changing the
         # durable job schema or runner semantics.
         with _EXECUTION_CLAIM_LOCK:
+            if plan.reference in _ACTIVE_EXECUTIONS:
+                return _execution_failure(DownloadExecutionStatus.ALREADY_RUNNING, "This song is already downloading or processing.")
             job = store.get(plan.job_id)
             if job is None or plan.item_index < 0 or plan.item_index >= len(job.items):
                 return _execution_failure(DownloadExecutionStatus.NOT_FOUND, "This queue item no longer exists.")
@@ -494,7 +590,7 @@ def execute_selected_download(
                 or entry.item.destination != plan.destination
             ):
                 return _execution_failure(DownloadExecutionStatus.NOT_FOUND, "The selected queue item changed before download could start.")
-            if entry.state is AcquisitionState.FAILED:
+            if entry.state is AcquisitionState.FAILED and not _allow_failed:
                 return _execution_failure(DownloadExecutionStatus.RETRY_REQUIRED, "This failed song requires the future Retry action.")
             if entry.state in {AcquisitionState.COMPLETE, AcquisitionState.SKIPPED}:
                 return _execution_failure(DownloadExecutionStatus.NOT_ELIGIBLE, "This song is already completed.")
@@ -508,6 +604,7 @@ def execute_selected_download(
             entry.failure_stage = None
             job.touch()
             store.save(job)
+            _ACTIVE_EXECUTIONS.add(plan.reference)
         if progress:
             progress(DownloadProgress(plan.reference, DownloadExecutionStatus.DOWNLOADING, message="Downloading…"))
 
@@ -547,10 +644,13 @@ def execute_selected_download(
         )
         authoritative = store.get(plan.job_id)
     except PermissionError:
+        with _EXECUTION_CLAIM_LOCK: _ACTIVE_EXECUTIONS.discard(plan.reference)
         return _execution_failure(DownloadExecutionStatus.STORE_FAILED, "Unable to update the download queue: permission denied.")
     except (JobStoreError, OSError) as exc:
+        with _EXECUTION_CLAIM_LOCK: _ACTIVE_EXECUTIONS.discard(plan.reference)
         return _execution_failure(DownloadExecutionStatus.STORE_FAILED, f"Unable to update the download queue: {exc}")
     except Exception as exc:
+        with _EXECUTION_CLAIM_LOCK: _ACTIVE_EXECUTIONS.discard(plan.reference)
         error = str(exc) or type(exc).__name__
         try:
             interrupted = store.get(plan.job_id)
@@ -575,32 +675,72 @@ def execute_selected_download(
             error=error,
         )
 
-    if authoritative is None or plan.item_index >= len(authoritative.items):
-        return _execution_failure(DownloadExecutionStatus.NOT_FOUND, "The queue record disappeared after execution.")
-    final_entry = authoritative.items[plan.item_index]
-    if final_entry.state in {AcquisitionState.COMPLETE, AcquisitionState.SKIPPED}:
-        message = (
-            f"{plan.title} was already present and left the active queue."
-            if final_entry.state is AcquisitionState.SKIPPED
-            else f"{plan.title} finished downloading."
-        )
-        return DownloadExecutionResult(
-            DownloadExecutionStatus.COMPLETED,
-            message,
-            plan=plan,
-        )
-    stage = {
-        AcquisitionFailureStage.TRANSPORT: "Download failed",
-        AcquisitionFailureStage.VALIDATION: "File validation failed",
-        AcquisitionFailureStage.LYRICS: "Lyrics processing failed",
-        AcquisitionFailureStage.LRC: "LRC creation failed",
-        AcquisitionFailureStage.STATE: "Library update failed",
-        None: "Download failed",
-    }[final_entry.failure_stage]
-    return DownloadExecutionResult(
-        DownloadExecutionStatus.FAILED,
-        stage,
-        plan=plan,
-        failure_stage=stage,
-        error=final_entry.error or "The selected download did not complete.",
-    )
+    try:
+        if authoritative is None or plan.item_index >= len(authoritative.items):
+            return _execution_failure(DownloadExecutionStatus.NOT_FOUND, "The queue record disappeared after execution.")
+        final_entry = authoritative.items[plan.item_index]
+        if final_entry.state in {AcquisitionState.COMPLETE, AcquisitionState.SKIPPED}:
+            message = (f"{plan.title} was already present and left the active queue." if final_entry.state is AcquisitionState.SKIPPED else f"{plan.title} finished downloading.")
+            return DownloadExecutionResult(DownloadExecutionStatus.COMPLETED, message, plan=plan)
+        stage = {
+            AcquisitionFailureStage.TRANSPORT: "Download failed",
+            AcquisitionFailureStage.VALIDATION: "File validation failed",
+            AcquisitionFailureStage.LYRICS: "Lyrics processing failed",
+            AcquisitionFailureStage.LRC: "LRC creation failed",
+            AcquisitionFailureStage.STATE: "Library update failed",
+            None: "Download failed",
+        }[final_entry.failure_stage]
+        return DownloadExecutionResult(DownloadExecutionStatus.FAILED, stage, plan=plan, failure_stage=stage, error=final_entry.error or "The selected download did not complete.")
+    finally:
+        with _EXECUTION_CLAIM_LOCK:
+            _ACTIVE_EXECUTIONS.discard(plan.reference)
+
+
+def execute_selected_retry(
+    settings: Settings,
+    plan: DownloadRetryPlan,
+    *,
+    jobs_path: Path = DEFAULT_JOBS_FILE,
+    store_factory: StoreFactory = JobStore,
+    runner: Runner = run_job,
+    integration: Integration = integrate_downloaded_mp3,
+    song_fetcher: SongFetcher = get_song,
+    lyrics_dir: Path | None = None,
+    progress: ExecutionProgressCallback | None = None,
+) -> DownloadRetryResult:
+    with _EXECUTION_CLAIM_LOCK:
+        if plan.reference in _ACTIVE_EXECUTIONS:
+            return DownloadRetryResult(DownloadRetryStatus.ALREADY_RUNNING, "This song is already downloading or processing.", plan=plan)
+        try:
+            store = store_factory(Path(jobs_path)); job = store.get(plan.job_id)
+        except PermissionError:
+            return DownloadRetryResult(DownloadRetryStatus.STORE_FAILED, "Unable to update the download queue: permission denied.", plan=plan)
+        except (JobStoreError, OSError) as exc:
+            return DownloadRetryResult(DownloadRetryStatus.STORE_FAILED, f"Unable to update the download queue: {exc}", plan=plan)
+        if job is None or plan.item_index >= len(job.items):
+            return DownloadRetryResult(DownloadRetryStatus.NOT_FOUND, "This queue item no longer exists.", plan=plan)
+        entry = job.items[plan.item_index]
+        if entry.item.identifier != plan.song_id or entry.item.destination != plan.destination:
+            return DownloadRetryResult(DownloadRetryStatus.NOT_FOUND, "The selected queue item changed before retry could start.", plan=plan)
+        if entry.state is not AcquisitionState.FAILED:
+            return DownloadRetryResult(DownloadRetryStatus.ALREADY_RUNNING, "This song is no longer failed and cannot be retried here.", plan=plan)
+        _ACTIVE_EXECUTIONS.add(plan.reference)
+    try:
+        def report(index: int, total: int, written: int, remote_total: int | None) -> None:
+            if progress:
+                progress(DownloadProgress(plan.reference, DownloadExecutionStatus.DOWNLOADING, written, remote_total, "Downloading…"))
+        def postprocess(result: AcquisitionResult) -> IntegrationResult:
+            if progress:
+                progress(DownloadProgress(plan.reference, DownloadExecutionStatus.PROCESSING, result.bytes_written, entry.item.expected_size, "Processing lyrics and library metadata…"))
+            return integration(entry.item, song_fetcher=lambda song_id: song_fetcher(settings, song_id), lyrics_dir=Path(lyrics_dir) if lyrics_dir is not None else settings.lyrics_dir, settings=settings)
+        runner(job, store, policy=DownloadPolicy(), progress=report, postprocess=postprocess, item_indexes={plan.item_index})
+        authoritative = store.get(plan.job_id)
+        final = authoritative.items[plan.item_index] if authoritative is not None and plan.item_index < len(authoritative.items) else None
+        if final is not None and final.state in {AcquisitionState.COMPLETE, AcquisitionState.SKIPPED}:
+            return DownloadRetryResult(DownloadRetryStatus.COMPLETED, f"{plan.title} finished successfully.", plan=plan)
+        error = final.error if final is not None else "The queue record disappeared after retry."
+        return DownloadRetryResult(DownloadRetryStatus.FAILED, "Retry failed", plan=plan, error=error)
+    except Exception as exc:
+        return DownloadRetryResult(DownloadRetryStatus.FAILED, "Retry failed", plan=plan, error=str(exc) or type(exc).__name__)
+    finally:
+        with _EXECUTION_CLAIM_LOCK: _ACTIVE_EXECUTIONS.discard(plan.reference)

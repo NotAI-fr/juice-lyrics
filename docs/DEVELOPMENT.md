@@ -86,8 +86,11 @@ Completed backend records are counted but hidden from the active queue; failed
 songs remain visible. Press `d` to review a cancel-first confirmation for the
 selected queued song. Confirming runs the existing download, validation, lyric,
 LRC, state, backup, and rmpc pipeline; no download starts before confirmation.
-Download all, Remove, Clear, Retry, and Cancel remain unavailable. The CLI is
-still required for those existing acquisition-management workflows.
+Press `t` on a failed song for a cancel-first Retry confirmation. A verified
+finalized file may use processing-only retry; otherwise the existing downloader
+resume/redownload path is used. Download all, Remove, Clear, and Cancel remain
+unavailable. The CLI is still required for those acquisition-management
+workflows.
 
 In Library, arrows or `j`/`k` select local MP3 tracks, Home/End select the first
 or last track, and PageUp/PageDown move through longer lists. Press `/` for a

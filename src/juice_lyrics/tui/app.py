@@ -21,7 +21,9 @@ from ..services.download_queue import (
     QueueAddResult,
     add_to_download_queue,
     execute_selected_download,
+    execute_selected_retry,
     plan_download_execution,
+    plan_download_retry,
     plan_queue_additions,
     project_download_queue,
 )
@@ -713,6 +715,8 @@ class JuiceLyricsApp(App[None]):
         queue_add_provider: QueueAddProvider = add_to_download_queue,
         download_plan_provider: DownloadPlanProvider = plan_download_execution,
         download_execution_provider: DownloadExecutionProvider = execute_selected_download,
+        download_retry_plan_provider: Callable[..., Any] = plan_download_retry,
+        download_retry_execution_provider: Callable[..., Any] = execute_selected_retry,
         library_snapshot_provider: LibrarySnapshotProvider = get_library_snapshot,
         library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
         settings_snapshot_provider: SettingsSnapshotProvider = get_settings_snapshot,
@@ -737,6 +741,8 @@ class JuiceLyricsApp(App[None]):
         self.queue_add_provider = queue_add_provider
         self.download_plan_provider = download_plan_provider
         self.download_execution_provider = download_execution_provider
+        self.download_retry_plan_provider = download_retry_plan_provider
+        self.download_retry_execution_provider = download_retry_execution_provider
         self.library_snapshot_provider = library_snapshot_provider
         self.library_preview_provider = library_preview_provider
         self.settings_snapshot_provider = settings_snapshot_provider
@@ -775,6 +781,8 @@ class JuiceLyricsApp(App[None]):
                 queue_provider=self.downloads_queue_provider,
                 plan_provider=self.download_plan_provider,
                 execution_provider=self.download_execution_provider,
+                retry_plan_provider=self.download_retry_plan_provider,
+                retry_execution_provider=self.download_retry_execution_provider,
             ),
             "downloads",
         )
@@ -825,7 +833,7 @@ class JuiceLyricsApp(App[None]):
             message = (
                 "↑/↓ or j/k select songs  •  Home/End first/last song  •  "
                 "PgUp/PgDn move queue  •  Enter track details  •  d Download selected  •  "
-                "Esc queue  •  r refresh"
+                "t Retry failed  •  Esc queue  •  r refresh"
             )
         elif section == "library":
             message = (

@@ -28,6 +28,10 @@ from .download_queue import (
     DownloadExecutionPlan,
     DownloadExecutionResult,
     DownloadExecutionStatus,
+    DownloadRetryAction,
+    DownloadRetryPlan,
+    DownloadRetryResult,
+    DownloadRetryStatus,
     DownloadProgress,
     DownloadQueueItem,
     DownloadQueueItemStatus,
@@ -39,9 +43,11 @@ from .download_queue import (
     QueueDuplicateReason,
     add_to_download_queue,
     execute_selected_download,
+    execute_selected_retry,
     get_download_queue_snapshot,
     plan_queue_additions,
     plan_download_execution,
+    plan_download_retry,
     project_download_queue,
 )
 from .library_status import (

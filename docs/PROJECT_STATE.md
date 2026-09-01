@@ -33,7 +33,8 @@ retry failures, delete durable acquisition records, and sync the library.
 ## Current limitations
 
 - Configuration editing remains CLI-only.
-- TUI Download all, Remove, Clear, Retry, and Cancel actions are not implemented.
+- TUI Download all, Remove, Clear, and Cancel actions are not implemented; one
+  failed selected song can be retried explicitly with `t`.
 - Browse currently adds one song at a time; multi-select remains planned.
 - Native FLAC support remains planned; lyric post-processing is currently MP3-only.
 - The planned executable/product name remains `999`; package, distribution, and
@@ -49,7 +50,7 @@ retry failures, delete durable acquisition records, and sync the library.
 ## Recommended next milestones
 
 1. Downloads Download all execution
-2. Downloads Remove / Clear / Retry actions
+2. Downloads Remove / Clear / Cancel actions
 3. Library sync actions
 4. `999` command and naming migration
 5. Native FLAC support

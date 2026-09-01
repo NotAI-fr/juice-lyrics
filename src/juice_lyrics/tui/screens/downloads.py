@@ -22,6 +22,9 @@ from ...services.download_queue import (
     DownloadExecutionResult,
     DownloadExecutionStatus,
     DownloadProgress,
+    DownloadRetryPlan,
+    DownloadRetryResult,
+    DownloadRetryStatus,
     DownloadQueueItem,
     DownloadQueueItemStatus,
     DownloadQueueSnapshot,
@@ -31,6 +34,8 @@ from .base import HubScreen
 QueueProvider = Callable[[], DownloadQueueSnapshot]
 PlanProvider = Callable[..., DownloadExecutionResult]
 ExecutionProvider = Callable[..., DownloadExecutionResult]
+RetryPlanProvider = Callable[..., DownloadRetryResult]
+RetryExecutionProvider = Callable[..., DownloadRetryResult]
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +144,35 @@ class DownloadSelectedDialog(ModalScreen[DownloadExecutionPlan | None]):
             self.dismiss(self.plan)
 
 
+class RetryFailedDialog(ModalScreen[DownloadRetryPlan | None]):
+    def __init__(self, plan: DownloadRetryPlan) -> None:
+        super().__init__(); self.plan = plan; self._confirmed = False
+    def compose(self) -> ComposeResult:
+        action = {"process_only": "Retry processing only", "resume_download": "Resume download", "download_again": "Download again"}[self.plan.action.value]
+        with Container(id="download-confirm-dialog"):
+            yield Static("Retry failed song", id="download-confirm-title")
+            yield Static("\n".join((f"Song         {self.plan.title}", f"Destination  {self.plan.destination}", f"Previous     {self.plan.previous_failure}", f"Action       {action}", "", "This may write media and metadata. Retry is explicit and will not affect other songs.")), id="download-confirm-body", markup=False)
+            with Grid(id="download-confirm-actions"):
+                yield DownloadDialogAction("Retry", "confirm", id="download-confirm-download")
+                yield DownloadDialogAction("Cancel", "cancel", id="download-confirm-cancel")
+    def on_mount(self) -> None:
+        self.query_one("#download-confirm-download", Static).update("Retry")
+        self.query_one("#download-confirm-cancel", Static).update("[Cancel]")
+    def on_download_dialog_action_activated(self, event: DownloadDialogAction.Activated) -> None:
+        if event.action == "cancel": self.dismiss(None)
+        elif not self._confirmed: self._confirmed = True; self.dismiss(self.plan)
+    def on_key(self, event: Key) -> None:
+        if event.key in {"escape", "n"}: self.dismiss(None)
+        elif event.key == "y": self._confirmed = True; self.dismiss(self.plan)
+        elif event.key == "enter":
+            if not self._confirmed:
+                self.dismiss(None)
+            else:
+                return
+        else: return
+        event.prevent_default(); event.stop()
+
+
 class DownloadsScreen(HubScreen):
     """Track-oriented view over the durable acquisition queue."""
 
@@ -149,12 +183,16 @@ class DownloadsScreen(HubScreen):
         queue_provider: QueueProvider,
         plan_provider: PlanProvider,
         execution_provider: ExecutionProvider,
+        retry_plan_provider: RetryPlanProvider,
+        retry_execution_provider: RetryExecutionProvider,
     ) -> None:
         super().__init__("downloads", "Downloads")
         self.settings = settings
         self._queue_provider = queue_provider
         self._plan_provider = plan_provider
         self._execution_provider = execution_provider
+        self._retry_plan_provider = retry_plan_provider
+        self._retry_execution_provider = retry_execution_provider
         self.snapshot: DownloadQueueSnapshot | None = None
         self.items: tuple[DownloadQueueItem, ...] = ()
         self.selected_index = 0
@@ -162,6 +200,8 @@ class DownloadsScreen(HubScreen):
         self._refresh_worker: Worker[QueueLoadOutcome] | None = None
         self._plan_worker: Worker[ExecutionPlanOutcome] | None = None
         self._execution_worker: Worker[DownloadExecutionResult] | None = None
+        self._retry_plan_worker: Worker[DownloadRetryResult] | None = None
+        self._retry_execution_worker: Worker[DownloadRetryResult] | None = None
         self._active_reference: str | None = None
         self._live_progress: DownloadProgress | None = None
         self._completion_message: tuple[str, bool] | None = None
@@ -213,6 +253,14 @@ class DownloadsScreen(HubScreen):
                 self._apply_execution_plan(event.worker.result)
             elif event.state is WorkerState.ERROR:
                 self._set_status("Unable to prepare the selected download.", error=True)
+            return
+        if event.worker is self._retry_plan_worker:
+            if event.state is WorkerState.SUCCESS: self._apply_retry_plan(event.worker.result)
+            elif event.state is WorkerState.ERROR: self._set_status("Unable to prepare retry.", error=True)
+            return
+        if event.worker is self._retry_execution_worker:
+            if event.state is WorkerState.SUCCESS: self._apply_retry_result(event.worker.result)
+            elif event.state is WorkerState.ERROR: self._apply_retry_result(DownloadRetryResult(DownloadRetryStatus.FAILED, "Retry failed safely.", error=str(event.worker.error)))
             return
         if event.worker is self._execution_worker:
             if event.state is WorkerState.SUCCESS:
@@ -340,6 +388,8 @@ class DownloadsScreen(HubScreen):
             self._update_position()
         elif event.key == "d":
             self._download_selected()
+        elif event.key == "t":
+            self._retry_selected()
         elif event.key in ("pagedown", "pageup") and self._details_mode:
             scroll = self.query_one("#download-details-scroll", VerticalScroll)
             (scroll.scroll_page_down if event.key == "pagedown" else scroll.scroll_page_up)(animate=False)
@@ -359,6 +409,44 @@ class DownloadsScreen(HubScreen):
             return
         event.prevent_default()
         event.stop()
+
+    def _retry_selected(self) -> None:
+        if self._execution_worker or self._plan_worker or self._retry_plan_worker or self._retry_execution_worker:
+            self._set_status("Another download is already in progress.", error=True); return
+        item = self.selected_item
+        if item is None or item.status is not DownloadQueueItemStatus.FAILED:
+            self._set_status("Select a failed song to retry.", error=True); return
+        self._retry_plan_worker = self._prepare_retry(item.reference)
+
+    @work(thread=True, exclusive=True, group="retry-plan", exit_on_error=False)
+    def _prepare_retry(self, reference: str) -> DownloadRetryResult:
+        return self._retry_plan_provider(self.settings, reference)
+
+    def _apply_retry_plan(self, result: DownloadRetryResult) -> None:
+        self._retry_plan_worker = None
+        if self.app.screen is not self: return
+        if result.status is not DownloadRetryStatus.READY or result.plan is None:
+            self._set_status(result.message, error=True); return
+        self.app.push_screen(RetryFailedDialog(result.plan), self._retry_dialog_closed)
+
+    def _retry_dialog_closed(self, plan: DownloadRetryPlan | None) -> None:
+        if plan is None or self._retry_execution_worker is not None: return
+        self._active_reference = plan.reference
+        self._live_progress = DownloadProgress(plan.reference, DownloadExecutionStatus.DOWNLOADING, message="Preparing retry…")
+        self._render_items(); self._render_selected_details()
+        self._retry_execution_worker = self._execute_retry(plan)
+
+    @work(thread=True, exclusive=True, group="selected-retry", exit_on_error=False)
+    def _execute_retry(self, plan: DownloadRetryPlan) -> DownloadRetryResult:
+        return self._retry_execution_provider(self.settings, plan, progress=self._thread_progress)
+
+    def _apply_retry_result(self, result: DownloadRetryResult) -> None:
+        self._retry_execution_worker = None; self._retry_plan_worker = None; self._active_reference = None; self._live_progress = None; self.snapshot = None
+        if result.status is DownloadRetryStatus.COMPLETED:
+            invalidate = getattr(self.app, "invalidate_library_views", None)
+            if callable(invalidate): invalidate()
+        self._completion_message = (result.message if result.status is DownloadRetryStatus.COMPLETED else f"{result.message}{': ' + result.error if result.error else ''}", result.status is not DownloadRetryStatus.COMPLETED)
+        if self.app.screen is self: self.refresh_snapshot()
 
     def _download_selected(self) -> None:
         if self._execution_worker is not None or self._plan_worker is not None:

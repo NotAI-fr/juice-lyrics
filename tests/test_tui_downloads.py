@@ -23,6 +23,7 @@ from juice_lyrics.services import (
     QueueSnapshot,
     QueueStatus,
 )
+from juice_lyrics.services.download_queue import DownloadRetryAction, DownloadRetryPlan, DownloadRetryResult, DownloadRetryStatus
 from juice_lyrics.tui import JuiceLyricsApp
 
 
@@ -515,6 +516,31 @@ def test_download_selected_confirmation_is_cancel_first_and_escape_is_safe(tmp_p
             assert execution_calls == []
             assert len(plan_calls) == 2
 
+    asyncio.run(scenario())
+
+
+def test_retry_failed_song_requires_confirmation_and_runs_once(tmp_path):
+    failed = _job(1, "retry-job", (_item(tmp_path, "Broken Song", QueueStatus.FAILED, failure_stage=QueueFailureStage.TRANSPORT, error="network"),))
+    calls = []
+    plan = DownloadRetryPlan("retry-job:0", "retry-job", 0, "id", "Broken Song", tmp_path / "Broken Song.mp3", "Download failed", DownloadRetryAction.DOWNLOAD_AGAIN)
+    def planner(settings, reference):
+        return DownloadRetryResult(DownloadRetryStatus.READY, "Ready", plan=plan)
+    def executor(settings, retry_plan, **kwargs):
+        calls.append(retry_plan.reference)
+        return DownloadRetryResult(DownloadRetryStatus.COMPLETED, "Broken Song finished", plan=retry_plan)
+    async def scenario():
+        app = _app(tmp_path, lambda: _snapshot(failed))
+        app.download_retry_plan_provider = planner
+        app.download_retry_execution_provider = executor
+        async with app.run_test() as pilot:
+            await _open_downloads(app, pilot)
+            await pilot.press("t"); await pilot.pause()
+            assert app.screen.__class__.__name__ == "RetryFailedDialog"
+            assert "Retry failed song" in _text(app, "#download-confirm-title")
+            await pilot.press("escape"); await pilot.pause()
+            assert calls == []
+            await pilot.press("t"); await pilot.pause(); await pilot.press("y"); await pilot.pause(0.2)
+            assert calls == ["retry-job:0"]
     asyncio.run(scenario())
 
 
