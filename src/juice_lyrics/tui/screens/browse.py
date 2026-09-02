@@ -198,17 +198,7 @@ class AddToQueueDialog(ModalScreen[QueuePlanResult | None]):
         if not self._is_batch:
             planned = self.plan.items[0] if isinstance(self.plan, QueueAddPlan) else self.plan.eligible[0]
             item = planned.item
-            return "\n".join((
-                f"Song         {item.title}",
-                f"Artist       {planned.artist or 'Unknown'}",
-                f"Category     {planned.category or 'Unknown'}",
-                f"Era          {planned.era or 'Unknown'}",
-                f"Destination  {item.destination}",
-                "Availability Available",
-                "",
-                "This adds the song to your download queue. It will not start downloading yet.",
-            ))
-        eligible = self.plan.eligible
+            return f"Add this song to Downloads?\n\n{item.title}\n\nThis does not start downloading."
         preview = [item.title for item in self.plan.items[:3]]
         if self.plan.selected_count > len(preview):
             preview.append(f"…and {self.plan.selected_count - len(preview)} more")
@@ -216,21 +206,15 @@ class AddToQueueDialog(ModalScreen[QueuePlanResult | None]):
         unavailable = self.plan.count(QueueBatchAddItemStatus.UNAVAILABLE) + self.plan.count(QueueBatchAddItemStatus.STALE)
         local = self.plan.count(QueueBatchAddItemStatus.ALREADY_DOWNLOADED)
         invalid = self.plan.count(QueueBatchAddItemStatus.INVALID)
-        destinations = {item.item.destination.parent for item in eligible}
-        destination = str(next(iter(destinations))) if len(destinations) == 1 else "Multiple configured destinations"
-        return "\n".join((
-            f"Selected {self.plan.selected_count} · Eligible {self.plan.eligible_count}",
-            f"Skipped: {queued} queued · {unavailable + invalid} unavailable · {local} downloaded",
-            f"Destination: {destination}",
-            "",
-            *preview,
-            "",
-            (
-                "This adds the song to Downloads. It does not start downloading."
-                if self.plan.selected_count == 1
-                else "This adds songs to Downloads. It does not start downloading."
-            ),
-        ))
+        count = self.plan.eligible_count
+        lines = [f"Add {count} song{'s' if count != 1 else ''} to Downloads?"]
+        skipped = queued + unavailable + invalid + local
+        if skipped:
+            lines.extend(("", f"{skipped} selected song{'s' if skipped != 1 else ''} will be skipped."))
+        if preview:
+            lines.extend(("", *preview))
+        lines.extend(("", "This does not start downloading."))
+        return "\n".join(lines)
 
     def on_mount(self) -> None:
         self._render_choice()
@@ -404,7 +388,7 @@ class BrowseScreen(HubScreen):
             yield PaginationControl("p Previous", -1, id="browse-previous")
             yield Static("No catalogue page loaded", id="browse-page-position", markup=False)
             yield PaginationControl("n Next", 1, id="browse-next")
-        yield Static("Space Mark · a Add current · M Mark page · u Clear · 4 Downloads · ? Help", id="browse-shortcuts", markup=False)
+        yield Static("a Add song · 4 Downloads · ? Help", id="browse-shortcuts", markup=False)
 
     def action_focus_search(self) -> None:
         self.query_one("#browse-query", Input).focus()
@@ -534,14 +518,14 @@ class BrowseScreen(HubScreen):
             if event.state is WorkerState.SUCCESS:
                 self._apply_filters(event.worker.result)
             elif event.state is WorkerState.ERROR:
-                self._apply_filters(FiltersOutcome(error="Filter metadata worker failed"))
+                self._apply_filters(FiltersOutcome(error="Filter options could not be loaded"))
         elif event.worker is self._search_worker:
             if event.state is WorkerState.SUCCESS:
                 self._apply_search(event.worker.result)
             elif event.state is WorkerState.ERROR:
                 self._apply_search(SearchOutcome(
                     self.last_request or SearchRequest("", None, None, 1, False),
-                    error="Search worker failed",
+                    error="Search stopped unexpectedly",
                 ))
         elif event.worker is self._details_worker:
             if event.state is WorkerState.SUCCESS:
@@ -846,18 +830,21 @@ class BrowseScreen(HubScreen):
         for index, result in enumerate(self.results):
             marker = ">" if index == self.selected_index else " "
             song_key = self._song_key(result)
-            marked = "[x]" if song_key is not None and song_key in self.marked else "[ ]"
+            marked = (
+                "[x]" if song_key is not None and song_key in self.marked else "[ ]"
+            ) if self.marked else ""
             title = result.title or "Unknown title"
             era = result.era or "Unknown era"
             category = result.category or "Unknown category"
             lyrics = _lyrics_label(result.lyrics)
             available = "Available" if result.downloadable else "Unavailable"
             if narrow:
-                lines.extend((f"{marker} {title} {marked}", f"    {era} · {category} · {lyrics} · {available}"))
+                suffix = f" {marked}" if marked else ""
+                lines.extend((f"{marker} {title}{suffix}", f"    {era} · {category} · {lyrics} · {available}"))
             else:
                 length = result.length or "?"
                 lines.append(
-                    f"{marker} {title[:23]:23} {marked} {era[:10]:10} {category[:12]:12} "
+                    f"{marker} {title[:26]:26}{f' {marked}' if marked else '    '} {era[:10]:10} {category[:12]:12} "
                     f"{length[:7]:7} {lyrics:6} {available}"
                 )
         self.query_one("#browse-results", Static).update(
@@ -969,17 +956,14 @@ class BrowseScreen(HubScreen):
         toggle = "Unmark" if current_key is not None and current_key in self.marked else "Mark"
         if narrow:
             text = (
-                f"Space {toggle.lower()} · a add {count} · M page · u clear · ? help"
+                f"a add selected · Space {toggle.lower()} · u clear · 4 downloads · ? help"
                 if count
-                else "Space mark · a add current · M page · u clear · ? help"
+                else "a add song · 4 downloads · ? help"
             )
         elif count:
-            text = (
-                f"Space {toggle} · a Add {count} selected song{'s' if count != 1 else ''} · M Toggle page · "
-                f"u Clear {count} · 4 Downloads · ? Help"
-            )
+            text = f"a Add selected · Space {toggle} · u Clear · 4 Downloads · ? Help"
         else:
-            text = "Space Mark · a Add current · M Mark page · u Clear · 4 Downloads · ? Help"
+            text = "a Add song · 4 Downloads · ? Help"
         shortcuts.update(Text(text, no_wrap=True, overflow="ellipsis"))
 
     @staticmethod
@@ -993,9 +977,8 @@ class BrowseScreen(HubScreen):
         selected = min(len(page.results), self.selected_index + 1)
         marked = f" · {self._marked_label()}" if self.marked else ""
         return (
-            f"Result {selected} of {len(page.results)} loaded · n/p pages · "
-            f"j/k select · PgUp/PgDn scroll · Enter details{marked}"
-            f"{' · a Add selected' if self.marked else ' · a Add current' if self.results and self.results[self.selected_index].downloadable else ''}.{filters}"
+            f"Result {selected} of {len(page.results)} loaded{marked}."
+            f"{filters}"
         )
 
     def on_resize(self, event: Resize) -> None:

@@ -71,11 +71,9 @@ def test_app_starts_renders_injected_snapshots_and_exits(tmp_path):
             assert "New / changed        1" in library
             assert "Backups              3" in library
             assert "rmpc LRC files       2" in library
-            assert "Total jobs           5" in queue
-            assert "Pending              1" in queue
-            assert "Active               1" in queue
-            assert "Completed            2" in queue
-            assert "Failed               1" in queue
+            assert "1 song ready to download" in queue
+            assert "Press 4 to Downloads" in queue
+            assert "jobs" not in queue.lower()
 
     asyncio.run(scenario())
 
@@ -105,9 +103,28 @@ def test_dashboard_renders_empty_library_and_queue(tmp_path):
         async with app.run_test() as pilot:
             await pilot.pause()
             assert "MP3 tracks           0" in _rendered(app, "#library-data")
-            assert "Total jobs           0" in _rendered(app, "#queue-data")
+            assert "Search for songs in Browse" in _rendered(app, "#queue-data")
+            assert "Press 2 to Browse" in _rendered(app, "#queue-data")
 
     asyncio.run(scenario())
+
+    async def failed_scenario():
+        app = _app(
+            tmp_path,
+            queue=lambda: _queue_snapshot(
+                total_job_count=1,
+                active_job_count=0,
+                pending_job_count=0,
+                completed_job_count=0,
+                failed_job_count=1,
+            ),
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert "1 song needs attention" in _rendered(app, "#queue-data")
+            assert "Press 4 to Downloads" in _rendered(app, "#queue-data")
+
+    asyncio.run(failed_scenario())
 
 
 def test_refresh_calls_both_services_again(tmp_path):
@@ -130,7 +147,7 @@ def test_refresh_calls_both_services_again(tmp_path):
             await pilot.pause()
             assert calls == {"library": 2, "queue": 2}
             assert "MP3 tracks           2" in _rendered(app, "#library-data")
-            assert "Total jobs           2" in _rendered(app, "#queue-data")
+            assert "1 song ready to download" in _rendered(app, "#queue-data")
 
     asyncio.run(scenario())
 

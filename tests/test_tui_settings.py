@@ -114,16 +114,16 @@ def test_settings_replaces_placeholder_and_renders_configuration_paths_and_limit
             screen = await _open_settings(app, pilot)
             assert screen.__class__.__name__ == "SettingsScreen"
             assert "Read-only settings view — configuration changes remain CLI-only" in _text(app, "#settings-warning")
+            paths = _text(app, "#settings-paths")
+            assert "Music folder" in paths and "Download location" in paths
+            assert "Lyrics folder" in paths
+            assert str(tmp_path / "music") in _text(app, "#settings-detail")
             configuration = _text(app, "#settings-configuration")
             assert "config.toml" in configuration
-            assert str(tmp_path / "config.toml") in _text(app, "#settings-detail")
-            assert "Music directory" in configuration and "[Config file]" in configuration
-            assert "External LRC directory" in configuration and "[Config file]" in configuration
+            assert "Music directory" not in configuration
+            assert "External LRC directory" not in configuration
             assert "API base URL" in configuration and "[Default]" in configuration
             assert "Duration tolerance" in configuration and "[Runtime override]" in configuration
-            paths = _text(app, "#settings-paths")
-            assert "Music library" in paths and "[Exists]" in paths
-            assert "External synchronized LRC files" in paths and "[Missing]" in paths
             assert "Detected and configured" in _text(app, "#settings-integrations")
             capabilities = _text(app, "#settings-capabilities")
             assert "MP3 files only" in capabilities and "FLAC support is planned" in capabilities
@@ -131,7 +131,7 @@ def test_settings_replaces_placeholder_and_renders_configuration_paths_and_limit
 
             await pilot.press("down", "j")
             assert screen.selected_index == 2
-            assert "Music directory" in _text(app, "#settings-detail")
+            assert "Download location" in _text(app, "#settings-detail")
             await pilot.press("end")
             assert screen.selected_index == len(screen.rows) - 1
             await pilot.press("home")
@@ -196,6 +196,7 @@ def test_missing_config_integration_states_and_provider_errors(tmp_path):
         async with app.run_test() as pilot:
             await _open_settings(app, pilot)
             assert "No config file" in _text(app, "#settings-status")
+            await pilot.press("down", "down", "down", "down")
             assert "Missing; defaults are in use" in _text(app, "#settings-detail")
             assert "Not detected" in _text(app, "#settings-integrations")
 

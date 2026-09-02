@@ -17,7 +17,6 @@ from textual.widgets import Static
 from textual.worker import Worker, WorkerState
 
 from ...services.download_queue import (
-    DownloadExecutionAction,
     DownloadExecutionPlan,
     DownloadExecutionResult,
     DownloadExecutionStatus,
@@ -80,6 +79,69 @@ class DownloadDialogAction(Static):
         self.post_message(self.Activated(self.action))
 
 
+class _CancelFirstModal:
+    """Shared focus and keyboard behavior for simple Downloads confirmations."""
+
+    confirm_label = "Confirm"
+
+    def _setup_cancel_first(self) -> None:
+        self._choice = "cancel"
+        self._confirmed = False
+
+    def _confirmation_result(self):
+        raise NotImplementedError
+
+    def on_mount(self) -> None:
+        self._render_choice()
+        cancel = self.query_one("#download-confirm-cancel", DownloadDialogAction)
+        self.call_after_refresh(cancel.focus)
+
+    def _render_choice(self) -> None:
+        confirm = f"[{self.confirm_label}]" if self._choice == "confirm" else self.confirm_label
+        cancel = "[Cancel]" if self._choice == "cancel" else "Cancel"
+        self.query_one("#download-confirm-download", Static).update(confirm)
+        self.query_one("#download-confirm-cancel", Static).update(cancel)
+
+    def on_download_dialog_action_activated(self, event: DownloadDialogAction.Activated) -> None:
+        if self._confirmed:
+            return
+        self._choice = event.action
+        self._render_choice()
+        self._activate_choice()
+
+    def on_key(self, event: Key) -> None:
+        if self._confirmed:
+            event.prevent_default()
+            event.stop()
+            return
+        if event.key in {"escape", "n"}:
+            self.dismiss(None)
+        elif event.key == "y":
+            self._choice = "confirm"
+            self._render_choice()
+            self._activate_choice()
+        elif event.key in {"left", "right", "tab", "shift+tab"}:
+            self._choice = "confirm" if self._choice == "cancel" else "cancel"
+            self._render_choice()
+            target = "#download-confirm-download" if self._choice == "confirm" else "#download-confirm-cancel"
+            self.query_one(target, DownloadDialogAction).focus()
+        elif event.key == "enter":
+            self._activate_choice()
+        elif event.key in {"1", "2", "3", "4", "5"}:
+            pass
+        else:
+            return
+        event.prevent_default()
+        event.stop()
+
+    def _activate_choice(self) -> None:
+        if self._choice == "cancel":
+            self.dismiss(None)
+        elif not self._confirmed:
+            self._confirmed = True
+            self.dismiss(self._confirmation_result())
+
+
 class DownloadSelectedDialog(ModalScreen[DownloadExecutionPlan | None]):
     """Cancel-first confirmation for executing one selected queue track."""
 
@@ -90,20 +152,10 @@ class DownloadSelectedDialog(ModalScreen[DownloadExecutionPlan | None]):
         self._confirmed = False
 
     def compose(self) -> ComposeResult:
-        action = "Resume download" if self.plan.action is DownloadExecutionAction.RESUME else "Start download"
         with Container(id="download-confirm-dialog"):
             yield Static("Download selected", id="download-confirm-title")
             yield Static(
-                "\n".join((
-                    f"Song         {self.plan.title}",
-                    f"Artist       {self.plan.artist or 'Unknown'}",
-                    f"Destination  {self.plan.destination}",
-                    f"Status       {_status_label(self.plan.current_status)}",
-                    f"Action       {action}",
-                    "",
-                    "This will write the media file and may embed lyrics, create an LRC file, "
-                    "update library state, and notify rmpc according to your configuration.",
-                )),
+                f"Download {self.plan.title}?\n\nLyrics will be added automatically.",
                 id="download-confirm-body",
                 markup=False,
             )
@@ -161,33 +213,28 @@ class DownloadSelectedDialog(ModalScreen[DownloadExecutionPlan | None]):
             self.dismiss(self.plan)
 
 
-class RetryFailedDialog(ModalScreen[DownloadRetryPlan | None]):
+class RetryFailedDialog(_CancelFirstModal, ModalScreen[DownloadRetryPlan | None]):
+    confirm_label = "Retry"
+
     def __init__(self, plan: DownloadRetryPlan) -> None:
-        super().__init__(); self.plan = plan; self._confirmed = False
+        super().__init__()
+        self.plan = plan
+        self._setup_cancel_first()
+
     def compose(self) -> ComposeResult:
-        action = {"process_only": "Retry processing only", "resume_download": "Resume download", "download_again": "Download again"}[self.plan.action.value]
         with Container(id="download-confirm-dialog"):
-            yield Static("Retry failed song", id="download-confirm-title")
-            yield Static("\n".join((f"Song         {self.plan.title}", f"Destination  {self.plan.destination}", f"Previous     {self.plan.previous_failure}", f"Action       {action}", "", "This may write media and metadata. Retry is explicit and will not affect other songs.")), id="download-confirm-body", markup=False)
+            yield Static("Try again", id="download-confirm-title")
+            yield Static(
+                f"Try {self.plan.title} again?\n\nPrevious problem: {self.plan.previous_failure}\n\nLyrics will be added automatically.",
+                id="download-confirm-body",
+                markup=False,
+            )
             with Grid(id="download-confirm-actions"):
                 yield DownloadDialogAction("Retry", "confirm", id="download-confirm-download")
                 yield DownloadDialogAction("Cancel", "cancel", id="download-confirm-cancel")
-    def on_mount(self) -> None:
-        self.query_one("#download-confirm-download", Static).update("Retry")
-        self.query_one("#download-confirm-cancel", Static).update("[Cancel]")
-    def on_download_dialog_action_activated(self, event: DownloadDialogAction.Activated) -> None:
-        if event.action == "cancel": self.dismiss(None)
-        elif not self._confirmed: self._confirmed = True; self.dismiss(self.plan)
-    def on_key(self, event: Key) -> None:
-        if event.key in {"escape", "n"}: self.dismiss(None)
-        elif event.key == "y": self._confirmed = True; self.dismiss(self.plan)
-        elif event.key == "enter":
-            if not self._confirmed:
-                self.dismiss(None)
-            else:
-                return
-        else: return
-        event.prevent_default(); event.stop()
+
+    def _confirmation_result(self) -> DownloadRetryPlan:
+        return self.plan
 
 
 class QueueCleanupDialog(ModalScreen[str | None]):
@@ -255,31 +302,29 @@ class QueueCleanupDialog(ModalScreen[str | None]):
             self.dismiss(self.action_name)
 
 
-class DownloadAllDialog(ModalScreen[DownloadAllPlan | None]):
+class DownloadAllDialog(_CancelFirstModal, ModalScreen[DownloadAllPlan | None]):
+    confirm_label = "Download"
+
     def __init__(self, plan: DownloadAllPlan) -> None:
-        super().__init__(); self.plan = plan; self.confirmed = False
+        super().__init__()
+        self.plan = plan
+        self._setup_cancel_first()
+
     def compose(self) -> ComposeResult:
-        titles = "\n".join(f"  {item.title}" for item in self.plan.eligible[:8])
-        if len(self.plan.eligible) > 8: titles += f"\n  … and {len(self.plan.eligible) - 8} more"
         count = len(self.plan.eligible)
-        body = f"{count} {'song' if count == 1 else 'songs'} will download sequentially.\n\n{titles}\n\nFailed left for Retry: {self.plan.failed_count}\nActive left alone: {self.plan.active_count}\nCompleted history: {self.plan.completed_count}\n\nThis will write media and metadata."
+        body = f"Download {count} {'song' if count == 1 else 'songs'}?\n\nLyrics will be added automatically."
+        skipped = self.plan.failed_count + self.plan.active_count + self.plan.skipped_count
+        if skipped:
+            body += f"\n\n{skipped} other {'song' if skipped == 1 else 'songs'} will be left alone."
         with Container(id="download-confirm-dialog"):
-            yield Static("Download all", id="download-confirm-title")
+            yield Static("Download queue", id="download-confirm-title")
             yield Static(body, id="download-confirm-body", markup=False)
             with Grid(id="download-confirm-actions"):
-                yield DownloadDialogAction("Download all", "confirm", id="download-confirm-download")
+                yield DownloadDialogAction("Download", "confirm", id="download-confirm-download")
                 yield DownloadDialogAction("Cancel", "cancel", id="download-confirm-cancel")
-    def on_mount(self) -> None:
-        self.query_one("#download-confirm-download", Static).update("Download all")
-        self.query_one("#download-confirm-cancel", Static).update("[Cancel]")
-    def on_download_dialog_action_activated(self, event: DownloadDialogAction.Activated) -> None:
-        if event.action == "cancel": self.dismiss(None)
-        elif not self.confirmed: self.confirmed = True; self.dismiss(self.plan)
-    def on_key(self, event: Key) -> None:
-        if event.key in {"escape", "n", "enter"}: self.dismiss(None)
-        elif event.key == "y" and not self.confirmed: self.confirmed = True; self.dismiss(self.plan)
-        else: return
-        event.prevent_default(); event.stop()
+
+    def _confirmation_result(self) -> DownloadAllPlan:
+        return self.plan
 
 
 class DownloadsScreen(HubScreen):
@@ -329,7 +374,7 @@ class DownloadsScreen(HubScreen):
         self._completion_message: tuple[str, bool] | None = None
 
     def compose_content(self) -> Iterable[Widget]:
-        yield Static("Queued 0 · Downloading 0 · Processing 0 · Failed 0 · Completed 0", id="downloads-summary", markup=False)
+        yield Static("Waiting 0 · Downloading 0 · Adding lyrics 0 · Failed 0 · Complete 0", id="downloads-summary", markup=False)
         yield Static("Loading download queue…", id="downloads-status", markup=False)
         with Grid(id="downloads-main"):
             with Container(classes="downloads-panel", id="download-queue-panel"):
@@ -340,7 +385,7 @@ class DownloadsScreen(HubScreen):
                 yield Static("Track details", classes="panel-title")
                 with VerticalScroll(id="download-details-scroll"):
                     yield Static("Select a queued song to inspect it.", id="download-details", markup=False)
-        yield Static("d selected · A all · t retry · x remove · c clear · H history · r refresh · ? help", id="downloads-position", markup=False)
+        yield Static("2 Browse songs · ? Help", id="downloads-position", markup=False)
 
     def on_screen_resume(self, event: ScreenResume) -> None:
         if self.snapshot is None and self._refresh_worker is None:
@@ -398,14 +443,14 @@ class DownloadsScreen(HubScreen):
             if event.state is WorkerState.SUCCESS: self._apply_batch_plan(event.worker.result)
             else:
                 detail = str(event.worker.error) if event.worker.error else "Unknown planning error"
-                self._set_status(f"Unable to prepare Download all: {detail}", error=True)
+                self._set_status(f"Unable to prepare the download queue: {detail}", error=True)
             return
         if event.worker is self._batch_worker:
             if event.state not in {WorkerState.SUCCESS, WorkerState.ERROR}:
                 return
             self._batch_worker = None
             if event.state is WorkerState.SUCCESS: self._apply_batch_result(event.worker.result)
-            else: self._set_status("Download all failed safely.", error=True)
+            else: self._set_status("Downloading the queue failed safely.", error=True)
             return
         if event.worker is self._execution_worker:
             if event.state is WorkerState.SUCCESS:
@@ -427,7 +472,7 @@ class DownloadsScreen(HubScreen):
         if event.state is WorkerState.SUCCESS:
             self._apply_queue(event.worker.result)
         elif event.state is WorkerState.ERROR:
-            message = str(event.worker.error) if event.worker.error else "Unknown worker error"
+            message = str(event.worker.error) if event.worker.error else "Unable to load Downloads"
             self._apply_queue(QueueLoadOutcome(error=message))
 
     def _apply_queue(self, outcome: QueueLoadOutcome) -> None:
@@ -440,7 +485,7 @@ class DownloadsScreen(HubScreen):
                 self.query_one("#download-queue-title", Static).update("Queue · unavailable")
                 self.query_one("#download-queue", Static).update("Unable to load the download queue.")
                 self.query_one("#download-details", Static).update("Queue details are unavailable.")
-                self.query_one("#downloads-position", Static).update("r retry refresh")
+                self.query_one("#downloads-position", Static).update("? Help · r Refresh")
             return
 
         previous = self.selected_item.reference if self.selected_item is not None else None
@@ -457,8 +502,8 @@ class DownloadsScreen(HubScreen):
             self._update_position()
             self.call_after_refresh(self._scroll_selected_into_view)
         else:
-            status.update("Add songs from Browse with a")
-            self.query_one("#downloads-position", Static).update("a Browse add to queue · r refresh · ? help")
+            status.update("Search for songs in Browse · Press 2")
+            self.query_one("#downloads-position", Static).update("2 Browse songs · ? Help")
         if self._completion_message is not None:
             message, error = self._completion_message
             self._set_status(message, error=error)
@@ -473,13 +518,14 @@ class DownloadsScreen(HubScreen):
             return
         snapshot = self.snapshot
         self.query_one("#downloads-summary", Static).update(
-            f"Queued {snapshot.queued_count} · Downloading {snapshot.downloading_count} · Processing {snapshot.processing_count} · Failed {snapshot.failed_count} · Completed {snapshot.completed_count}"
+            f"Waiting {snapshot.queued_count} · Downloading {snapshot.downloading_count} · Adding lyrics {snapshot.processing_count} · Failed {snapshot.failed_count} · Complete {snapshot.completed_count}"
         )
 
     def _render_items(self) -> None:
-        self.query_one("#download-queue-title", Static).update(f"Queue · {len(self.items)} active")
+        position = f" · {self.selected_index + 1}/{len(self.items)}" if self.items else ""
+        self.query_one("#download-queue-title", Static).update(f"Downloads · {len(self.items)} active{position}")
         if not self.items:
-            self.query_one("#download-queue", Static).update("No queued or failed songs.")
+            self.query_one("#download-queue", Static).update("Nothing waiting to download.")
             return
         lines = []
         for index, item in enumerate(self.items):
@@ -505,8 +551,8 @@ class DownloadsScreen(HubScreen):
             f"Destination    {item.destination or 'Unavailable'}",
             f"Status         {_status_label(_progress_status(self._live_progress) if item.reference == self._active_reference and self._live_progress else item.status)}",
             f"Progress       {_progress_label(item, self._live_progress if item.reference == self._active_reference else None)}",
-            f"Queued         {_timestamp(item.queued_at)}",
-            f"Retry          {'Available' if item.retryable else 'Not available'}",
+            f"Added          {_timestamp(item.queued_at)}",
+            f"Try again      {'Available' if item.retryable else 'Not available'}",
         ]
         if item.failure_stage:
             lines.append(f"Failure        {item.failure_stage}")
@@ -519,29 +565,32 @@ class DownloadsScreen(HubScreen):
     def _update_position(self) -> None:
         if self.items:
             item = self.selected_item
-            compact = self.size.width < 100
-            if compact:
-                actions = "d selected · A all · t retry · x remove · r refresh · ? help"
-            elif item and item.status is DownloadQueueItemStatus.FAILED:
-                actions = "t Retry failed · x Remove · A Download all · c Clear queue · H Clear history · r Refresh · ? Help"
+            if item and item.status is DownloadQueueItemStatus.FAILED:
+                actions = "t Retry · A Download queue · ? More"
+            elif item and item.status is DownloadQueueItemStatus.QUEUED:
+                actions = "A Download queue · d Selected · ? More"
+            elif item and item.status is DownloadQueueItemStatus.DOWNLOADING:
+                actions = "Downloading · ? More"
+            elif item and item.status is DownloadQueueItemStatus.PROCESSING:
+                actions = "Adding lyrics · ? More"
             else:
-                actions = "d Download selected · A Download all · x Remove · c Clear queue · H Clear history · r Refresh · ? Help"
-            self.query_one("#downloads-position", Static).update(f"Track {self.selected_index + 1} of {len(self.items)} · {actions}")
+                actions = "? More"
+            self.query_one("#downloads-position", Static).update(actions)
 
     def _update_context_status(self) -> None:
         if self._batch_worker or self._execution_worker or self._retry_execution_worker or self._completion_message is not None:
             return
         item = self.selected_item
         if item is None:
-            self._set_status("Add songs from Browse with a")
+            self._set_status("Search for songs in Browse · Press 2")
         elif item.status is DownloadQueueItemStatus.QUEUED:
-            self._set_status("Ready to download · d selected · A all")
+            self._set_status("Ready to download · A Download queue")
         elif item.status is DownloadQueueItemStatus.FAILED:
-            self._set_status("Download failed · t retry · x remove", error=True)
+            self._set_status("Download failed · t Try again", error=True)
         elif item.status is DownloadQueueItemStatus.DOWNLOADING:
             self._set_status("Downloading · queue management is temporarily limited")
         elif item.status is DownloadQueueItemStatus.PROCESSING:
-            self._set_status("Processing lyrics and library metadata")
+            self._set_status("Adding lyrics and updating your library")
 
     def on_key(self, event: Key) -> None:
         if event.key == "escape" and self._details_mode:
@@ -597,13 +646,13 @@ class DownloadsScreen(HubScreen):
         item = self.selected_item
         if item is None or item.status not in {DownloadQueueItemStatus.QUEUED, DownloadQueueItemStatus.FAILED}:
             self._set_status("Select a queued or failed song to remove.", error=True); return
-        body = f"Song         {item.title}\nStatus       {_status_label(item.status)}\nDestination  {item.destination or 'Unavailable'}\n\nThis removes the song from the queue. Downloaded music and lyrics will not be deleted."
+        body = "Remove this song from Downloads?\n\nDownloaded music will not be deleted."
         self.app.push_screen(QueueCleanupDialog("Remove", body), self._cleanup_closed)
 
     def _download_all(self) -> None:
         if self._batch_plan_worker or self._batch_worker or self._execution_worker or self._retry_execution_worker:
             self._set_status("Another download is already in progress.", error=True); return
-        self._set_status("Preparing Download all…")
+        self._set_status("Preparing the download queue…")
         self._batch_plan_worker = self._prepare_batch()
 
     @work(thread=True, exclusive=True, group="download-all-plan", exit_on_error=False)
@@ -640,13 +689,19 @@ class DownloadsScreen(HubScreen):
         if self.snapshot is None or not (self.snapshot.queued_count or self.snapshot.failed_count):
             self._set_status("The queue has no waiting or failed songs."); return
         active = self.snapshot.downloading_count + self.snapshot.processing_count
-        body = f"Queued entries  {self.snapshot.queued_count}\nFailed entries  {self.snapshot.failed_count}\nActive retained {active}\n\nThis clears waiting and failed queue entries. Downloaded music and lyrics will not be deleted."
+        removable = self.snapshot.queued_count + self.snapshot.failed_count
+        body = f"Clear {removable} waiting or failed song{'s' if removable != 1 else ''}?"
+        if active:
+            body += f"\n\n{active} active song{'s' if active != 1 else ''} will remain."
+        body += "\n\nDownloaded music and lyrics will not be deleted."
         self.app.push_screen(QueueCleanupDialog("Clear queue", body), self._cleanup_closed)
 
     def _confirm_clear_history(self) -> None:
         if self.snapshot is None or self.snapshot.completed_count == 0:
             self._set_status("There is no completed history to clear."); return
-        self.app.push_screen(QueueCleanupDialog("Clear history", f"Completed history  {self.snapshot.completed_count}\n\nThis removes completed download records only. Downloaded music and lyrics will remain."), self._cleanup_closed)
+        count = self.snapshot.completed_count
+        body = f"Clear {count} completed entr{'y' if count == 1 else 'ies'}?\n\nDownloaded music and lyrics will remain."
+        self.app.push_screen(QueueCleanupDialog("Clear history", body), self._cleanup_closed)
 
     def _cleanup_closed(self, action: str | None) -> None:
         if action is None or self._mutation_worker is not None: return
@@ -705,7 +760,7 @@ class DownloadsScreen(HubScreen):
             self._set_status("Select a queued song first.", error=True)
             return
         if item.status is DownloadQueueItemStatus.FAILED:
-            self._set_status("This failed song requires the future Retry action.", error=True)
+            self._set_status("This song failed. Press t to try again.", error=True)
             return
         if item.status in {DownloadQueueItemStatus.DOWNLOADING, DownloadQueueItemStatus.PROCESSING}:
             self._set_status("This song is already downloading or processing.", error=True)
@@ -783,7 +838,12 @@ class DownloadsScreen(HubScreen):
         self._live_progress = progress
         self._render_items()
         self._render_selected_details()
-        self._set_status(progress.message or _execution_status_label(progress.status))
+        message = (
+            "Adding lyrics and updating your library…"
+            if progress.status is DownloadExecutionStatus.PROCESSING
+            else progress.message or _execution_status_label(progress.status)
+        )
+        self._set_status(message)
 
     def _apply_execution_result(self, result: DownloadExecutionResult) -> None:
         self._execution_worker = None
@@ -836,10 +896,10 @@ class DownloadsScreen(HubScreen):
 
 def _status_label(status: DownloadQueueItemStatus) -> str:
     return {
-        DownloadQueueItemStatus.QUEUED: "Queued",
+        DownloadQueueItemStatus.QUEUED: "Waiting",
         DownloadQueueItemStatus.DOWNLOADING: "Downloading",
-        DownloadQueueItemStatus.PROCESSING: "Processing",
-        DownloadQueueItemStatus.COMPLETED: "Completed",
+        DownloadQueueItemStatus.PROCESSING: "Adding lyrics",
+        DownloadQueueItemStatus.COMPLETED: "Complete",
         DownloadQueueItemStatus.FAILED: "Failed",
         DownloadQueueItemStatus.NEEDS_ATTENTION: "Needs attention",
     }[status]
@@ -872,8 +932,8 @@ def _execution_status_label(status: DownloadExecutionStatus) -> str:
     return {
         DownloadExecutionStatus.READY: "Ready",
         DownloadExecutionStatus.DOWNLOADING: "Downloading",
-        DownloadExecutionStatus.PROCESSING: "Processing",
-        DownloadExecutionStatus.COMPLETED: "Completed",
+        DownloadExecutionStatus.PROCESSING: "Adding lyrics",
+        DownloadExecutionStatus.COMPLETED: "Complete",
         DownloadExecutionStatus.FAILED: "Failed",
         DownloadExecutionStatus.NOT_FOUND: "Not found",
         DownloadExecutionStatus.NOT_ELIGIBLE: "Not eligible",

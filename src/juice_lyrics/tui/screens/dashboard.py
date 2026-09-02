@@ -94,7 +94,7 @@ class DashboardScreen(HubScreen):
         if event.state is WorkerState.SUCCESS:
             self._apply_snapshot(event.worker.result)
         elif event.state is WorkerState.ERROR:
-            message = str(event.worker.error) if event.worker.error else "Unknown worker error"
+            message = str(event.worker.error) if event.worker.error else "Unable to load dashboard data"
             self._apply_snapshot(DashboardSnapshot(None, None, message, message))
 
     def _apply_snapshot(self, snapshot: DashboardSnapshot) -> None:
@@ -128,12 +128,25 @@ class DashboardScreen(HubScreen):
             error.update(f"Warning: {failure or 'Unknown queue status error'}")
             return
 
-        lines = (
-            f"Total jobs           {snapshot.total_job_count}",
-            f"Pending              {snapshot.pending_job_count}",
-            f"Active               {snapshot.active_job_count}",
-            f"Completed            {snapshot.completed_job_count}",
-            f"Failed               {snapshot.failed_job_count}",
-        )
+        waiting = sum(job.pending_item_count for job in snapshot.jobs)
+        active = sum(job.active_item_count for job in snapshot.jobs)
+        failed = sum(job.failed_item_count for job in snapshot.jobs)
+        if not snapshot.jobs:
+            waiting = snapshot.pending_job_count
+            active = snapshot.active_job_count
+            failed = snapshot.failed_job_count
+        if waiting:
+            lines = (
+                f"{waiting} song{'s' if waiting != 1 else ''} ready to download",
+                "",
+                "Press 4 to Downloads",
+            )
+        elif active:
+            lines = ("Downloading now", "", "Press 4 to Downloads")
+        elif failed:
+            label = "1 song needs attention" if failed == 1 else f"{failed} songs need attention"
+            lines = (label, "", "Press 4 to Downloads")
+        else:
+            lines = ("Search for songs in Browse", "", "Press 2 to Browse")
         self.query_one("#queue-data", Static).update("\n".join(lines))
         error.update("")

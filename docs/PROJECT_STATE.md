@@ -3,8 +3,9 @@
 ## Current Status
 Backend services remain stable. The experimental Textual frontend supports
 explicit confirmed single- and multi-song Browse Add to queue actions and
-Download selected action. The current working-tree checkpoint has 258 passing
-tests.
+selected or whole-queue downloads. The interface now prioritizes the streamlined
+Browse → Add → Downloads → Download queue journey. The current working-tree
+checkpoint has 258 passing tests.
 
 ## Current Branch
 v2-redesign
@@ -23,6 +24,9 @@ v2-redesign
 - Explicit cancel-first Browse batch Add flow reports eligible and skipped songs, persists eligible songs atomically, and never starts downloading.
 - Explicit cancel-first Downloads `d` flow for one eligible queued song, delegated to the existing acquisition runner with responsive Downloading and Processing states.
 - Explicit cancel-first Downloads `A` flow for sequentially downloading all eligible queued songs; failed and active entries are skipped.
+- Simplified primary shortcut bars, optional Browse selection indicators,
+  plain-language confirmations, Dashboard journey prompts, and Settings folders
+  before advanced diagnostics; all secondary queue actions remain available in Help.
 - Library summary, local track navigation, typed lyric/match/LRC/state details, local filters, and explicit read-only sync preview.
 - Settings configuration provenance, XDG/application paths, path-existence checks, rmpc integration status, and current capability limitations.
 - Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.

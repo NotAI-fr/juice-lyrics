@@ -174,6 +174,11 @@ Purpose:
 
 Discover songs from the Juice WRLD catalogue.
 
+The default path is intentionally direct: search, highlight a song, press `a`,
+then open Downloads with `4`. Marking is optional. Empty selection boxes are
+hidden until Space marks the first song; `M` page selection and `u` clearing
+remain secondary actions in Help.
+
 Features:
 
 - search
@@ -209,7 +214,8 @@ Death Race For Love
 Producer:
 Seezyn
 
-[d] Download
+[a] Add to Downloads
+[4] Open Downloads
 [enter] Details
 
 
@@ -310,6 +316,10 @@ for the marked set, or the current song when nothing is marked. The dialog shows
 eligible/skipped counts and destination information and states that adding will
 not start a download.
 
+The persistent Browse shortcut line is deliberately small: `a Add song · 4
+Downloads · ? Help`, or `a Add selected · Space Mark · u Clear · 4 Downloads ·
+? Help` while marks exist.
+
 Example:
 
 
@@ -329,10 +339,9 @@ Retry
 
 Actions:
 
-
-r Retry
-d Delete
-enter Details
+`A` Download queue is the primary action. `d` downloads only the highlighted
+song and `t` tries a failed song again. Remove, clear, history cleanup, and
+refresh remain available through `?` rather than filling the persistent bar.
 
 
 ---
@@ -341,7 +350,8 @@ enter Details
 
 Purpose:
 
-Manage configuration.
+Inspect configuration, with everyday folders and rmpc status before advanced
+cache, state, provenance, and diagnostic paths.
 
 Example:
 

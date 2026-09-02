@@ -863,21 +863,20 @@ class JuiceLyricsApp(App[None]):
         section = getattr(self.screen, "section", None)
         if section == "browse":
             message = (
-                "Navigation: ↑/↓ or j/k move results · PageDown/PageUp scroll the loaded results · "
-                "n next catalogue page · p previous catalogue page · Home/End first/last loaded result · "
-                "Enter details · Escape close/cancel\n"
-                "Selection: Space mark/unmark · M toggle downloadable songs on this page · u clear all marks. "
-                "Marks may span pages of one search; changing search or filters clears them.\n"
-                "Queue: a Add marked songs, or the current song when none are marked · 4 Downloads. "
-                "Marking does not add songs; adding does not start downloading. Downloads handles actual downloads."
+                "Main: a Add to Downloads · 4 Open Downloads\n"
+                "Selection actions: Space mark current · M toggle this page · u clear marks. "
+                "Marks may span pages; changing search or filters clears them.\n"
+                "Navigation: ↑/↓ or j/k move · n next catalogue page · p previous catalogue page · "
+                "PageDown/PageUp scroll the loaded results · Home/End first/last loaded result · Enter details. "
+                "Adding does not start downloading; Downloads handles the actual download."
             )
         elif section == "downloads":
             message = (
-                "Navigation: 1–5 sections · ↑/↓ or j/k select · PageUp/PageDown queue · Home/End first/last · Enter details · Escape return/cancel\n"
-                "Download actions: d Download selected · A Download all eligible queued songs · t Retry failed\n"
-                "Queue management: x Remove selected · c Clear queue · H Clear completed history · r Refresh\n"
-                "General: ? Help · q Quit. Download selected and Download all differ; failed songs require Retry. "
-                "Completed songs are hidden from the active queue; cleanup never deletes downloaded music or lyrics. Jobs are internal."
+                "Main: A Download queue · d Download selected\n"
+                "Queue actions: x Remove selected · c Clear waiting songs · H Clear completed history · r Refresh\n"
+                "Troubleshooting: t Try failed song again\n"
+                "Navigation: ↑/↓ or j/k select · PageUp/PageDown scroll · Home/End first/last · Enter details · Escape return/cancel. "
+                "Complete songs are hidden; cleanup never deletes downloaded music or lyrics."
             )
         elif section == "library":
             message = (

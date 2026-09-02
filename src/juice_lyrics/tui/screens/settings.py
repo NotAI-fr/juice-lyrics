@@ -60,15 +60,15 @@ class SettingsScreen(HubScreen):
         yield Static("Loading configuration and environment…", id="settings-status", markup=False)
         with VerticalScroll(id="settings-scroll"):
             with Grid(id="settings-main"):
-                with Container(classes="settings-panel", id="settings-configuration-panel"):
-                    yield Static("Configuration", classes="panel-title")
-                    yield Static("Loading…", id="settings-configuration", markup=False)
                 with Container(classes="settings-panel", id="settings-paths-panel"):
-                    yield Static("Paths", classes="panel-title")
+                    yield Static("Folders", classes="panel-title")
                     yield Static("Loading…", id="settings-paths", markup=False)
                 with Container(classes="settings-panel", id="settings-integrations-panel"):
-                    yield Static("Integrations", classes="panel-title")
+                    yield Static("rmpc", classes="panel-title")
                     yield Static("Loading…", id="settings-integrations", markup=False)
+                with Container(classes="settings-panel", id="settings-configuration-panel"):
+                    yield Static("Advanced", classes="panel-title")
+                    yield Static("Loading…", id="settings-configuration", markup=False)
                 with Container(classes="settings-panel", id="settings-capabilities-panel"):
                     yield Static("Capabilities and limitations", classes="panel-title")
                     yield Static("Loading…", id="settings-capabilities", markup=False)
@@ -107,7 +107,7 @@ class SettingsScreen(HubScreen):
         if event.state is WorkerState.SUCCESS:
             outcome = event.worker.result
         elif event.state is WorkerState.ERROR:
-            outcome = SettingsOutcome(error="Settings snapshot worker failed")
+            outcome = SettingsOutcome(error="Settings could not be loaded")
         else:
             return
         if self._can_render():
@@ -241,7 +241,16 @@ class SettingsScreen(HubScreen):
 
 
 def _rows_for(snapshot: SettingsSnapshot) -> tuple[SettingsRow, ...]:
-    config_rows = [
+    paths = {item.key: item for item in snapshot.paths}
+    essential_rows: list[SettingsRow] = []
+    if "music" in paths:
+        essential_rows.append(_path_row(paths["music"], section="paths", label="Music folder"))
+    if "lyrics" in paths:
+        essential_rows.append(_path_row(paths["lyrics"], section="paths", label="Lyrics folder"))
+    if "music" in paths:
+        essential_rows.append(_path_row(paths["music"], section="paths", label="Download location"))
+
+    advanced_rows = [
         SettingsRow(
             "configuration",
             "Active config",
@@ -255,8 +264,14 @@ def _rows_for(snapshot: SettingsSnapshot) -> tuple[SettingsRow, ...]:
             snapshot.application_version,
         ),
     ]
-    config_rows.extend(_value_row(item) for item in snapshot.values)
-    path_rows = [_path_row(item) for item in snapshot.paths]
+    advanced_rows.extend(
+        _value_row(item) for item in snapshot.values if item.key not in {"music_dir", "lyrics_dir"}
+    )
+    advanced_rows.extend(
+        _path_row(item, section="configuration")
+        for item in snapshot.paths
+        if item.key not in {"music", "lyrics"}
+    )
     integration_rows = [
         SettingsRow(
             "integrations",
@@ -265,13 +280,13 @@ def _rows_for(snapshot: SettingsSnapshot) -> tuple[SettingsRow, ...]:
             snapshot.rmpc.detail,
         ),
         SettingsRow(
-            "integrations",
+            "configuration",
             "rmpc executable",
             str(snapshot.rmpc.executable or "Not detected"),
             str(snapshot.rmpc.executable or "rmpc was not found in PATH."),
         ),
         SettingsRow(
-            "integrations",
+            "configuration",
             "rmpc configuration",
             "Configured" if snapshot.rmpc.config_has_lyrics_support else "Not configured",
             f"{snapshot.rmpc.config_path} · {'Exists' if snapshot.rmpc.config_exists else 'Missing'}",
@@ -281,7 +296,9 @@ def _rows_for(snapshot: SettingsSnapshot) -> tuple[SettingsRow, ...]:
         SettingsRow("capabilities", f"Limitation {index}", value, value)
         for index, value in enumerate(snapshot.limitations, start=1)
     ]
-    return tuple((*config_rows, *path_rows, *integration_rows, *capability_rows))
+    primary_integration = integration_rows[:1]
+    advanced_rows.extend(integration_rows[1:])
+    return tuple((*essential_rows, *primary_integration, *advanced_rows, *capability_rows))
 
 
 def _value_row(item: SettingValue) -> SettingsRow:
@@ -305,12 +322,17 @@ def _value_row(item: SettingValue) -> SettingsRow:
     )
 
 
-def _path_row(item: SettingsPath) -> SettingsRow:
+def _path_row(
+    item: SettingsPath,
+    *,
+    section: str = "paths",
+    label: str | None = None,
+) -> SettingsRow:
     state = "Exists" if item.exists else "Missing"
     warning = f" · Inspection warning: {item.warning}" if item.warning else ""
     return SettingsRow(
-        "paths",
-        item.label,
+        section,
+        label or item.label,
         f"{item.path} [{state}]",
         f"{item.path} · {state}{warning}",
     )

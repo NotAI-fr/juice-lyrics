@@ -66,8 +66,10 @@ tree; reinstall it deliberately after a checkpoint or use the explicit `.venv`
 command above.
 
 The experimental shell provides functional Dashboard, Browse, Library,
-Downloads, and Settings screens. Browse has explicit single- and batch-selection Add to queue actions,
-and Downloads can explicitly run one selected queued song. Press `/` to focus catalogue search and Enter to
+Downloads, and Settings screens. Its primary journey is **Browse → Add →
+Downloads → Download queue**. Browse supports both direct single-song Add and
+optional batch selection; Downloads makes `A` Download queue primary and keeps
+individual download, Retry, and cleanup actions in Help. Press `/` to focus catalogue search and Enter to
 submit. Category and Era are keyboard-usable selectors populated from API
 metadata; choose All for no filter. Filter-only searches are supported. Results
 use the API's 50-song pages and show a permanently visible page, range, and
@@ -87,7 +89,8 @@ It uses Textual's ANSI-color mode and ANSI palette names rather than a bundled
 theme. Exact terminal-background transparency can still vary with Textual's
 alternate-screen rendering and the terminal emulator.
 
-In Downloads, use arrows or `j`/`k` to select an individual queued song,
+In Downloads, press `A` to download the eligible waiting queue sequentially.
+Use arrows or `j`/`k` to select an individual queued song,
 Home/End for the first or last song, and PageUp/PageDown for longer queues.
 Enter opens track details and Escape returns to the queue. Press `r` to refresh.
 Completed backend records are counted but hidden from the active queue; failed
@@ -95,16 +98,15 @@ songs remain visible. Press `d` to review a cancel-first confirmation for the
 selected queued song. Confirming runs the existing download, validation, lyric,
 LRC, state, backup, and rmpc pipeline; no download starts before confirmation.
 Press `t` on a failed song for a cancel-first Retry confirmation. A verified
-finalized file may use processing-only retry; otherwise the existing downloader
-resume/redownload path is used. Download all, Remove, Clear, and Cancel remain
-unavailable. The CLI is still required for those acquisition-management
-workflows.
+finalized file may reuse the existing media safely; otherwise the downloader
+resume/redownload path is used. Active-download cancellation remains unavailable.
 Use `x` to remove a waiting/failed song, `c` to clear waiting and failed songs,
 and `H` to clear completed history. These record-only actions never delete
 downloaded music or lyrics; active downloads cannot be cancelled yet.
-Press `A` to review and sequentially download all eligible waiting songs.
 Failed and active entries are skipped and remain available for their explicit
-actions.
+actions. The one-line footer advertises only the primary action and context;
+`?` keeps Remove, Clear, history cleanup, Refresh, and Retry discoverable
+without making the normal workflow look like queue administration.
 
 In Library, arrows or `j`/`k` select local MP3 tracks, Home/End select the first
 or last track, and PageUp/PageDown move through longer lists. Press `/` for a
@@ -118,8 +120,9 @@ rmpc changes are made. The existing API cache may be updated by that explicit
 preview. Actual library sync remains CLI-only via `juice-lyrics sync`. The
 scanner is currently MP3-focused; native FLAC support remains planned.
 
-In Settings, arrows or `j`/`k` inspect effective configuration values, paths,
-and environment details; Home/End and PageUp/PageDown navigate longer content.
+In Settings, everyday Music, Lyrics, and Download folders plus rmpc status are
+shown before the Advanced configuration, provenance, cache, and state details.
+Arrows or `j`/`k` inspect values; Home/End and PageUp/PageDown navigate longer content.
 The view reports the active config file, reliable default/config/runtime source
 labels, the effective central `lyrics_dir` (default `~/Music/lyrics`), path
 existence, and whether rmpc points at that directory. Press `r`

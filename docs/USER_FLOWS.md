@@ -254,24 +254,25 @@ Too technical.
 
 ---
 
-v2 user-facing model:
+v2 primary user-facing model:
 
-Browse → mark songs with Space → press `a` → review eligible/skipped songs → Add to queue
+Browse → press `a` to Add → open Downloads → press `A` to Download queue
 
 Adding a song creates durable internal acquisition state but does not begin a
 download. The Downloads screen shows individual tracks, not jobs or UUIDs.
 Completed tracks are hidden from the active queue; failed tracks remain visible
 for future Retry or Remove actions.
 
-Space toggles the highlighted song, `M` toggles downloadable songs on the
+Marking is optional. Space toggles the highlighted song, `M` toggles downloadable songs on the
 visible API page, and `u` clears all marks. Marks may span pages of the same
 logical search, but a title, Category, or Era change clears them. `a` adds the
 marked set, or the highlighted song when nothing is marked, through a
 cancel-first confirmation. Adding never starts a download and the application
 does not bulk-fetch an unbounded catalogue merely to fill the queue.
 
-Download selected is implemented for one queued song. Download all, Remove,
-Clear queue, Retry failed, and Cancel active download remain future actions.
+Download queue is the primary Downloads action. Download selected, Retry,
+Remove, Clear queue, and Clear completed history remain available as secondary
+actions. Active-download cancellation remains future work.
 
 v2:
 
@@ -510,13 +511,16 @@ Failed
 
 Current actions:
 
+`A` Download queue
 
-d Download selected queued song
+`d` Download selected queued song
 
-enter Details
+`t` Try selected failed song again
 
+`?` Secondary queue management and help
 
-Planned actions: Download all, Remove, Clear, Retry, and Cancel.
+Completed history and cleanup are intentionally not part of the primary
+journey. Active-download cancellation remains planned.
 
 
 ---

@@ -759,7 +759,7 @@ def test_loaded_page_scrolls_all_fifty_results_and_supports_list_navigation(tmp_
             assert not app.query_one("#browse-previous").available
             assert "[p Previous]" in _text(app, "#browse-previous")
             assert "[n Next]" in _text(app, "#browse-next")
-            assert "n/p pages" in _text(app, "#browse-status")
+            assert "a add song" in _text(app, "#browse-shortcuts").lower()
 
             for _ in range(34):
                 await pilot.press("down")
@@ -983,10 +983,9 @@ def test_add_to_queue_confirmation_is_cancel_first_and_uses_queue_wording(tmp_pa
             await pilot.pause()
             assert app.screen.__class__.__name__ == "AddToQueueDialog"
             body = _text(app, "#queue-confirm-body")
-            assert "Song         Rental" in body
-            assert str(tmp_path / "music" / "Rental.mp3") in body
-            assert "download queue" in body
-            assert "will not start downloading" in body
+            assert "Add this song to Downloads?" in body
+            assert "Rental" in body
+            assert "This does not start downloading." in body
             assert "job" not in body.lower()
             assert "[Cancel]" in _text(app, "#queue-confirm-cancel")
             await pilot.press("enter")
@@ -1157,11 +1156,13 @@ def test_browse_marks_cursor_and_page_selection_are_independent(tmp_path):
         async with app.run_test(size=(100, 30)) as pilot:
             browse = await _open_browse(app, pilot)
             await _submit(app, pilot, "songs")
+            assert "[ ]" not in _text(app, "#browse-results")
+            assert "a Add song" in _text(app, "#browse-shortcuts")
             await pilot.press("space")
             assert set(browse.marked) == {"1"}
             assert "First" in _text(app, "#browse-results") and "[x]" in _text(app, "#browse-results")
             assert "1 song marked" in _text(app, "#browse-results-title")
-            assert "a Add 1 selected" in _text(app, "#browse-shortcuts")
+            assert "a Add selected" in _text(app, "#browse-shortcuts")
             await pilot.press("down")
             assert set(browse.marked) == {"1"}
             await pilot.press("space")
@@ -1174,6 +1175,8 @@ def test_browse_marks_cursor_and_page_selection_are_independent(tmp_path):
             await pilot.press("u")
             assert browse.marked == {}
             assert "Selection cleared" in _text(app, "#browse-status")
+            assert "[ ]" not in _text(app, "#browse-results")
+            assert "a Add song" in _text(app, "#browse-shortcuts")
 
     asyncio.run(scenario())
 
@@ -1262,9 +1265,9 @@ def test_batch_add_confirmation_is_cancel_first_and_captures_stable_targets(tmp_
             await pilot.pause()
             assert app.screen.__class__.__name__ == "AddToQueueDialog"
             body = _text(app, "#queue-confirm-body")
-            assert "Selected 3 · Eligible 2" in body
-            assert "Skipped: 1 queued" in body
-            assert "does not start downloading" in body
+            assert "Add 2 songs to Downloads?" in body
+            assert "1 selected song will be skipped." in body
+            assert "This does not start downloading." in body
             assert "[Cancel]" in _text(app, "#queue-confirm-cancel")
             dialog = app.screen
             assert dialog.query_one("#queue-confirm-dialog").region.y >= 0
@@ -1306,7 +1309,10 @@ def test_browse_batch_help_shortcuts_and_unavailable_mark_guard(tmp_path):
             await _submit(app, pilot, "songs")
             shortcuts = app.query_one("#browse-shortcuts")
             assert shortcuts.region.height == 1
-            assert "a add current" in _text(app, "#browse-shortcuts").lower()
+            shortcuts_text = _text(app, "#browse-shortcuts")
+            assert "a add song" in shortcuts_text.lower()
+            assert "4 downloads" in shortcuts_text.lower()
+            assert "M" not in shortcuts_text and "u clear" not in shortcuts_text.lower()
             results_scroll = app.query_one("#browse-results-scroll", VerticalScroll)
             assert results_scroll.region.height >= 5
             await pilot.press("down", "space")
@@ -1314,11 +1320,11 @@ def test_browse_batch_help_shortcuts_and_unavailable_mark_guard(tmp_path):
             assert "cannot be marked" in _text(app, "#browse-status")
             app.action_show_help()
             help_text = messages[-1]
-            assert "Space mark/unmark" in help_text
-            assert "M toggle downloadable songs" in help_text
-            assert "marked songs" in help_text
-            assert "adding does not start downloading" in help_text
-            assert "4 Downloads" in help_text
+            assert "Space mark current" in help_text
+            assert "M toggle this page" in help_text
+            assert "changing search or filters clears them" in help_text
+            assert "Adding does not start downloading" in help_text
+            assert "4 Open Downloads" in help_text
 
     asyncio.run(scenario())
 

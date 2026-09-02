@@ -175,8 +175,8 @@ def test_downloads_replaces_placeholder_and_renders_empty_and_error_states(tmp_p
         async with app.run_test() as pilot:
             screen = await _open_downloads(app, pilot)
             assert screen.__class__.__name__ == "DownloadsScreen"
-            assert "No queued or failed songs" in _text(app, "#download-queue")
-            assert "Queued 0 · Downloading 0 · Processing 0 · Failed 0 · Completed 0" in _text(
+            assert "Nothing waiting to download" in _text(app, "#download-queue")
+            assert "Waiting 0 · Downloading 0 · Adding lyrics 0 · Failed 0 · Complete 0" in _text(
                 app, "#downloads-summary"
             )
 
@@ -196,7 +196,7 @@ def test_downloads_replaces_placeholder_and_renders_empty_and_error_states(tmp_p
         async with app.run_test() as pilot:
             await _open_downloads(app, pilot)
             assert "No active queue item selected" in _text(app, "#download-details")
-            assert "Completed 0" in _text(app, "#downloads-summary")
+            assert "Complete 0" in _text(app, "#downloads-summary")
 
     asyncio.run(empty_scenario())
     asyncio.run(error_scenario())
@@ -309,13 +309,13 @@ def test_queue_totals_order_navigation_details_failures_and_retry_information(tm
         app = _app(tmp_path, lambda: _snapshot(queued, active, completed, failed))
         async with app.run_test(size=(100, 30)) as pilot:
             await _open_downloads(app, pilot)
-            assert "Queued 1 · Downloading 1 · Processing 0 · Failed 5 · Completed 2" in _text(
+            assert "Waiting 1 · Downloading 1 · Adding lyrics 0 · Failed 5 · Complete 2" in _text(
                 app, "#downloads-summary"
             )
             rendered = _text(app, "#download-queue")
             assert rendered.index("Queued Song") < rendered.index("Active Song") < rendered.index("Lyrics Track")
             assert "Done Song" not in rendered
-            assert "> Queued" in rendered
+            assert "> Waiting" in rendered
             assert "queued-id" not in rendered and "failed-id" not in rendered
 
             await pilot.press("down", "j")
@@ -359,7 +359,7 @@ def test_many_jobs_and_tracks_scroll_with_details_mode_at_80x24(tmp_path):
             assert "-downloads-narrow" in app.screen.classes
             assert job_scroll.size.height >= 5
             assert job_scroll.max_scroll_y > 0
-            assert "r refresh" in _text(app, "#downloads-position")
+            assert app.query_one("#downloads-position").region.height == 1
 
             await pilot.press("end")
             await pilot.pause()
@@ -394,15 +394,23 @@ def test_downloads_shortcuts_and_context_guidance_are_visible(tmp_path):
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_downloads(app, pilot)
             bar = _text(app, "#downloads-position")
-            assert "d Download selected" in bar and "A Download all" in bar and "x Remove" in bar
+            assert "A Download queue" in bar and "d Selected" in bar
+            assert "x Remove" not in bar and "c Clear" not in bar and "H Clear" not in bar
             assert "Ready to download" in _text(app, "#downloads-status")
             await pilot.press("down"); await pilot.pause()
-            assert "t Retry failed" in _text(app, "#downloads-position")
+            assert "t Retry" in _text(app, "#downloads-position")
             assert "Download failed" in _text(app, "#downloads-status")
             app.action_show_help()
             help_text = messages[-1]
-            assert "A Download all" in help_text and "H Clear completed history" in help_text
+            assert "A Download queue" in help_text and "H Clear completed history" in help_text
             assert "cleanup never deletes downloaded music or lyrics" in help_text
+            await pilot.press("home", "x"); await pilot.pause()
+            remove_text = _text(app, "#download-confirm-body")
+            assert "Remove this song from Downloads?" in remove_text
+            assert "Downloaded music will not be deleted." in remove_text
+            assert app.focused is not None and app.focused.id == "download-confirm-cancel"
+            await pilot.press("enter"); await pilot.pause()
+            assert app.screen.id == "screen-downloads"
     asyncio.run(scenario())
 
 
@@ -428,13 +436,19 @@ def test_one_song_download_all_cancel_then_confirm_runs_once(tmp_path):
             if downloads._batch_plan_worker is not None:
                 await downloads._batch_plan_worker.wait(); await pilot.pause()
             assert app.screen.__class__.__name__ == "DownloadAllDialog", (_text(app, "#downloads-status"), downloads._batch_plan_worker)
-            assert "1 song will download sequentially" in _text(app, "#download-confirm-body")
+            assert "Download 1 song?" in _text(app, "#download-confirm-body")
+            assert "Lyrics will be added automatically." in _text(app, "#download-confirm-body")
+            assert app.focused is not None and app.focused.id == "download-confirm-cancel"
             await pilot.press("enter"); await pilot.pause()
             assert calls == []
             await pilot.press("shift+a"); await pilot.pause()
             if downloads._batch_plan_worker is not None:
                 await downloads._batch_plan_worker.wait(); await pilot.pause()
-            await pilot.press("y"); await pilot.pause(0.2)
+            await pilot.press("2"); await pilot.pause()
+            assert app.screen.__class__.__name__ == "DownloadAllDialog"
+            await pilot.press("tab"); await pilot.pause()
+            assert app.focused is not None and app.focused.id == "download-confirm-download"
+            await pilot.press("enter"); await pilot.pause(0.2)
             assert calls == [1]
             assert "1 completed" in _text(app, "#downloads-status")
 
@@ -637,10 +651,8 @@ def test_download_selected_confirmation_is_cancel_first_and_escape_is_safe(tmp_p
             await pilot.pause()
             assert app.screen.__class__.__name__ == "DownloadSelectedDialog"
             body = _text(app, "#download-confirm-body")
-            assert "Song         Queued Song" in body
-            assert str(tmp_path / "Queued Song.mp3") in body
-            assert "write the media file" in body
-            assert "embed lyrics" in body
+            assert "Download Queued Song?" in body
+            assert "Lyrics will be added automatically." in body
             assert "job" not in body.lower()
             assert "[Cancel]" in _text(app, "#download-confirm-cancel")
             await pilot.press("enter")
@@ -676,10 +688,16 @@ def test_retry_failed_song_requires_confirmation_and_runs_once(tmp_path):
             await _open_downloads(app, pilot)
             await pilot.press("t"); await pilot.pause()
             assert app.screen.__class__.__name__ == "RetryFailedDialog"
-            assert "Retry failed song" in _text(app, "#download-confirm-title")
+            assert "Try again" in _text(app, "#download-confirm-title")
+            assert app.focused is not None and app.focused.id == "download-confirm-cancel"
+            await pilot.press("2"); await pilot.pause()
+            assert app.screen.__class__.__name__ == "RetryFailedDialog"
             await pilot.press("escape"); await pilot.pause()
             assert calls == []
-            await pilot.press("t"); await pilot.pause(); await pilot.press("y"); await pilot.pause(0.2)
+            await pilot.press("t"); await pilot.pause()
+            await pilot.press("tab"); await pilot.pause()
+            assert app.focused is not None and app.focused.id == "download-confirm-download"
+            await pilot.press("enter"); await pilot.pause(0.2)
             assert calls == ["retry-job:0"]
     asyncio.run(scenario())
 
@@ -736,7 +754,7 @@ def test_confirm_download_once_shows_progress_then_removes_completed_track(tmp_p
             continue_to_processing.set()
             await asyncio.to_thread(processing.wait, 2)
             await pilot.pause()
-            assert "Processing" in _text(app, "#download-queue")
+            assert "Adding lyrics" in _text(app, "#download-queue")
 
             execution_worker = downloads._execution_worker
             assert execution_worker is not None
@@ -747,8 +765,8 @@ def test_confirm_download_once_shows_progress_then_removes_completed_track(tmp_p
             if refresh is not None:
                 await refresh.wait()
                 await pilot.pause()
-            assert "No queued or failed songs" in _text(app, "#download-queue")
-            assert "Completed 1" in _text(app, "#downloads-summary")
+            assert "Nothing waiting to download" in _text(app, "#download-queue")
+            assert "Complete 1" in _text(app, "#downloads-summary")
             assert "finished downloading" in _text(app, "#downloads-status")
             assert app.get_screen("dashboard")._invalidated
             assert app.get_screen("library").snapshot is None
@@ -814,7 +832,7 @@ def test_download_failure_stays_visible_and_ineligible_states_do_not_start(tmp_p
             assert "Queued Song" in _text(app, "#download-queue")
             assert "File validation failed: checksum mismatch" in _text(app, "#downloads-status")
             await pilot.press("d")
-            assert "future Retry action" in _text(app, "#downloads-status")
+            assert "Press t to try again" in _text(app, "#downloads-status")
             assert len(plan_calls) == 1
             assert execution_calls == ["queued:0"]
 
@@ -880,8 +898,8 @@ def test_confirmed_download_survives_screen_switch_and_reloads_authoritative_que
             if refresh is not None:
                 await refresh.wait()
                 await pilot.pause()
-            assert "Completed 1" in _text(app, "#downloads-summary")
-            assert "No queued or failed songs" in _text(app, "#download-queue")
+            assert "Complete 1" in _text(app, "#downloads-summary")
+            assert "Nothing waiting to download" in _text(app, "#download-queue")
 
     try:
         asyncio.run(scenario())
