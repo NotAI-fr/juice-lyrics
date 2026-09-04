@@ -17,11 +17,8 @@ Default local library:
 
 `~/Music/Juice WRLD/Unreleased`
 
-Default rmpc lyric directory:
-
-`~/Music/lyrics`
-
-These paths are defaults only and must remain configurable and portable.
+External synchronized lyrics use same-basename sidecars beside each song. The
+music path remains configurable and portable.
 
 ## Existing proven behavior
 
@@ -51,17 +48,12 @@ The existing lyrics workflow is proven and should not be unnecessarily redesigne
 
 Keep MPD + rmpc as the primary playback setup.
 
-Default lyrics directory:
-
-`~/Music/lyrics`
-
-This is the application `lyrics_dir` setting and is intentionally shared across
-artists. Embedded lyrics remain in audio files; only synchronized external LRC
-files use this directory.
-
-The resolved setting is the sole write authority. Read-only inspection and
-planning do not create the directory; rmpc configuration and historical state
-paths cannot redirect new output. During development use the repository entry
+Audio and external synchronized lyrics stay together: `song.mp3` maps to
+`song.lrc` in the same directory. The finalized audio path is the sole write
+authority. The legacy `lyrics_dir` key remains readable but is deprecated and
+cannot redirect current output. Read-only inspection and planning create
+nothing; rmpc configuration and historical state paths cannot redirect new
+output. During development use the repository entry
 point (`.venv/bin/juice-lyrics`) so a stale separately installed package is not
 mistaken for the current working tree.
 
@@ -297,7 +289,7 @@ The latest development checkpoint reports:
 * server-side catalogue pagination with scrollable 50-result pages and stable ID-based song details
 * flat track-queue summaries, song navigation, details, structured failure stages, and retry eligibility
 * Library provides local track browsing, local filters, metadata/lyric/LRC/state details, and explicit read-only sync previews
-* Settings reports effective configuration, provenance where reliable, application paths, and rmpc integration without creating or changing files
+* Settings reports effective configuration, sidecar lyrics behavior, provenance where reliable, application paths, and rmpc integration without creating or changing files
 * TUI active-download cancel, configuration editing, and sync execution are not implemented
 * legacy CLI remains the way to run whole acquisition records, retry, delete jobs, and sync
 * 258 automated tests passing across the suite

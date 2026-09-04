@@ -84,7 +84,7 @@ def test_success_backs_up_pristine_file_then_retains_verified_modification(
     assert (root / "manifest.json").is_file()
 
 
-def test_acquisition_uses_configured_central_lrc_directory(tmp_path, monkeypatch):
+def test_acquisition_writes_adjacent_lrc_and_ignores_legacy_setting(tmp_path, monkeypatch):
     import juice_lyrics.acquisition.integration as integration
 
     _isolated_backup(monkeypatch, tmp_path)
@@ -98,9 +98,8 @@ def test_acquisition_uses_configured_central_lrc_directory(tmp_path, monkeypatch
     monkeypatch.setattr(integration, "embed_lyrics", lambda *args: "SYLT")
     monkeypatch.setattr(integration, "verify_file", lambda target: (True, "verified"))
 
-    def write_lrc(target, synced, song, output):
-        output.mkdir(parents=True, exist_ok=True)
-        result = output / f"{target.stem}.lrc"
+    def write_lrc(target, synced, song):
+        result = target.with_suffix(".lrc")
         result.write_text("[00:01.00] line\n", encoding="utf-8")
         return result
 
@@ -114,8 +113,9 @@ def test_acquisition_uses_configured_central_lrc_directory(tmp_path, monkeypatch
         notify_rmpc=False,
     )
 
-    assert result.lrc_path == configured_lyrics / "Rental.lrc"
+    assert result.lrc_path == path.with_suffix(".lrc")
     assert result.lrc_path.is_file()
+    assert not configured_lyrics.exists()
     assert not old_derived_lyrics.exists()
 
 

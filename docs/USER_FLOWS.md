@@ -323,12 +323,15 @@ After completion:
 
 ✓ Added to library
 ✓ Lyrics embedded
-✓ rmpc lyrics ready
+✓ Sidecar lyrics ready
 
 The confirmation defaults to Cancel and explains that the operation may write
 the media file, embed lyrics, create an LRC file, update library state, and
 notify rmpc. Failed downloads remain in the queue with a readable failure;
 completed downloads leave the active queue but remain counted and durable.
+When synchronized lyrics exist, the external LRC is written beside the finalized
+audio with the same basename. Audio and external lyrics therefore travel
+together when the music folder is synchronized.
 
 
 ---

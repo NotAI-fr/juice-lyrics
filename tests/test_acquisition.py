@@ -575,7 +575,7 @@ def test_integrate_downloaded_mp3_embeds_synced_lyrics_and_lrc(tmp_path):
     )
 
     assert result.lyric_type == "SYLT"
-    assert result.lrc_path == tmp_path / "lyrics" / "Rental.lrc"
+    assert result.lrc_path == mp3.with_suffix(".lrc")
     assert result.lrc_path.is_file()
 
 
@@ -1127,7 +1127,7 @@ def test_integrate_acquired_mp3_updates_state_json(tmp_path, monkeypatch):
     assert entry["api_name"] == "Rental"
     assert entry["lyric_type"] == "SYLT"
     assert entry["sha256"] == state_mod.sha256_file(mp3)
-    assert entry["lrc"] == str(tmp_path / "lyrics" / "Rental.lrc")
+    assert entry["lrc"] == str(mp3.with_suffix(".lrc"))
 
 
 def test_later_sync_recognizes_acquired_file_as_already_processed(tmp_path, monkeypatch):
@@ -1197,7 +1197,7 @@ def test_synchronized_acquired_lyrics_trigger_rmpc_notification(tmp_path, monkey
 
     assert result.rmpc_notified == 1
     assert len(notified) == 1
-    assert notified[0] == [tmp_path / "lyrics" / "Rental.lrc"]
+    assert notified[0] == [mp3.with_suffix(".lrc")]
     assert "rmpc notified: 1" in result.message
 
 
@@ -1268,5 +1268,4 @@ def test_state_synchronization_failure_marks_acquisition_item_failed(tmp_path, m
     assert loaded is not None
     assert loaded.items[0].state is AcquisitionState.FAILED
     assert "Failed to synchronize library state" in (loaded.items[0].error or "")
-
 

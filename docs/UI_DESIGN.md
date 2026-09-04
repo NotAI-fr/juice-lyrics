@@ -358,13 +358,17 @@ Example:
 
 Settings
 
-Music Directory
+Music folder
 
 ~/Music/Juice WRLD
 
-Lyrics Directory
+Download location
 
-~/Music/lyrics
+~/Music/Juice WRLD
+
+External lyrics
+
+Beside each song (.lrc)
 
 Player
 

@@ -19,13 +19,11 @@ from ..config.settings import (
     DEFAULT_CACHE_TTL_HOURS,
     DEFAULT_DELAY,
     DEFAULT_DURATION_TOLERANCE,
-    DEFAULT_LYRICS_DIR,
     DEFAULT_MUSIC_DIR,
     DEFAULT_RMPC_CONFIG,
     DEFAULT_TIMEOUT,
     STATE_FILE,
     Settings,
-    resolve_lyrics_dir,
 )
 
 SettingScalar: TypeAlias = str | int | float | Path
@@ -87,7 +85,6 @@ class SettingsSnapshot:
 
 _SETTING_SPECS = (
     ("music_dir", "Music directory", DEFAULT_MUSIC_DIR),
-    ("lyrics_dir", "External LRC directory", DEFAULT_LYRICS_DIR),
     ("api_base", "API base URL", DEFAULT_API_BASE),
     ("timeout", "Request timeout", DEFAULT_TIMEOUT),
     ("delay", "Request delay", DEFAULT_DELAY),
@@ -97,7 +94,7 @@ _SETTING_SPECS = (
 
 
 def _normalized_config_value(key: str, value: object) -> SettingScalar:
-    if key in {"music_dir", "lyrics_dir"}:
+    if key == "music_dir":
         return Path(str(value)).expanduser()
     if key == "api_base":
         return str(value).rstrip("/")
@@ -132,7 +129,7 @@ def _inspect_path(key: str, label: str, path: Path) -> SettingsPath:
     return SettingsPath(key, label, path, exists, warning)
 
 
-def _rmpc_configured(text: str, lyrics_dir: Path) -> bool:
+def _rmpc_configured(text: str, music_root: Path) -> bool:
     directory = re.search(
         r'(?im)^\s*lyrics_dir\s*:\s*some\s*\(\s*"([^"]+)"\s*\)',
         text,
@@ -142,16 +139,22 @@ def _rmpc_configured(text: str, lyrics_dir: Path) -> bool:
         if directory is not None
         else None
     )
-    return (
-        configured_directory == lyrics_dir.expanduser()
-        and re.search(r"(?im)^\s*enable_lyrics_index\s*:\s*true\s*,?", text) is not None
+    covers_music = False
+    if configured_directory is not None:
+        try:
+            music_root.expanduser().relative_to(configured_directory)
+            covers_music = True
+        except ValueError:
+            pass
+    return covers_music and (
+        re.search(r"(?im)^\s*enable_lyrics_index\s*:\s*true\s*,?", text) is not None
         and re.search(r"(?im)^\s*enable_lyrics_hot_reload\s*:\s*true\s*,?", text) is not None
     )
 
 
 def _inspect_rmpc(
     config_path: Path,
-    lyrics_dir: Path,
+    music_root: Path,
     executable_finder: ExecutableFinder,
 ) -> IntegrationSnapshot:
     try:
@@ -162,7 +165,7 @@ def _inspect_rmpc(
         if config_exists:
             configured = _rmpc_configured(
                 config_path.read_text(encoding="utf-8"),
-                lyrics_dir,
+                music_root,
             )
     except Exception as exc:
         return IntegrationSnapshot(
@@ -178,10 +181,10 @@ def _inspect_rmpc(
         detail = "rmpc was not found in PATH."
     elif configured:
         status = IntegrationStatus.DETECTED_CONFIGURED
-        detail = "rmpc is detected and its lyrics integration is configured."
+        detail = "rmpc is detected and indexes the music tree containing sidecar lyrics."
     else:
         status = IntegrationStatus.DETECTED_NOT_CONFIGURED
-        detail = "rmpc is detected, but lyrics integration is not configured."
+        detail = "rmpc is detected, but its lyrics directory does not cover the music tree."
     return IntegrationSnapshot(status, executable, config_path, config_exists, configured, detail)
 
 
@@ -199,7 +202,6 @@ def get_settings_snapshot(
     """Inspect effective settings and environment without creating or changing files."""
 
     config_path = Path(config_path)
-    effective_lyrics_dir = resolve_lyrics_dir(settings)
     config: dict[str, object] = {}
     try:
         config_exists = config_path.exists()
@@ -214,11 +216,8 @@ def get_settings_snapshot(
     except Exception as exc:
         raise RuntimeError(f"Could not read config {config_path}: {exc}") from exc
 
-    effective_values = {
-        key: (effective_lyrics_dir if key == "lyrics_dir" else getattr(settings, key))
-        for key, _, _ in _SETTING_SPECS
-    }
-    values = tuple(
+    effective_values = {key: getattr(settings, key) for key, _, _ in _SETTING_SPECS}
+    values_list = [
         SettingValue(
             key,
             label,
@@ -227,12 +226,31 @@ def get_settings_snapshot(
             _source_for(key, effective_values[key], default, config),
         )
         for key, label, default in _SETTING_SPECS
+    ]
+    values_list.append(
+        SettingValue(
+            "external_lyrics",
+            "External lyrics",
+            "Beside each song (.lrc)",
+            "Beside each song (.lrc)",
+            SettingsSource.DEFAULT,
+        )
     )
+    if "lyrics_dir" in config or settings.lyrics_dir_explicit:
+        values_list.append(
+            SettingValue(
+                "lyrics_dir",
+                "Legacy lyrics_dir (deprecated)",
+                Path(settings.lyrics_dir).expanduser(),
+                Path(settings.lyrics_dir).expanduser(),
+                SettingsSource.CONFIG if "lyrics_dir" in config else SettingsSource.RUNTIME_OVERRIDE,
+            )
+        )
+    values = tuple(values_list)
     paths = tuple(
         _inspect_path(key, label, Path(path))
         for key, label, path in (
             ("music", "Music library", settings.music_dir),
-            ("lyrics", "External synchronized LRC files", effective_lyrics_dir),
             ("cache", "API cache", cache_dir),
             ("state", "Library state", state_file),
             ("backups", "Backups", backup_dir),
@@ -251,7 +269,7 @@ def get_settings_snapshot(
         paths=paths,
         rmpc=_inspect_rmpc(
             Path(rmpc_config_path),
-            effective_lyrics_dir,
+            Path(settings.music_dir),
             executable_finder,
         ),
         application_version=__version__,

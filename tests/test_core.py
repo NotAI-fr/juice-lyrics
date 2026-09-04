@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 import sys
 import tempfile
 
@@ -64,7 +65,7 @@ def test_command_status_with_settings(tmp_path, capsys, monkeypatch):
     assert rc == 0
     out = capsys.readouterr().out
     assert "Library Status" in out
-    assert f"External LRC dir:     {tmp_path / 'central-lyrics'}" in out
+    assert "External lyrics:      Beside each song (.lrc)" in out
     assert "MP3 files:            0" in out
 
     # Status with an MP3 file
@@ -178,10 +179,10 @@ def test_config_show_preserves_missing_and_existing_cli_behavior(tmp_path, monke
     assert cli.command_config(args) == 0
     shown = capsys.readouterr().out
     assert content.strip() in shown
-    assert f"Effective lyrics_dir: {Path.home() / 'Music' / 'lyrics'}" in shown
+    assert "External lyrics: beside each song (.lrc)" in shown
 
 
-def test_lyrics_directory_default_config_override_and_unknown_keys(tmp_path, monkeypatch):
+def test_lyrics_directory_default_config_override_and_unknown_keys(tmp_path, monkeypatch, capsys):
     import juice_lyrics.cli as cli
     from juice_lyrics.config.settings import DEFAULT_LYRICS_DIR, Settings
 
@@ -203,6 +204,10 @@ def test_lyrics_directory_default_config_override_and_unknown_keys(tmp_path, mon
     loaded = cli.load_settings()
     assert loaded.lyrics_dir == Path.home() / "shared-lyrics"
     assert config.read_text(encoding="utf-8").endswith('unknown_future_key = "ignored"\n')
+    assert cli.command_config(argparse.Namespace(action="show"), loaded) == 0
+    shown = capsys.readouterr().out
+    assert "Deprecated lyrics_dir (ignored for LRC output)" in shown
+    assert "External lyrics: beside each song (.lrc)" in shown
 
     missing_lyrics = tmp_path / "not-created" / "lyrics"
     config.write_text(f'lyrics_dir = "{missing_lyrics}"\n', encoding="utf-8")
@@ -211,10 +216,10 @@ def test_lyrics_directory_default_config_override_and_unknown_keys(tmp_path, mon
 
     config.unlink()
     cli.write_default_config()
-    assert f'lyrics_dir = "{DEFAULT_LYRICS_DIR}"' in config.read_text(encoding="utf-8")
+    assert "lyrics_dir" not in config.read_text(encoding="utf-8")
 
 
-def test_rmpc_setup_uses_configured_lyrics_directory_without_read_time_creation(
+def test_rmpc_setup_indexes_music_tree_without_creating_legacy_lyrics_directory(
     tmp_path, monkeypatch
 ):
     import argparse
@@ -244,7 +249,7 @@ def test_rmpc_setup_uses_configured_lyrics_directory_without_read_time_creation(
     )
 
     assert result == 0
-    assert configured == [(rmpc_config, configured_lyrics)]
+    assert configured == [(rmpc_config, tmp_path / "music")]
     assert not configured_lyrics.exists()
 
 

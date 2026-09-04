@@ -120,30 +120,22 @@ rmpc changes are made. The existing API cache may be updated by that explicit
 preview. Actual library sync remains CLI-only via `juice-lyrics sync`. The
 scanner is currently MP3-focused; native FLAC support remains planned.
 
-In Settings, everyday Music, Lyrics, and Download folders plus rmpc status are
+In Settings, the Music folder, Download folder, sidecar lyric behavior, and rmpc status are
 shown before the Advanced configuration, provenance, cache, and state details.
 Arrows or `j`/`k` inspect values; Home/End and PageUp/PageDown navigate longer content.
 The view reports the active config file, reliable default/config/runtime source
-labels, the effective central `lyrics_dir` (default `~/Music/lyrics`), path
-existence, and whether rmpc points at that directory. Press `r`
+labels, that external lyrics live beside each song, path existence, and whether
+rmpc indexes the music tree containing those sidecars. Press `r`
 to refresh. The screen is strictly read-only: configuration changes and setup
 remain CLI-only, no missing XDG paths are created, the scanner remains MP3-only,
 and native FLAC support remains planned.
 
-External synchronized LRC files are shared across artists in `lyrics_dir`;
-embedded synchronized/plain lyrics remain in the MP3. To migrate files created
-under the previous default without overwriting existing names:
-
-```bash
-mkdir -p ~/Music/lyrics
-find ~/Music/Juice\ WRLD/lyrics -maxdepth 1 -type f -iname '*.lrc' -exec mv -n -t ~/Music/lyrics -- {} +
-```
-
-`lyrics_dir` is the sole application destination for new LRC output. Its default
-is `~/Music/lyrics`. Configuration loading, status, verification, TUI screens,
-and planning do not create it; an authorized LRC write creates it immediately
-before output. rmpc's configured path and historical state/job metadata are
-inspection data only and cannot redirect new application output.
+External synchronized LRC files use the finalized audio path: `song.mp3` maps to
+`song.lrc` in the same directory. Content is generated before an atomic replace,
+and read-only inspection or planning creates nothing. The legacy `lyrics_dir`
+setting remains parseable but cannot redirect current output; neither historical
+state nor rmpc configuration is an output-path authority. Existing centralized
+files are not migrated by the application.
 
 ## Source of truth and Git workflow
 

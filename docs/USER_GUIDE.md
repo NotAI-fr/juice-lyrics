@@ -8,27 +8,25 @@ Run:
 juice-lyrics setup
 ```
 
-When rmpc is detected, setup generates synchronized LRC files and updates the
-rmpc lyrics setting after its normal confirmation. Merely loading configuration
-does not create the lyrics directory.
+When rmpc is detected, setup generates synchronized LRC sidecars and updates
+rmpc to index the configured music tree after its normal confirmation. Merely
+loading configuration creates no directories or files.
 
 ## Configuration
 
 The application configuration is `~/.config/juice-lyrics/config.toml`. Embedded
-lyrics remain inside each audio file. External synchronized LRC files use one
-central directory shared across artists:
+lyrics remain inside each audio file. External synchronized lyrics are written
+beside the audio with the same basename:
 
-```toml
-lyrics_dir = "~/Music/lyrics"
+```text
+song.mp3
+song.lrc
 ```
 
-The default is `~/Music/lyrics`; an explicit `lyrics_dir` overrides it. Inspect
-the effective value with `juice-lyrics config show`. Native FLAC support remains
-planned separately.
-
-This setting is the sole destination for new external LRC files. Read-only
-commands do not create the directory, rmpc configuration is not treated as an
-output-path override, and historical state records cannot redirect a new write.
+The legacy `lyrics_dir` key remains readable so old configurations continue to
+load, but it is deprecated and ignored for new LRC output. Existing centralized
+files are not moved automatically. Native FLAC library scanning remains planned
+separately.
 
 ## Normal day-to-day use
 
@@ -95,7 +93,7 @@ The acquisition system maintains persistent job state, skips already-present fil
 Songs with API synchronized lyrics get:
 
 * embedded ID3 SYLT
-* an `.lrc` file for rmpc
+* a same-basename `.lrc` beside the audio for rmpc
 
 Songs with only ordinary API lyrics get:
 
@@ -149,18 +147,13 @@ Default local library:
 ~/Music/Juice WRLD/Unreleased
 ```
 
-Default external synchronized LRC directory:
+External synchronized lyrics:
 
 ```text
-~/Music/lyrics
+song.mp3
+song.lrc
 ```
 
-Both should remain configurable.
-
-Existing LRC files from the previous default are not moved automatically. A
-safe no-overwrite manual migration is:
-
-```bash
-mkdir -p ~/Music/lyrics
-find ~/Music/Juice\ WRLD/lyrics -maxdepth 1 -type f -iname '*.lrc' -exec mv -n -t ~/Music/lyrics -- {} +
-```
+The audio path is authoritative; no global LRC destination is configured.
+Existing centralized LRC files are not moved automatically. Use the separate
+explicit migration utility if migration is required.

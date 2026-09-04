@@ -86,7 +86,7 @@ def test_explicit_config_and_runtime_overrides_have_reliable_provenance(tmp_path
 )
 def test_rmpc_detection_and_configuration_states(tmp_path, executable, config_text, expected):
     rmpc_config = tmp_path / "rmpc.ron"
-    rmpc_config.write_text(config_text.format(lyrics=tmp_path / "lyrics"), encoding="utf-8")
+    rmpc_config.write_text(config_text.format(lyrics=tmp_path), encoding="utf-8")
     snapshot = _snapshot(
         tmp_path,
         rmpc_config_path=rmpc_config,
@@ -123,9 +123,13 @@ def test_paths_and_limitations_are_typed_and_read_only(tmp_path):
     assert not (tmp_path / "data").exists()
 
 
-def test_effective_lyrics_directory_is_a_typed_value_and_read_only_path(tmp_path):
+def test_legacy_lyrics_directory_is_deprecated_metadata_and_not_a_runtime_path(tmp_path):
     configured = tmp_path / "shared" / "lyrics"
-    settings = Settings(music_dir=tmp_path / "music", lyrics_dir=configured)
+    settings = Settings(
+        music_dir=tmp_path / "music",
+        lyrics_dir=configured,
+        lyrics_dir_explicit=True,
+    )
     snapshot = get_settings_snapshot(
         settings,
         config_path=tmp_path / "config.toml",
@@ -140,8 +144,9 @@ def test_effective_lyrics_directory_is_a_typed_value_and_read_only_path(tmp_path
     values = {item.key: item for item in snapshot.values}
     paths = {item.key: item for item in snapshot.paths}
     assert values["lyrics_dir"].value == configured
-    assert values["lyrics_dir"].source is SettingsSource.RUNTIME_OVERRIDE
-    assert paths["lyrics"].path == configured
+    assert "deprecated" in values["lyrics_dir"].label.lower()
+    assert values["external_lyrics"].value == "Beside each song (.lrc)"
+    assert "lyrics" not in paths
     assert not configured.exists()
 
 

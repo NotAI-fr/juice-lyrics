@@ -10,10 +10,11 @@ from typing import Any
 
 from ..api.client import search_song_names
 from ..backup.manager import backup_file, make_backup_root, restore_file, write_manifest
-from ..config.settings import DEFAULT_RMPC_CONFIG, STATE_FILE, Settings, resolve_lyrics_dir
+from ..config.settings import DEFAULT_RMPC_CONFIG, STATE_FILE, Settings
 from ..library.matching import choose_candidate, search_title_for
 from ..library.scanner import find_mp3s
 from ..lyrics.engine import embed_lyrics, parse_synced_lyrics, verify_file, write_lrc
+from ..lyrics.sidecar import sidecar_lrc_path
 from ..rmpc.integration import notify_rmpc_index, patch_rmpc_config
 from ..state import load_state, save_state, sha256_file
 from ..backup.manager import now_iso
@@ -62,10 +63,9 @@ class LibrarySyncOptions:
     state_file: Path = STATE_FILE
 
     def __post_init__(self) -> None:
-        # A plan may contain historical state paths, but all new LRC output is
-        # derived from current settings at the application boundary.
-        authoritative = resolve_lyrics_dir(self.settings) if self.rmpc_enabled else None
-        object.__setattr__(self, "lyrics_dir", authoritative)
+        # Kept as a constructor field for compatibility with older callers.
+        # External lyrics are now derived solely from each audio path.
+        object.__setattr__(self, "lyrics_dir", None)
 
     @classmethod
     def from_settings(
@@ -85,7 +85,7 @@ class LibrarySyncOptions:
             dry_run=dry_run,
             refresh=refresh,
             rmpc_enabled=rmpc_enabled,
-            lyrics_dir=resolve_lyrics_dir(settings) if rmpc_enabled else None,
+            lyrics_dir=None,
             rmpc_config_path=Path(rmpc_config_path) if rmpc_config_path is not None else None,
             duration_tolerance=settings.duration_tolerance,
             state_file=Path(state_file),
@@ -110,6 +110,7 @@ class TrackSyncPlan:
     synced_lyrics: tuple[tuple[str, int], ...] = ()
     plain_lyrics: str = ""
     error: str | None = None
+    lrc_path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,7 +198,7 @@ class LibrarySyncDependencies:
     backup_writer: Callable[[Path, Path, Path], Path] = backup_file
     restorer: Callable[[Path, Path], None] = restore_file
     manifest_writer: Callable[[Path, list[dict[str, Any]]], None] = write_manifest
-    lrc_writer: Callable[[Path, list[tuple[str, int]], dict[str, Any], Path], Path] = write_lrc
+    lrc_writer: Callable[[Path, list[tuple[str, int]], dict[str, Any]], Path] = write_lrc
     rmpc_notifier: Callable[[list[Path]], int] = notify_rmpc_index
     rmpc_configurer: Callable[[Path, Path], Path] = patch_rmpc_config
     state_loader: Callable[[], dict[str, Any]] = load_state
@@ -238,13 +239,7 @@ def _state_is_current(
     if not valid:
         return False
     if options.rmpc_enabled and entry.get("lyric_type") == SyncLyricType.SYNCED.value:
-        lrc = Path(str(entry.get("lrc") or ""))
-        expected_lrc = (
-            options.lyrics_dir / f"{path.stem}.lrc"
-            if options.lyrics_dir is not None
-            else None
-        )
-        if expected_lrc is None or lrc != expected_lrc or not expected_lrc.is_file():
+        if not sidecar_lrc_path(path).is_file():
             return False
     return True
 
@@ -290,7 +285,21 @@ def plan_library_sync(
             else:
                 tracks.append(TrackSyncPlan(path, MatchOutcome.NO_LYRICS, SyncLyricType.NONE, candidate))
                 continue
-            tracks.append(TrackSyncPlan(path, MatchOutcome.MATCHED, lyric_type, candidate, synced, plain))
+            tracks.append(
+                TrackSyncPlan(
+                    path,
+                    MatchOutcome.MATCHED,
+                    lyric_type,
+                    candidate,
+                    synced,
+                    plain,
+                    lrc_path=(
+                        sidecar_lrc_path(path)
+                        if options.rmpc_enabled and lyric_type is SyncLyricType.SYNCED
+                        else None
+                    ),
+                )
+            )
             _emit(progress, SyncEventKind.MATCH_FOUND, path=path, message=lyric_type.value)
         except Exception as exc:
             tracks.append(TrackSyncPlan(path, MatchOutcome.FAILED, SyncLyricType.NONE, error=str(exc)))
@@ -365,16 +374,6 @@ def execute_library_sync(
             plan, tuple(initial_results), 0, plan.analysis_failures, 0, 0, 0, None
         )
 
-    if (
-        options.rmpc_enabled
-        and options.lyrics_dir is not None
-        and any(track.lyric_type is SyncLyricType.SYNCED for track in ready)
-        and options.rmpc_config_path is not None
-    ):
-        text = options.rmpc_config_path.read_text(encoding="utf-8")
-        if str(options.lyrics_dir) not in text:
-            dependencies.rmpc_configurer(options.rmpc_config_path, options.lyrics_dir)
-
     backup_root = dependencies.backup_root_factory()
     manifest: list[dict[str, Any]] = []
     generated_lrc: list[Path] = []
@@ -398,12 +397,11 @@ def execute_library_sync(
                 raise
 
             lrc_path: Path | None = None
-            if options.rmpc_enabled and track.lyric_type is SyncLyricType.SYNCED and options.lyrics_dir is not None:
+            if options.rmpc_enabled and track.lyric_type is SyncLyricType.SYNCED:
                 lrc_path = dependencies.lrc_writer(
                     track.path,
                     list(track.synced_lyrics),
                     dict(track.candidate or {}),
-                    options.lyrics_dir,
                 )
                 generated_lrc.append(lrc_path)
                 _emit(progress, SyncEventKind.LRC_GENERATED, path=track.path, message=str(lrc_path))

@@ -245,10 +245,21 @@ def _rows_for(snapshot: SettingsSnapshot) -> tuple[SettingsRow, ...]:
     essential_rows: list[SettingsRow] = []
     if "music" in paths:
         essential_rows.append(_path_row(paths["music"], section="paths", label="Music folder"))
-    if "lyrics" in paths:
-        essential_rows.append(_path_row(paths["lyrics"], section="paths", label="Lyrics folder"))
     if "music" in paths:
         essential_rows.append(_path_row(paths["music"], section="paths", label="Download location"))
+    external_lyrics = next(
+        (item for item in snapshot.values if item.key == "external_lyrics"),
+        None,
+    )
+    if external_lyrics is not None:
+        essential_rows.append(
+            SettingsRow(
+                "paths",
+                "External lyrics",
+                str(external_lyrics.value),
+                "Synchronized external lyrics use a same-basename .lrc beside each song.",
+            )
+        )
 
     advanced_rows = [
         SettingsRow(
@@ -265,12 +276,14 @@ def _rows_for(snapshot: SettingsSnapshot) -> tuple[SettingsRow, ...]:
         ),
     ]
     advanced_rows.extend(
-        _value_row(item) for item in snapshot.values if item.key not in {"music_dir", "lyrics_dir"}
+        _value_row(item)
+        for item in snapshot.values
+        if item.key not in {"music_dir", "external_lyrics"}
     )
     advanced_rows.extend(
         _path_row(item, section="configuration")
         for item in snapshot.paths
-        if item.key not in {"music", "lyrics"}
+        if item.key != "music"
     )
     integration_rows = [
         SettingsRow(

@@ -7,10 +7,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from ..config.settings import BACKUP_DIR, STATE_FILE, Settings, resolve_lyrics_dir
+from ..backup.manager import list_backups
+from ..config.settings import BACKUP_DIR, STATE_FILE, Settings
 from ..library.scanner import find_mp3s
 from ..library.matching import local_duration
 from ..lyrics.engine import verify_file
+from ..lyrics.sidecar import sidecar_lrc_path
 from ..state import sha256_file
 
 LyricsVerifier = Callable[[Path], tuple[bool, str]]
@@ -218,13 +220,8 @@ def get_library_snapshot(
                 matched_title = str(candidate_title).strip()
         matched = bool(matched_title or (entry is not None and entry.get("song_id") is not None))
 
-        recorded_lrc = (
-            Path(str(entry["lrc"]))
-            if entry is not None and entry.get("lrc")
-            else None
-        )
         lrc_path = (
-            resolve_lyrics_dir(settings) / f"{path.stem}.lrc"
+            sidecar_lrc_path(path)
             if lyric_status is LibraryLyricStatus.SYNCED
             else None
         )
@@ -234,11 +231,7 @@ def get_library_snapshot(
             lrc_status = LibraryLrcStatus.PRESENT
         else:
             lrc_status = LibraryLrcStatus.MISSING
-            track_warnings.append("External LRC file is missing from the configured directory.")
-        if recorded_lrc is not None and lrc_path is not None and recorded_lrc != lrc_path:
-            track_warnings.append(
-                f"Library state records an LRC outside the configured directory: {recorded_lrc}"
-            )
+            track_warnings.append("Adjacent external LRC file is missing.")
 
         try:
             duration = duration_reader(path)
@@ -302,16 +295,11 @@ def get_library_status(
         if (
             valid
             and message.startswith("SYLT")
-            and (resolve_lyrics_dir(settings) / f"{path.stem}.lrc").is_file()
+            and sidecar_lrc_path(path).is_file()
         ):
             lrc += 1
 
-    backup_path = Path(backup_dir)
-    backup_count = (
-        len([path for path in backup_path.iterdir() if path.is_dir()])
-        if backup_path.exists()
-        else 0
-    )
+    backup_count = len(list_backups(Path(backup_dir)))
     return LibraryStatus(
         library_path=library_path,
         track_count=len(files),

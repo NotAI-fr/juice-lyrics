@@ -28,11 +28,13 @@ v2-redesign
   plain-language confirmations, Dashboard journey prompts, and Settings folders
   before advanced diagnostics; all secondary queue actions remain available in Help.
 - Library summary, local track navigation, typed lyric/match/LRC/state details, local filters, and explicit read-only sync preview.
-- Settings configuration provenance, XDG/application paths, path-existence checks, rmpc integration status, and current capability limitations.
+- Settings configuration provenance, XDG/application paths, sidecar external-lyrics behavior, rmpc integration status, and current capability limitations.
 - Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.
-- External synchronized LRC files use the authoritative `lyrics_dir` setting, defaulting to the shared `~/Music/lyrics` directory.
-- Historical state paths and rmpc configuration cannot redirect new LRC output;
-  read-only operations do not create either the central or legacy directory.
+- External synchronized LRC files live beside each audio file with the same
+  basename; the finalized audio path is authoritative.
+- The legacy `lyrics_dir` setting remains readable but deprecated. Historical
+  state paths and rmpc configuration cannot redirect new LRC output, and
+  read-only operations create no sidecars or directories.
 
 ## Available through the CLI
 

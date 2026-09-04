@@ -243,7 +243,7 @@ Should:
 3. Download.
 4. Validate file.
 5. Embed lyrics.
-6. Generate LRC if possible.
+6. Generate a same-basename LRC beside the audio if possible.
 7. Add to library.
 
 ---
@@ -422,6 +422,8 @@ Rules:
 
 - Only generate from timestamped lyrics.
 - Never invent timestamps.
+- Keep each LRC beside its audio file with the same basename.
+- Do not derive current output from the deprecated global `lyrics_dir` setting.
 
 ---
 

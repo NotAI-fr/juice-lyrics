@@ -34,7 +34,8 @@ def _snapshot(
     music = tmp_path / f"music{suffix}"
     values = (
         SettingValue("music_dir", "Music directory", music, Path("/default/music"), SettingsSource.CONFIG),
-        SettingValue("lyrics_dir", "External LRC directory", tmp_path / "lyrics", Path("/default/lyrics"), SettingsSource.CONFIG),
+        SettingValue("external_lyrics", "External lyrics", "Beside each song (.lrc)", "Beside each song (.lrc)", SettingsSource.DEFAULT),
+        SettingValue("lyrics_dir", "Legacy lyrics_dir (deprecated)", tmp_path / "lyrics", tmp_path / "lyrics", SettingsSource.CONFIG),
         SettingValue("api_base", "API base URL", "https://api.example", "https://default.example", SettingsSource.DEFAULT),
         SettingValue("timeout", "Request timeout", 20, 20, SettingsSource.DEFAULT),
         SettingValue("delay", "Request delay", 0.15, 0.15, SettingsSource.CONFIG),
@@ -43,7 +44,6 @@ def _snapshot(
     )
     paths = (
         SettingsPath("music", "Music library", music, True),
-        SettingsPath("lyrics", "External synchronized LRC files", tmp_path / "lyrics", False),
         SettingsPath("cache", "API cache", tmp_path / "cache", True),
         SettingsPath("state", "Library state", tmp_path / "data" / "state.json", False),
         SettingsPath("backups", "Backups", tmp_path / "data" / "backups", False),
@@ -116,12 +116,13 @@ def test_settings_replaces_placeholder_and_renders_configuration_paths_and_limit
             assert "Read-only settings view — configuration changes remain CLI-only" in _text(app, "#settings-warning")
             paths = _text(app, "#settings-paths")
             assert "Music folder" in paths and "Download location" in paths
-            assert "Lyrics folder" in paths
+            assert "External lyrics" in paths
+            assert "Beside each song" in paths
             assert str(tmp_path / "music") in _text(app, "#settings-detail")
             configuration = _text(app, "#settings-configuration")
             assert "config.toml" in configuration
             assert "Music directory" not in configuration
-            assert "External LRC directory" not in configuration
+            assert "Legacy lyrics_dir (deprecated)" in configuration
             assert "API base URL" in configuration and "[Default]" in configuration
             assert "Duration tolerance" in configuration and "[Runtime override]" in configuration
             assert "Detected and configured" in _text(app, "#settings-integrations")
@@ -131,7 +132,7 @@ def test_settings_replaces_placeholder_and_renders_configuration_paths_and_limit
 
             await pilot.press("down", "j")
             assert screen.selected_index == 2
-            assert "Download location" in _text(app, "#settings-detail")
+            assert "External lyrics" in _text(app, "#settings-detail")
             await pilot.press("end")
             assert screen.selected_index == len(screen.rows) - 1
             await pilot.press("home")

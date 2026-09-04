@@ -32,7 +32,7 @@ def test_legacy_implicit_default_is_guarded_but_explicit_value_is_respected(
     assert resolve_lyrics_dir(configured) == LEGACY_IMPLICIT_LYRICS_DIR
 
 
-def test_acquisition_ignores_stale_lrc_override_when_settings_are_available(
+def test_acquisition_ignores_legacy_lrc_override_and_writes_sidecar(
     tmp_path, monkeypatch
 ):
     import juice_lyrics.acquisition.integration as integration
@@ -59,10 +59,9 @@ def test_acquisition_ignores_stale_lrc_override_when_settings_are_available(
     monkeypatch.setattr(integration, "verify_file", lambda path: (True, "verified"))
     monkeypatch.setattr(integration, "sha256_file", lambda path: "hash")
 
-    def writer(path, synced, song, output):
-        outputs.append(output)
-        output.mkdir(parents=True, exist_ok=True)
-        result = output / "Rental.lrc"
+    def writer(path, synced, song):
+        outputs.append(path)
+        result = path.with_suffix(".lrc")
         result.write_text("[00:01.00] line\n", encoding="utf-8")
         return result
 
@@ -82,8 +81,9 @@ def test_acquisition_ignores_stale_lrc_override_when_settings_are_available(
         notify_rmpc=False,
     )
 
-    assert outputs == [central]
-    assert result.lrc_path == central / "Rental.lrc"
+    assert outputs == [destination]
+    assert result.lrc_path == destination.with_suffix(".lrc")
+    assert not central.exists()
     assert not legacy.exists()
 
 

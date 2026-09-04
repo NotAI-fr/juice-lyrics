@@ -21,7 +21,8 @@ from mutagen.id3 import ID3, ID3NoHeaderError, SYLT, USLT, Encoding
 from mutagen.mp3 import MP3
 
 from . import __version__
-from .config.settings import DEFAULT_LYRICS_DIR, resolve_lyrics_dir
+from .config.settings import DEFAULT_LYRICS_DIR
+from .lyrics.sidecar import sidecar_lrc_path
 
 APP_NAME = "juice-lyrics"
 DEFAULT_API_BASE = "https://juicewrldapi.com/juicewrld"
@@ -125,7 +126,7 @@ def write_default_config(force: bool = False) -> None:
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     if CONFIG_FILE.exists() and not force:
         raise RuntimeError(f"Config already exists: {CONFIG_FILE} (use --force to replace it)")
-    content = f'''# {APP_NAME} configuration\n\nmusic_dir = "{DEFAULT_MUSIC_DIR}"\nlyrics_dir = "{DEFAULT_LYRICS_DIR}"\napi_base = "{DEFAULT_API_BASE}"\ntimeout = {DEFAULT_TIMEOUT}\ndelay = {DEFAULT_DELAY}\nduration_tolerance = {DEFAULT_DURATION_TOLERANCE}\ncache_ttl_hours = {DEFAULT_CACHE_TTL_HOURS}\n'''
+    content = f'''# {APP_NAME} configuration\n\nmusic_dir = "{DEFAULT_MUSIC_DIR}"\napi_base = "{DEFAULT_API_BASE}"\ntimeout = {DEFAULT_TIMEOUT}\ndelay = {DEFAULT_DELAY}\nduration_tolerance = {DEFAULT_DURATION_TOLERANCE}\ncache_ttl_hours = {DEFAULT_CACHE_TTL_HOURS}\n'''
     CONFIG_FILE.write_text(content, encoding="utf-8")
 
 
@@ -483,30 +484,6 @@ def read_mp3_metadata(path: Path, fallback: dict[str, Any]) -> dict[str, str]:
     return {"artist": artist, "title": title, "album": album, "length": f"{minutes:02d}:{seconds:02d}.{centiseconds:02d}"}
 
 
-def write_lrc(path: Path, analysis: dict[str, Any], out_dir: Path) -> Path:
-    synced = analysis.get("synced") or []
-    candidate = analysis.get("candidate") or {}
-    if not synced:
-        raise ValueError("No synchronized lyrics available")
-    meta = read_mp3_metadata(path, candidate)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{path.stem}.lrc"
-    lines = [f"[ar:{meta['artist'].replace(']', '}')}]", f"[ti:{meta['title'].replace(']', '}')}]"]
-    if meta["album"]:
-        lines.append(f"[al:{meta['album'].replace(']', '}')}]")
-    lines.append(f"[length:{meta['length']}]")
-    lines.append("")
-    for text, timestamp_ms in synced:
-        cs = max(0, int(round(timestamp_ms / 10)))
-        minutes, remainder = divmod(cs, 6000)
-        seconds, centiseconds = divmod(remainder, 100)
-        lines.append(f"[{minutes:02d}:{seconds:02d}.{centiseconds:02d}] {text}")
-    tmp = out_file.with_suffix(".lrc.tmp")
-    tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    tmp.replace(out_file)
-    return out_file
-
-
 def patch_rmpc_config(config_path: Path, lyrics_dir: Path) -> Path:
     if not config_path.exists():
         raise RuntimeError(f"rmpc config not found: {config_path}")
@@ -552,10 +529,6 @@ def notify_rmpc_index(paths: list[Path]) -> int:
     return count
 
 
-def configured_rmpc_lyrics_dir(settings: Settings) -> Path:
-    return resolve_lyrics_dir(settings)
-
-
 def write_state_entry(state: dict[str, Any], path: Path, settings: Settings, analysis: dict[str, Any], lrc_path: Path | None) -> None:
     relative = str(path.relative_to(settings.music_dir))
     state.setdefault("files", {})[relative] = {
@@ -582,16 +555,13 @@ def state_is_current(state: dict[str, Any], path: Path, settings: Settings, want
     if not valid:
         return False
     if want_rmpc and entry.get("lyric_type") == "SYLT":
-        lrc = Path(entry.get("lrc") or "")
-        expected_lrc = resolve_lyrics_dir(settings) / f"{path.stem}.lrc"
-        if lrc != expected_lrc or not expected_lrc.is_file():
+        if not sidecar_lrc_path(path).is_file():
             return False
     return True
 
 
 def embed_batch(settings: Settings, files: list[Path], use_color: bool, refresh: bool, dry_run: bool, yes: bool, with_rmpc: bool) -> int:
     state = load_state()
-    lyric_dir = configured_rmpc_lyrics_dir(settings) if with_rmpc else None
     work: list[dict[str, Any]] = []
     skipped_unchanged = 0
     for index, path in enumerate(files, 1):
@@ -662,7 +632,7 @@ def embed_batch(settings: Settings, files: list[Path], use_color: bool, refresh:
                 raise RuntimeError(f"verification failed: {message}")
             lrc_path = None
             if with_rmpc and analysis["synced"]:
-                lrc_path = write_lrc(path, analysis, lyric_dir)  # type: ignore[arg-type]
+                lrc_path = write_lrc(path, analysis)
                 generated_lrc.append(lrc_path)
             write_state_entry(state, path, settings, analysis, lrc_path)
             manifest.append({"file": str(path), "sha256_before": original_hash, "lyric_type": lyric_type, "verification": message})
@@ -764,8 +734,14 @@ rmpc_running = _rmpc_running
 notify_rmpc_index = _notify_rmpc_index
 
 
-def write_lrc(path: Path, analysis: dict[str, Any], out_dir: Path) -> Path:
-    return _write_lrc(path, analysis.get("synced") or [], analysis.get("candidate") or {}, out_dir)
+def write_lrc(
+    path: Path,
+    analysis: dict[str, Any],
+    out_dir: Path | None = None,
+) -> Path:
+    """Write a sidecar LRC; ``out_dir`` is ignored for CLI compatibility."""
+
+    return _write_lrc(path, analysis.get("synced") or [], analysis.get("candidate") or {})
 
 
 def load_settings(path_override: str | None = None, api_override: str | None = None) -> Settings:
@@ -808,7 +784,7 @@ def command_setup(args: argparse.Namespace, settings: Settings, use_color: bool)
             print("Cancelled.")
             return 0
     if rmpc_available:
-        patch_rmpc_config(DEFAULT_RMPC_CONFIG, resolve_lyrics_dir(settings))
+        patch_rmpc_config(DEFAULT_RMPC_CONFIG, Path(settings.music_dir))
     files = find_mp3s(settings)
     return embed_batch(settings, files, use_color, args.refresh, False, True, rmpc_available)
 
@@ -822,7 +798,7 @@ def command_sync(args: argparse.Namespace, settings: Settings, use_color: bool) 
         dry_run=args.dry_run,
         refresh=args.refresh,
         rmpc_enabled=rmpc_enabled,
-        lyrics_dir=resolve_lyrics_dir(settings) if rmpc_enabled else None,
+        lyrics_dir=None,
         rmpc_config_path=DEFAULT_RMPC_CONFIG if rmpc_enabled else None,
         state_file=STATE_FILE,
     )
@@ -859,6 +835,11 @@ def command_sync(args: argparse.Namespace, settings: Settings, use_color: bool) 
         for track in no_lyrics:
             print(f"  - {track.path.name}")
     if args.dry_run:
+        sidecars = [track.lrc_path for track in plan.tracks if track.lrc_path is not None]
+        if sidecars:
+            print("LRC sidecars:")
+            for sidecar in sidecars:
+                print(f"  - {sidecar}")
         print(colorize("\nDry run: no files changed.", CYAN, use_color))
         return 0
     if not plan.ready_files:
@@ -901,7 +882,7 @@ def command_status(settings: Settings, use_color: bool) -> int:
     )
     print_header("Library Status", use_color)
     print(f"Library:              {status.library_path}")
-    print(f"External LRC dir:     {resolve_lyrics_dir(settings)}")
+    print("External lyrics:      Beside each song (.lrc)")
     print(f"MP3 files:            {status.track_count}")
     print(f"Embedded synced:      {status.embedded_synced_count}")
     print(f"Embedded plain:       {status.embedded_plain_count}")
@@ -1098,7 +1079,9 @@ def command_config(args: argparse.Namespace, settings: Settings | None = None) -
             print(CONFIG_FILE.read_text(encoding="utf-8").rstrip())
         else:
             print(f"No config. Defaults are in use.\n{CONFIG_FILE}")
-        print(f"Effective lyrics_dir: {resolve_lyrics_dir(effective)}")
+        if effective.lyrics_dir_explicit:
+            print(f"Deprecated lyrics_dir (ignored for LRC output): {effective.lyrics_dir}")
+        print("External lyrics: beside each song (.lrc)")
         return 0
     raise RuntimeError("Unknown config action")
 
@@ -1112,12 +1095,13 @@ def command_cache(args: argparse.Namespace) -> int:
 
 def command_rmpc_setup(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
     config_path = Path(args.config).expanduser() if args.config else DEFAULT_RMPC_CONFIG
-    lyrics_dir = resolve_lyrics_dir(settings, explicit_override=args.lyrics_dir)
-    if not lyrics_dir.is_absolute(): lyrics_dir = lyrics_dir.resolve()
+    music_root = Path(settings.music_dir).expanduser()
+    if not music_root.is_absolute():
+        music_root = music_root.resolve()
     if shutil.which("rmpc") is None: raise RuntimeError("rmpc was not found in PATH")
     if not config_path.exists(): raise RuntimeError(f"rmpc config not found: {config_path}")
     print_header("rmpc Lyrics Setup", use_color)
-    print(f"Library:     {settings.music_dir}\nLRC folder:  {lyrics_dir}\nrmpc config: {config_path}\n")
+    print(f"Library:     {settings.music_dir}\nExternal lyrics: beside each song\nrmpc config: {config_path}\n")
     if not args.yes:
         if not sys.stdin.isatty(): print("Non-interactive mode: use --yes."); return 2
         if input("Create LRC files and update rmpc config? [y/N] ").strip().lower() not in {"y", "yes"}:
@@ -1131,31 +1115,33 @@ def command_rmpc_setup(args: argparse.Namespace, settings: Settings, use_color: 
     generated = []
     for a in analyses:
         if not a.get("synced"): continue
-        generated.append(write_lrc(a["path"], a, lyrics_dir))
+        generated.append(write_lrc(a["path"], a))
         print(colorize(f"✓ {a['path'].name}", GREEN, use_color) + " → LRC")
-    backup = patch_rmpc_config(config_path, lyrics_dir)
+    backup = patch_rmpc_config(config_path, music_root)
     indexed = notify_rmpc_index(generated)
-    print(f"\nrmpc setup complete\n  LRC files:     {len(generated)}\n  Lyrics folder: {lyrics_dir}\n  Config backup: {backup}")
+    print(f"\nrmpc setup complete\n  LRC files:     {len(generated)}\n  Indexed tree:  {music_root}\n  Config backup: {backup}")
     if indexed: print(f"  rmpc notified: {indexed}")
     elif not rmpc_running(): print("  rmpc: not currently running; start/restart it to load the setup")
     return 0
 
 
 def command_rmpc_sync(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    lyrics_dir = resolve_lyrics_dir(settings, explicit_override=args.lyrics_dir)
     generated = []
     for path in find_mp3s(settings):
         a = analyse(settings, path, args.refresh)
         if not a.get("synced"): continue
-        generated.append(write_lrc(path, a, lyrics_dir))
+        generated.append(write_lrc(path, a))
         print(colorize(f"✓ {path.name}", GREEN, use_color))
     print(f"Generated: {len(generated)}   Notified: {notify_rmpc_index(generated)}")
     return 0
 
 
 def command_rmpc_verify(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    lyrics_dir = resolve_lyrics_dir(settings, explicit_override=args.lyrics_dir)
-    files = sorted(lyrics_dir.glob("*.lrc")) if lyrics_dir.is_dir() else []
+    files = [
+        sidecar_lrc_path(path)
+        for path in find_mp3s(settings)
+        if sidecar_lrc_path(path).is_file()
+    ]
     good = bad = 0
     for path in files:
         text = path.read_text(encoding="utf-8")
@@ -1428,7 +1414,6 @@ def _run_acquisition_job(job: AcquisitionJob, store: JobStore, settings: Setting
         integration = integrate_downloaded_mp3(
             result.item,
             song_fetcher=lambda song_id: _api_get_song(settings, song_id),
-            lyrics_dir=configured_rmpc_lyrics_dir(settings),
             settings=settings,
         )
         if integration.message:
@@ -1611,14 +1596,14 @@ def build_parser() -> argparse.ArgumentParser:
     rs = rmpc.add_subparsers(dest="action", required=True)
     r1 = rs.add_parser("setup")
     r1.add_argument("--config")
-    r1.add_argument("--lyrics-dir")
+    r1.add_argument("--lyrics-dir", help="Deprecated compatibility option; sidecars are written beside songs.")
     r1.add_argument("--yes", action="store_true")
     r1.add_argument("--refresh", action="store_true")
     r2 = rs.add_parser("sync")
-    r2.add_argument("--lyrics-dir")
+    r2.add_argument("--lyrics-dir", help="Deprecated compatibility option; sidecars are written beside songs.")
     r2.add_argument("--refresh", action="store_true")
     r3 = rs.add_parser("verify")
-    r3.add_argument("--lyrics-dir")
+    r3.add_argument("--lyrics-dir", help="Deprecated compatibility option; sidecars are read beside songs.")
 
     config = sub.add_parser("config", help="Manage configuration.")
     cs = config.add_subparsers(dest="action", required=True)

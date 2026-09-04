@@ -12,7 +12,7 @@ DEFAULT_DELAY = 0.15
 DEFAULT_DURATION_TOLERANCE = 3.0
 DEFAULT_CACHE_TTL_HOURS = 24
 DEFAULT_LYRICS_DIR = Path.home() / "Music" / "lyrics"
-# Historical compatibility sentinel only; never use this as an output default.
+# Historical compatibility values only; neither controls current LRC output.
 LEGACY_IMPLICIT_LYRICS_DIR = Path.home() / "Music" / "Juice WRLD" / "lyrics"
 
 
@@ -40,9 +40,7 @@ class Settings:
     delay: float = DEFAULT_DELAY
     duration_tolerance: float = DEFAULT_DURATION_TOLERANCE
     cache_ttl_hours: float = DEFAULT_CACHE_TTL_HOURS
-    # Set by configuration loading when lyrics_dir was deliberately supplied.
-    # It lets the compatibility guard distinguish an intentional legacy path
-    # from the pre-lyrics_dir implicit default.
+    # Deprecated compatibility field. New LRC output is always beside audio.
     lyrics_dir_explicit: bool = False
 
     @property
@@ -55,12 +53,10 @@ def resolve_lyrics_dir(
     *,
     explicit_override: str | Path | None = None,
 ) -> Path:
-    """Resolve the sole destination for newly written external LRC files.
+    """Resolve the deprecated centralized directory for compatibility tools.
 
-    The old application default was derived from ``DEFAULT_MUSIC_DIR``.  A
-    stale in-memory settings object using that implicit value must not recreate
-    the old artist-specific directory.  An explicit TOML value (or an explicit
-    advanced-command override) remains respected, including that exact path.
+    Current acquisition, sync, retry, and status paths must not call this
+    helper. New external lyrics are derived from the finalized audio path.
     """
 
     if explicit_override is not None:

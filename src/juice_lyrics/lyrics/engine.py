@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 from mutagen.id3 import ID3, ID3NoHeaderError, SYLT, USLT, Encoding
 from ..library.matching import local_duration, parse_length
+from .sidecar import sidecar_lrc_path
 
 DESCRIPTION = "Juice WRLD API"
 LANGUAGE = "eng"
@@ -80,13 +83,43 @@ def read_mp3_metadata(path: Path, fallback: dict[str,Any]) -> dict[str,str]:
     cs=max(0,int(round(duration*100))); minutes,remainder=divmod(cs,6000); seconds,centiseconds=divmod(remainder,100)
     return {"artist":artist,"title":title,"album":album,"length":f"{minutes:02d}:{seconds:02d}.{centiseconds:02d}"}
 
-def write_lrc(path: Path, synced: list[tuple[str,int]], fallback: dict[str,Any], out_dir: Path) -> Path:
+def write_lrc(
+    path: Path,
+    synced: list[tuple[str, int]],
+    fallback: dict[str, Any],
+) -> Path:
+    """Atomically create or update synchronized lyrics beside ``path``."""
+
     if not synced: raise ValueError("No synchronized lyrics available")
-    meta=read_mp3_metadata(path,fallback); out_dir.mkdir(parents=True,exist_ok=True); out=out_dir/f"{path.stem}.lrc"
+    meta = read_mp3_metadata(path, fallback)
+    out = sidecar_lrc_path(path)
     safe=lambda s:str(s).replace("]","}")
     lines=[f"[ar:{safe(meta['artist'])}]",f"[ti:{safe(meta['title'])}]"]
     if meta["album"]: lines.append(f"[al:{safe(meta['album'])}]")
     lines += [f"[length:{meta['length']}]",""]
     for text,ms in synced:
         cs=max(0,int(round(ms/10))); m,r=divmod(cs,6000); s,cs2=divmod(r,100); lines.append(f"[{m:02d}:{s:02d}.{cs2:02d}] {text}")
-    tmp=out.with_suffix(".lrc.tmp"); tmp.write_text("\n".join(lines)+"\n",encoding="utf-8"); tmp.replace(out); return out
+    content = "\n".join(lines) + "\n"
+    try:
+        if out.read_text(encoding="utf-8") == content:
+            return out
+    except FileNotFoundError:
+        pass
+
+    temporary: Path | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=out.parent,
+            prefix=f".{out.name}.",
+            suffix=".tmp",
+        )
+        temporary = Path(temporary_name)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(out)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return out

@@ -20,12 +20,10 @@ Your Juice WRLD folder is kept together:
 ~/Music/Juice WRLD/
 ├── Unreleased/
 │   ├── Bottle.mp3
+│   ├── Bottle.lrc
 │   ├── Rental.mp3
+│   ├── Rental.lrc
 │   └── ...
-└── lyrics/
-    ├── Bigger.lrc
-    ├── Blade.lrc
-    └── ...
 ```
 
 ### Normal use
@@ -142,15 +140,19 @@ This prevents common version mix-ups such as selecting `Starstruck (v1)` for `St
 
 ## rmpc
 
-External synchronized LRC files use the configured `lyrics_dir`. Its default is:
+Audio and external synchronized lyrics stay together. A synchronized song gets
+a same-basename sidecar beside its audio file:
 
 ```text
-~/Music/lyrics
+song.mp3
+song.lrc
 ```
 
-This central directory is shared across artists. Read-only commands do not create
-it; it is created only when an explicitly requested operation writes an LRC.
-rmpc configuration is not used as the application's output-path authority.
+The old `lyrics_dir` configuration key is accepted for compatibility but is
+deprecated and does not direct new output. Existing centralized files are not
+moved automatically; migration is a separate, explicit operation. Sidecars work
+naturally when the music tree is synchronized between devices. Embedded lyrics
+remain supported.
 
 The advanced commands remain available:
 

@@ -108,6 +108,28 @@ def test_completely_unchanged_library_is_not_backed_up_or_modified(tmp_path):
     assert path.read_bytes() == b"current"
 
 
+def test_historical_central_lrc_state_cannot_redirect_or_invalidate_sidecar(tmp_path):
+    path = tmp_path / "Track.mp3"
+    path.write_bytes(b"current")
+    path.with_suffix(".lrc").write_text("[00:01.00] line\n", encoding="utf-8")
+    deps, state, _, backup_root = _dependencies(tmp_path, {"Track": _candidate()})
+    state["files"]["Track.mp3"] = {
+        "sha256": deps.hasher(path),
+        "lyric_type": "SYLT",
+        "lrc": str(tmp_path / "old-central" / "Track.lrc"),
+    }
+    deps.verifier = lambda target: (True, "SYLT")
+
+    plan = plan_library_sync(
+        _options(tmp_path, rmpc_enabled=True),
+        dependencies=deps,
+    )
+
+    assert plan.unchanged_files == 1
+    assert not backup_root.exists()
+    assert not (tmp_path / "old-central").exists()
+
+
 @pytest.mark.parametrize(("kind", "lyric_type"), [("synced", SyncLyricType.SYNCED), ("plain", SyncLyricType.PLAIN)])
 def test_new_synced_and_plain_files_are_backed_up_verified_and_saved(tmp_path, kind, lyric_type):
     path = tmp_path / "Track.mp3"
@@ -210,7 +232,8 @@ def test_frontend_preview_helper_is_dry_run_and_non_mutating(tmp_path):
     assert plan.options.dry_run is True
     assert plan.ready_files == 1
     assert plan.synced_files == 1
-    assert plan.options.lyrics_dir == configured_lyrics
+    assert plan.options.lyrics_dir is None
+    assert plan.tracks[0].lrc_path == path.with_suffix(".lrc")
     assert saved == []
     assert path.read_bytes() == b"original"
     assert not backup_root.exists()
@@ -244,10 +267,9 @@ def test_synced_generates_lrc_but_plain_never_does(tmp_path):
     deps.verifier = lambda target: (True, "verified")
     lrc_calls = []
 
-    def write_lrc(path, synced_lines, candidate, output):
+    def write_lrc(path, synced_lines, candidate):
         lrc_calls.append(path)
-        result = output / f"{path.stem}.lrc"
-        result.parent.mkdir(parents=True, exist_ok=True)
+        result = path.with_suffix(".lrc")
         result.write_text("lrc")
         return result
 
@@ -261,8 +283,8 @@ def test_synced_generates_lrc_but_plain_never_does(tmp_path):
     result = execute_library_sync(plan_library_sync(options, dependencies=deps), dependencies=deps)
 
     assert lrc_calls == [synced]
-    assert (configured_lyrics / "Synced.lrc").is_file()
-    assert not (tmp_path / "lyrics").exists()
+    assert synced.with_suffix(".lrc").is_file()
+    assert not configured_lyrics.exists()
     assert result.lrc_files_generated == 1
     assert result.rmpc_notifications == 1
 
@@ -331,3 +353,30 @@ def test_cli_sync_delegates_and_preserves_empty_output(tmp_path, monkeypatch, ca
     assert "Library Sync" in output
     assert "Changed/new:     0" in output
     assert "Nothing needs updating." in output
+
+
+def test_cli_sync_dry_run_reports_exact_sidecar_destination(tmp_path, monkeypatch, capsys):
+    import argparse
+    import juice_lyrics.cli as cli
+
+    path = tmp_path / "Rental (v1).mp3"
+    path.write_bytes(b"audio")
+    deps, _, _, _ = _dependencies(tmp_path, {path.stem: _candidate()})
+    plan = plan_library_sync(
+        _options(tmp_path, dry_run=True, rmpc_enabled=True),
+        dependencies=deps,
+    )
+    monkeypatch.setattr(cli, "plan_library_sync", lambda options, progress=None: plan)
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/rmpc")
+    monkeypatch.setattr(cli, "DEFAULT_RMPC_CONFIG", tmp_path / "rmpc.ron")
+    cli.DEFAULT_RMPC_CONFIG.write_text("()", encoding="utf-8")
+
+    result = cli.command_sync(
+        argparse.Namespace(no_rmpc=False, dry_run=True, refresh=False, yes=False),
+        Settings(music_dir=tmp_path),
+        False,
+    )
+
+    assert result == 0
+    assert f"  - {path.with_suffix('.lrc')}" in capsys.readouterr().out
+    assert not path.with_suffix(".lrc").exists()

@@ -290,11 +290,7 @@ class LibraryScreen(HubScreen):
         self.preview = outcome.plan
         plan = outcome.plan
         lrc = plan.synced_files if plan.options.rmpc_enabled else 0
-        lrc_destination = (
-            f" · LRC dir {plan.options.lyrics_dir}"
-            if lrc and plan.options.lyrics_dir is not None
-            else ""
-        )
+        lrc_destination = " · LRC beside each song" if lrc else ""
         self.query_one("#library-preview", Static).update(
             f"Preview only — no files changed · Current {plan.unchanged_files} · Update {plan.ready_files} "
             f"(Synced {plan.synced_files}, Plain {plan.plain_files}) · LRC {lrc} · "
@@ -546,6 +542,8 @@ def _track_preview_text(plan: LibrarySyncPlan | None, path: Path) -> str:
     text = f"  {outcome} · {lyric}"
     if candidate:
         text += f" · {candidate}"
+    if track.lrc_path is not None:
+        text += f" · LRC {track.lrc_path}"
     if track.error:
         text += f" · {track.error}"
     return text

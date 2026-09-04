@@ -20,7 +20,7 @@ from ..acquisition.models import (
 from ..acquisition.resolver import ResourceResolutionError, resolve_resource
 from ..acquisition.runner import AcquisitionRunSummary, run_job
 from ..api.client import get_song
-from ..config.settings import Settings, resolve_lyrics_dir
+from ..config.settings import Settings
 from .acquisition_queue import (
     QueueFailureStage,
     QueueItem,
@@ -922,7 +922,7 @@ def execute_download_all(
             skipped += 1
             results.append(DownloadBatchItemResult(execution_plan.reference, execution_plan.title, DownloadBatchStatus.FAILED, current.message))
             continue
-        result = execute_selected_download(settings, current.plan, jobs_path=jobs_path, runner=runner, integration=integration, song_fetcher=song_fetcher, lyrics_dir=lyrics_dir, progress=(lambda update, pos=position: progress(DownloadBatchProgress(pos, len(plan.eligible), execution_plan.reference, execution_plan.title, update.status)) if progress else None))
+        result = execute_selected_download(settings, current.plan, jobs_path=jobs_path, runner=runner, integration=integration, song_fetcher=song_fetcher, progress=(lambda update, pos=position: progress(DownloadBatchProgress(pos, len(plan.eligible), execution_plan.reference, execution_plan.title, update.status)) if progress else None))
         if result.status is DownloadExecutionStatus.COMPLETED:
             completed += 1; batch_status = DownloadBatchStatus.COMPLETED
         else:
@@ -1053,7 +1053,6 @@ def execute_selected_download(
             return integration(
                 entry.item,
                 song_fetcher=lambda song_id: song_fetcher(settings, song_id),
-                lyrics_dir=resolve_lyrics_dir(settings),
                 settings=settings,
             )
 
@@ -1155,7 +1154,11 @@ def execute_selected_retry(
         def postprocess(result: AcquisitionResult) -> IntegrationResult:
             if progress:
                 progress(DownloadProgress(plan.reference, DownloadExecutionStatus.PROCESSING, result.bytes_written, entry.item.expected_size, "Processing lyrics and library metadata…"))
-            return integration(entry.item, song_fetcher=lambda song_id: song_fetcher(settings, song_id), lyrics_dir=resolve_lyrics_dir(settings), settings=settings)
+            return integration(
+                entry.item,
+                song_fetcher=lambda song_id: song_fetcher(settings, song_id),
+                settings=settings,
+            )
         runner(job, store, policy=DownloadPolicy(), progress=report, postprocess=postprocess, item_indexes={plan.item_index})
         authoritative = store.get(plan.job_id)
         final = authoritative.items[plan.item_index] if authoritative is not None and plan.item_index < len(authoritative.items) else None

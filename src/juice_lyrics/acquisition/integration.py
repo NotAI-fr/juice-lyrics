@@ -11,7 +11,6 @@ from ..backup.manager import (
     restore_file,
     write_manifest,
 )
-from ..config.settings import resolve_lyrics_dir
 from ..lyrics.engine import embed_lyrics, parse_synced_lyrics, verify_file, write_lrc
 from ..rmpc.integration import notify_rmpc_index
 from ..state import load_state, save_state, sha256_file
@@ -48,13 +47,8 @@ def integrate_downloaded_mp3(
     """
 
     path = item.destination
-    # Current settings are authoritative.  The optional argument remains for
-    # compatibility with lower-level callers that do not have a Settings
-    # object, but it may not override configured output during acquisition.
-    if settings is not None:
-        lyrics_dir = resolve_lyrics_dir(settings)
-    elif lyrics_dir is not None:
-        lyrics_dir = Path(lyrics_dir).expanduser()
+    # ``lyrics_dir`` remains accepted for callers from older releases, but it
+    # is intentionally ignored. The finalized media path now owns its sidecar.
     if path.suffix.lower() != ".mp3":
         return IntegrationResult(path=path, message="not an MP3; lyrics integration skipped")
 
@@ -124,9 +118,9 @@ def integrate_downloaded_mp3(
                 "The original downloaded file was restored from backup; the failed item remains retryable."
             ) from exc
 
-        if synced and lyrics_dir is not None:
+        if synced:
             try:
-                lrc_path = write_lrc(path, synced, song, Path(lyrics_dir))
+                lrc_path = write_lrc(path, synced, song)
             except Exception as exc:
                 raise AcquisitionPostProcessingError(
                     AcquisitionFailureStage.LRC,

@@ -68,11 +68,16 @@ It must never manufacture timestamps for plain lyrics.
 
 Responsibilities:
 
-* generate `.lrc` files for synced lyrics
+* generate same-basename `.lrc` sidecars beside audio for synced lyrics
 * locate/configure the user's rmpc config safely
 * preserve unrelated rmpc settings/layout/keybinds
 * trigger lyric re-indexing where supported
 * provide diagnostics
+
+The finalized audio path is authoritative for external lyrics. Historical state,
+rmpc configuration, and the deprecated `lyrics_dir` setting cannot redirect a
+new write. A generated sidecar is passed to rmpc's individual-path indexing
+boundary.
 
 ## Backup layer
 
@@ -231,7 +236,7 @@ Acquisition owns transport and persistent job state.
 
 After a successfully acquired MP3 is written, the optional post-processing hook passes the file through the existing lyrics engine.
 
-Synced lyrics become ID3 SYLT and an rmpc `.lrc`.
+Synced lyrics become ID3 SYLT and a same-basename `.lrc` beside the audio.
 
 Plain lyrics become ID3 USLT.
 

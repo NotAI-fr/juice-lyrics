@@ -52,8 +52,7 @@ def test_library_status_counts_lyrics_changes_lrc_and_backups(tmp_path):
     for path in (synced, plain, missing, changed):
         path.write_bytes(path.stem.encode())
 
-    lrc = tmp_path / "lyrics" / "synced.lrc"
-    lrc.parent.mkdir()
+    lrc = synced.with_suffix(".lrc")
     lrc.write_text("[00:01.00] line\n", encoding="utf-8")
     state_file = tmp_path / "state.json"
     state_file.write_text(
@@ -70,8 +69,14 @@ def test_library_status_counts_lyrics_changes_lrc_and_backups(tmp_path):
         encoding="utf-8",
     )
     backup_dir = tmp_path / "backups"
-    (backup_dir / "one").mkdir(parents=True)
-    (backup_dir / "two").mkdir()
+    for index, name in enumerate(("one", "two"), start=1):
+        root = backup_dir / name
+        root.mkdir(parents=True)
+        (root / "Track.mp3").write_bytes(b"backup")
+        (root / "manifest.json").write_text(
+            json.dumps({"created": f"2026-01-0{index}T00:00:00+00:00", "files": []}),
+            encoding="utf-8",
+        )
     (backup_dir / "not-a-backup.txt").write_text("ignored", encoding="utf-8")
 
     results = {
@@ -81,7 +86,7 @@ def test_library_status_counts_lyrics_changes_lrc_and_backups(tmp_path):
         changed: (True, "USLT (ordinary lyrics)"),
     }
     status = get_library_status(
-        Settings(music_dir=library, lyrics_dir=lrc.parent),
+        Settings(music_dir=library, lyrics_dir=tmp_path / "ignored-central"),
         state_file=state_file,
         backup_dir=backup_dir,
         verifier=results.__getitem__,
@@ -143,8 +148,7 @@ def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypa
     missing = library / "C Missing.mp3"
     for path in (synced, plain, missing):
         path.write_bytes(path.name.encode())
-    lrc = tmp_path / "lyrics" / "A Synced.lrc"
-    lrc.parent.mkdir()
+    lrc = synced.with_suffix(".lrc")
     lrc.write_text("[00:01.00] line\n", encoding="utf-8")
     state_file = tmp_path / "state.json"
     state_file.write_text(json.dumps({
@@ -175,7 +179,7 @@ def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypa
     )
 
     snapshot = get_library_snapshot(
-        Settings(music_dir=library, lyrics_dir=lrc.parent),
+        Settings(music_dir=library, lyrics_dir=tmp_path / "ignored-central"),
         state_file=state_file,
         verifier=verification.__getitem__,
         duration_reader=lambda path: {synced: 180.0, plain: 181.5, missing: None}[path],
@@ -201,7 +205,7 @@ def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypa
     assert snapshot.tracks[2].lyric_status is LibraryLyricStatus.NONE
 
 
-def test_library_snapshot_uses_configured_lrc_directory_not_legacy_state_path(tmp_path):
+def test_library_snapshot_uses_adjacent_sidecar_not_config_or_historical_state_path(tmp_path):
     library = tmp_path / "Music" / "Juice WRLD" / "Unreleased"
     library.mkdir(parents=True)
     track = library / "Rental.mp3"
@@ -228,11 +232,31 @@ def test_library_snapshot_uses_configured_lrc_directory_not_legacy_state_path(tm
     )
 
     item = snapshot.tracks[0]
-    assert item.lrc_path == configured / "Rental.lrc"
+    assert item.lrc_path == track.with_suffix(".lrc")
     assert item.lrc_status is LibraryLrcStatus.MISSING
-    assert str(legacy) in (item.warning or "")
+    assert "Adjacent external LRC file is missing" in (item.warning or "")
     assert not legacy.parent.exists()
     assert not configured.exists()
+
+
+def test_library_status_ignores_unrelated_centralized_lrc(tmp_path):
+    library = tmp_path / "music"
+    library.mkdir()
+    track = library / "Rental.mp3"
+    track.write_bytes(b"audio")
+    central = tmp_path / "lyrics"
+    central.mkdir()
+    (central / "Rental.lrc").write_text("[00:01.00] old\n", encoding="utf-8")
+
+    status = get_library_status(
+        Settings(music_dir=library, lyrics_dir=central, lyrics_dir_explicit=True),
+        state_file=tmp_path / "missing-state.json",
+        backup_dir=tmp_path / "missing-backups",
+        verifier=lambda path: (True, "SYLT (1 synced line)"),
+    )
+
+    assert status.rmpc_lrc_count == 0
+    assert not track.with_suffix(".lrc").exists()
 
 
 def test_track_snapshot_handles_missing_library_and_malformed_state(tmp_path):

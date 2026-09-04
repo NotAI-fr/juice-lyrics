@@ -402,6 +402,12 @@ rmpc only supports external LRC files.
 
 It does NOT read embedded lyrics.
 
+Current application architecture keeps each same-basename LRC beside its audio
+file. The finalized audio path is authoritative; the legacy centralized
+`lyrics_dir` configuration is accepted only for compatibility and does not
+direct new output. Existing centralized files require a separate explicit
+migration and are never moved automatically by `juice-lyrics`.
+
 Therefore:
 
 ## Synced lyrics
@@ -410,7 +416,7 @@ Do:
 
 1. Embed SYLT into MP3
 2. Generate LRC
-3. Put LRC into lyrics directory
+3. Put the same-basename LRC beside the audio file
 4. rmpc displays lyrics
 
 ## Plain lyrics
