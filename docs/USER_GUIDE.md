@@ -21,12 +21,18 @@ beside the audio with the same basename:
 ```text
 song.mp3
 song.lrc
+another-song.flac
+another-song.lrc
+third-song.m4a
+third-song.lrc
 ```
 
 The legacy `lyrics_dir` key remains readable so old configurations continue to
 load, but it is deprecated and ignored for new LRC output. Existing centralized
-files are not moved automatically. Native FLAC library scanning remains planned
-separately.
+files are not moved automatically. Local FLAC and M4A files are scanned and
+synchronized natively without conversion. FLAC embeds plain-text Vorbis
+`LYRICS`; M4A embeds standard MP4 `©lyr`; synchronized timing remains in the
+adjacent `.lrc`.
 
 ## Normal day-to-day use
 
@@ -127,7 +133,7 @@ juice-lyrics rmpc verify
 
 ## Backups
 
-MP3 metadata changes create timestamped backups under:
+MP3, FLAC, and M4A metadata changes create timestamped backups under:
 
 ```text
 ~/.local/share/juice-lyrics/backups/
@@ -152,6 +158,10 @@ External synchronized lyrics:
 ```text
 song.mp3
 song.lrc
+another-song.flac
+another-song.lrc
+third-song.m4a
+third-song.lrc
 ```
 
 The audio path is authoritative; no global LRC destination is configured.

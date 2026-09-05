@@ -12,8 +12,17 @@ from typing import Any
 from ..config.settings import BACKUP_DIR, DATA_DIR
 
 BACKUP_RETENTION_COUNT = 10
+BACKUP_AUDIO_SUFFIXES = frozenset({".mp3", ".flac", ".m4a"})
 
 logger = logging.getLogger(__name__)
+
+
+def _backup_audio_files(root: Path) -> tuple[Path, ...]:
+    return tuple(
+        path
+        for path in root.rglob("*")
+        if path.is_file() and path.suffix.casefold() in BACKUP_AUDIO_SUFFIXES
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +80,7 @@ def _manifest_created_at(root: Path) -> datetime | None:
         if not isinstance(raw_created, str):
             return None
         files = manifest.get("files")
-        if not (isinstance(files, list) and files) and not any(root.rglob("*.mp3")):
+        if not (isinstance(files, list) and files) and not _backup_audio_files(root):
             return None
         created_at = datetime.fromisoformat(raw_created.replace("Z", "+00:00"))
     except (OSError, ValueError, json.JSONDecodeError):
@@ -140,12 +149,12 @@ def write_manifest(root: Path, entries: list[dict[str, Any]]) -> None:
         ),
         encoding="utf-8",
     )
-    # Some batch failures occur after the pristine MP3 was copied but before
+    # Some batch failures occur after the pristine audio was copied but before
     # its manifest entry was assembled.  That copy is still a recoverable
     # backup.  Conversely, an empty root after every copy failed must not
     # trigger deletion of older backups.
     try:
-        has_backup_file = bool(entries) or any(root.rglob("*.mp3"))
+        has_backup_file = bool(entries) or bool(_backup_audio_files(root))
     except OSError as exc:
         logger.warning("Backup created, but retention cleanup could not inspect it: %s", exc)
         return
@@ -158,7 +167,7 @@ def write_manifest(root: Path, entries: list[dict[str, Any]]) -> None:
 
 def restore_backup(root: Path, base: Path) -> int:
     restored = 0
-    for source in root.rglob("*.mp3"):
+    for source in _backup_audio_files(root):
         destination = base / source.relative_to(root)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)

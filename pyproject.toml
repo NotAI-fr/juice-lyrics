@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "juice-wrld-lyrics"
 version = "1.4.0"
-description = "Manage local lyrics metadata and rmpc LRC files for MP3 libraries"
+description = "Manage local lyrics metadata and rmpc LRC files for MP3, FLAC, and M4A libraries"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -16,7 +16,7 @@ license = { text = "MIT" }
 authors = [
   { name = "juice-wrld-lyrics contributors" }
 ]
-keywords = ["juice-wrld", "lyrics", "mp3", "id3", "sylt", "uslt", "rmpc"]
+keywords = ["juice-wrld", "lyrics", "mp3", "flac", "m4a", "id3", "sylt", "uslt", "rmpc"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",

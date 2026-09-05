@@ -127,7 +127,7 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             screen = await _open_library(app, pilot)
             assert screen.__class__.__name__ == "LibraryScreen"
             summary = _text(app, "#library-summary")
-            assert "MP3 tracks 3" in summary and "Matched 2" in summary and "Unmatched 1" in summary
+            assert "Audio tracks 3" in summary and "Matched 2" in summary and "Unmatched 1" in summary
             assert "Synced 1" in summary and "Plain 1" in summary and "No lyrics 1" in summary
             assert "LRC 1" in summary and "Attention 2" in summary
             rows = _text(app, "#library-tracks")
@@ -192,7 +192,7 @@ def test_loading_empty_missing_and_provider_error_states(tmp_path):
         app = _app(tmp_path, lambda settings: responses.pop(0))
         async with app.run_test() as pilot:
             await _open_library(app, pilot)
-            assert "No MP3 tracks found" in _text(app, "#library-tracks")
+            assert "No supported audio tracks found" in _text(app, "#library-tracks")
             await pilot.press("r")
             await app.screen._snapshot_worker.wait()
             await pilot.pause()

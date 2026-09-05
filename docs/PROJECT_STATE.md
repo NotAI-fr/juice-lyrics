@@ -5,7 +5,7 @@ Backend services remain stable. The experimental Textual frontend supports
 explicit confirmed single- and multi-song Browse Add to queue actions and
 selected or whole-queue downloads. The interface now prioritizes the streamlined
 Browse → Add → Downloads → Download queue journey. The current working-tree
-checkpoint has 258 passing tests.
+checkpoint has 310 passing tests.
 
 ## Current Branch
 v2-redesign
@@ -30,6 +30,15 @@ v2-redesign
 - Library summary, local track navigation, typed lyric/match/LRC/state details, local filters, and explicit read-only sync preview.
 - Settings configuration provenance, XDG/application paths, sidecar external-lyrics behavior, rmpc integration status, and current capability limitations.
 - Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.
+- Local FLAC files are recursively discovered and matched using native title,
+  artist, album, and duration metadata. FLAC lyric writes use standard Vorbis
+  `LYRICS`, preserve unrelated metadata, and are backed up before mutation.
+- FLAC synchronized timing uses the adjacent `.lrc`; there is no proprietary
+  embedded timing format and no audio conversion.
+- Local M4A files are recursively discovered and matched using native MP4 title,
+  artist, album, and duration metadata. Plain lyrics use standard `©lyr` metadata.
+- M4A synchronized timing uses the adjacent `.lrc`; unrelated atoms and the
+  audio stream are preserved and no conversion occurs.
 - External synchronized LRC files live beside each audio file with the same
   basename; the finalized audio path is authoritative.
 - The legacy `lyrics_dir` setting remains readable but deprecated. Historical
@@ -47,7 +56,8 @@ retry failures, delete durable acquisition records, and sync the library.
 - Active-download Cancel remains unimplemented; `x` removes
   a waiting/failed song, `c` clears waiting/failed records, and `H` clears
   completed history without deleting downloaded files.
-- Native FLAC support remains planned; lyric post-processing is currently MP3-only.
+- Acquisition post-processing remains MP3-only; native FLAC and M4A support
+  targets existing local-library files.
 - The planned executable/product name remains `999`; package, distribution, and
   data paths remain named `juice-lyrics`.
 
@@ -60,12 +70,10 @@ retry failures, delete durable acquisition records, and sync the library.
 
 ## Recommended next milestones
 
-1. Downloads Download all execution
-2. Downloads Download all, Cancel, and multi-select actions
-3. Library sync actions
+1. Beta polish, packaging, and release testing
+2. Active-download cancellation, if still desired
+3. Library sync execution controls in the TUI, if explicitly approved
 4. `999` command and naming migration
-5. Native FLAC support
-6. Beta polish, packaging, and release testing
 
 ## Resume development
 

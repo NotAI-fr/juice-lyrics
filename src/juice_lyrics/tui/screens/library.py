@@ -107,7 +107,7 @@ class PreviewOutcome:
 
 
 class LibraryScreen(HubScreen):
-    """Read-only local MP3 library browser and sync-plan preview."""
+    """Read-only local audio library browser and sync-plan preview."""
 
     BINDINGS = [Binding("/", "focus_search", "Search", show=False)]
 
@@ -134,11 +134,11 @@ class LibraryScreen(HubScreen):
 
     def compose_content(self) -> Iterable[Widget]:
         yield Static(
-            "MP3 tracks 0 · Matched 0 · Unmatched 0 · Synced 0 · Plain 0 · No lyrics 0 · LRC 0 · Attention 0",
+            "Audio tracks 0 · Matched 0 · Unmatched 0 · Synced 0 · Plain 0 · No lyrics 0 · LRC 0 · Attention 0",
             id="library-summary",
             markup=False,
         )
-        yield Static("Loading local MP3 library…", id="library-status", markup=False)
+        yield Static("Loading local audio library…", id="library-status", markup=False)
         with Grid(id="library-controls"):
             with Vertical(classes="library-filter"):
                 yield Static("Local search", classes="filter-label")
@@ -181,7 +181,7 @@ class LibraryScreen(HubScreen):
         self.query_one("#library-preview", Static).update(
             "Preview not generated · press s · Preview only — no files changed"
         )
-        self._set_status("Refreshing local MP3 library…")
+        self._set_status("Refreshing local audio library…")
         self._snapshot_worker = self._load_snapshot()
 
     def invalidate_snapshot(self) -> None:
@@ -272,11 +272,11 @@ class LibraryScreen(HubScreen):
         if not outcome.snapshot.directory_exists:
             self._set_status(outcome.snapshot.warnings[0], error=True)
         elif not outcome.snapshot.tracks:
-            self._set_status("No supported MP3 tracks found. Native FLAC support is planned.")
+            self._set_status("No supported MP3, FLAC, or M4A tracks found.")
         elif outcome.snapshot.warnings:
             self._set_status(" ".join(outcome.snapshot.warnings), error=True)
         else:
-            self._set_status(f"Local MP3 library · {outcome.snapshot.library_path}")
+            self._set_status(f"Local audio library · {outcome.snapshot.library_path}")
 
     def _apply_preview(self, outcome: PreviewOutcome) -> None:
         if outcome.error or outcome.plan is None:
@@ -311,7 +311,7 @@ class LibraryScreen(HubScreen):
         if snapshot is None:
             return
         self.query_one("#library-summary", Static).update(
-            f"MP3 tracks {snapshot.total_track_count} · Matched {snapshot.matched_count} · "
+            f"Audio tracks {snapshot.total_track_count} · Matched {snapshot.matched_count} · "
             f"Unmatched {snapshot.unmatched_count} · Synced {snapshot.synced_count} · "
             f"Plain {snapshot.plain_count} · No lyrics {snapshot.no_lyrics_count} · "
             f"LRC {snapshot.external_lrc_count} · Attention {snapshot.needs_attention_count}"
@@ -353,7 +353,7 @@ class LibraryScreen(HubScreen):
             f"Tracks · {len(self.filtered_tracks)} of {self.snapshot.total_track_count if self.snapshot else 0}"
         )
         if not self.filtered_tracks:
-            message = "No tracks match the local search or filter." if self.snapshot and self.snapshot.tracks else "No MP3 tracks found."
+            message = "No tracks match the local search or filter." if self.snapshot and self.snapshot.tracks else "No supported audio tracks found."
             self.query_one("#library-tracks", Static).update(message)
             return
         lines = []
@@ -379,6 +379,9 @@ class LibraryScreen(HubScreen):
             track.title,
             "",
             f"Filename       {track.filename}",
+            f"Format         {track.media_format}",
+            f"Artist         {track.artist or 'Not available'}",
+            f"Album          {track.album or 'Not available'}",
             f"Relative path  {track.relative_path}",
             f"Full path      {track.path}",
             f"Matched        {track.matched_title or _match_label(track)}",

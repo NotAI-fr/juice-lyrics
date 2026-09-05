@@ -103,7 +103,7 @@ def test_library_status_counts_lyrics_changes_lrc_and_backups(tmp_path):
     assert status.warnings == ()
 
 
-def test_library_status_marks_new_file_for_sync_and_ignores_non_mp3(tmp_path):
+def test_library_status_marks_new_supported_audio_files_for_sync(tmp_path):
     mp3 = tmp_path / "new.mp3"
     mp3.write_bytes(b"audio")
     (tmp_path / "future.flac").write_bytes(b"audio")
@@ -115,9 +115,9 @@ def test_library_status_marks_new_file_for_sync_and_ignores_non_mp3(tmp_path):
         verifier=lambda path: (False, "invalid"),
     )
 
-    assert status.track_count == 1
-    assert status.missing_or_invalid_count == 1
-    assert status.new_or_changed_count == 1
+    assert status.track_count == 2
+    assert status.missing_or_invalid_count == 2
+    assert status.new_or_changed_count == 2
 
 
 def test_library_status_does_not_contact_api(tmp_path, monkeypatch):

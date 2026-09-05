@@ -52,7 +52,7 @@ Milestone reached:
 
 The current development branch is `v2-redesign` in
 `/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
-250 passing tests.
+310 passing tests.
 
 Completed and integrated:
 
@@ -65,6 +65,8 @@ Verified systems:
 - lyric parsing
 - ID3 SYLT embedding
 - ID3 USLT embedding
+- native FLAC discovery, metadata matching, Vorbis lyric embedding, and verification
+- native M4A discovery, MP4 metadata matching, standard `©lyr` embedding, and verification
 - LRC generation
 - rmpc integration
 - backups
@@ -86,13 +88,15 @@ eligible queued song, a read-only Library screen with local
 track browsing, filters, details, and explicit sync previews, and a read-only
 Settings screen with effective configuration, paths, provenance, and rmpc state.
 
-All five primary TUI sections are functional. Browse may add one explicitly
-confirmed song to the queue; Downloads can execute one confirmed selected song.
-Download all, retry, remove, clear, and cancel actions, configuration editing,
-and sync execution are not implemented.
+All five primary TUI sections are functional. Browse supports confirmed single
+and batch queue additions. Downloads supports confirmed Download selected,
+sequential Download queue, Retry, Remove, Clear queue, and Clear completed history.
+Active-download cancellation, configuration editing, and library sync execution
+are not implemented.
 Durable jobs remain an internal backend detail and completed entries are hidden
 from the active track queue. The legacy CLI remains the way to run downloads,
-delete jobs, and sync. Native FLAC support remains planned. The planned
+delete jobs, and sync. Existing local FLAC and M4A files are now first-class library
+tracks; acquisition remains MP3-focused. The planned
 product/executable name remains `999`; package, distribution, and data paths
 have not been renamed.
 
@@ -154,8 +158,9 @@ docs/
 └── this file
 
 
-The project is in incremental v2 implementation. The backend remains stable and
-the TUI is intentionally read-only.
+The project is in incremental v2 implementation. The backend remains stable.
+Mutating TUI actions are explicit and cancel-first; Library and Settings remain
+read-only views, with library sync execution available through the CLI.
 
 ---
 
@@ -307,8 +312,8 @@ Available
 
 
 The current Browse implementation supports result selection, details, lyrics
-previews, canonical filters, and pagination. Download actions are not yet
-implemented.
+previews, canonical filters, pagination, and confirmed single or marked Add to
+queue actions. Adding never starts a download.
 
 ---
 
@@ -356,11 +361,12 @@ Downloading 65%
 Lemon Glow
 Complete
 
-The current Downloads implementation is a read-only flat track queue. It shows
-queue totals, individual songs, structured failures, and retry eligibility;
-internal jobs are hidden except for optional troubleshooting references. Browse
-can add one explicitly confirmed song without starting it. Download execution,
-retry, cancel, remove, clear, and other queue mutations are not yet implemented.
+The Downloads implementation is a flat track queue. It shows queue totals,
+individual songs, structured failures, and retry eligibility; internal jobs are
+hidden except for optional troubleshooting references. Browse can add confirmed
+single or marked songs without starting downloads. Downloads can run the selected
+song or eligible queue sequentially, retry failures, and perform record-only
+cleanup. Active-download cancellation remains unavailable.
 
 ---
 
@@ -402,7 +408,7 @@ rmpc only supports external LRC files.
 
 It does NOT read embedded lyrics.
 
-Current application architecture keeps each same-basename LRC beside its audio
+Current application architecture keeps each same-basename LRC beside its MP3, FLAC, or M4A audio
 file. The finalized audio path is authoritative; the legacy centralized
 `lyrics_dir` configuration is accepted only for compatibility and does not
 direct new output. Existing centralized files require a separate explicit
@@ -414,7 +420,7 @@ Therefore:
 
 Do:
 
-1. Embed SYLT into MP3
+1. Embed SYLT into MP3, standard Vorbis `LYRICS` into FLAC, or standard MP4 `©lyr` into M4A
 2. Generate LRC
 3. Put the same-basename LRC beside the audio file
 4. rmpc displays lyrics
@@ -423,7 +429,7 @@ Do:
 
 Do:
 
-1. Embed USLT into MP3
+1. Embed USLT into MP3, standard Vorbis `LYRICS` into FLAC, or standard MP4 `©lyr` into M4A
 
 Do NOT:
 
@@ -434,7 +440,11 @@ Result:
 
 Android players can read embedded lyrics.
 
-rmpc cannot display them.
+rmpc cannot display them as timed lyrics.
+
+FLAC and M4A have no interoperable embedded equivalent to ID3 SYLT. The
+application does not invent one: synchronized timing remains authoritative in
+the adjacent `.lrc`, and audio is never converted.
 
 This is accepted as a player limitation.
 

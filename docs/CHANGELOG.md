@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased — Native M4A library support
+
+* Added recursive, case-insensitive `.m4a` library discovery without broadening
+  support to other MP4-family extensions.
+* Added native M4A title, artist, album, and duration reading through Mutagen.
+* Reused the normal version/title/path/duration matcher and conservatively leaves
+  M4A files without title or artist metadata unmatched.
+* Added standard plain-text MP4 `©lyr` embedding while preserving unrelated atoms,
+  the media payload, and the original audio format.
+* Kept synchronized M4A timing in the authoritative adjacent `.lrc`; no
+  proprietary timing atom or conversion is used.
+* Extended verification/status, state, backup/restore, retention recognition,
+  and rmpc sidecar notification to local M4A files.
+* Verified 310 automated tests with isolated temporary HOME/XDG paths.
+
+## Unreleased — Native FLAC library support
+
+* Added recursive, case-insensitive MP3 and FLAC library discovery.
+* Added native FLAC title, artist, album, and duration reading through Mutagen.
+* Reused version/title/path/duration matching for FLAC and conservatively leaves
+  FLAC files without title or artist metadata unmatched.
+* Added standard plain-text Vorbis `LYRICS` embedding while preserving unrelated
+  FLAC metadata and the audio stream; no audio conversion occurs.
+* Kept synchronized FLAC timing in the authoritative adjacent `.lrc` because
+  FLAC/Vorbis comments have no interoperable ID3 SYLT equivalent.
+* Extended library sync, verification/status, state, backup/restore, and rmpc
+  sidecar notification to local FLAC files.
+* Generalized rolling backup recognition and restore for FLAC without changing
+  the newest-10 retention policy or invalidating historical MP3 manifests.
+* Verified 298 automated tests with isolated temporary HOME/XDG paths.
+
 ## Unreleased — 2026-08-25
 
 ### Live API path resolution and backend polish

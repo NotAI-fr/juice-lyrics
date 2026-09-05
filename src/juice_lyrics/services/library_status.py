@@ -11,6 +11,12 @@ from ..backup.manager import list_backups
 from ..config.settings import BACKUP_DIR, STATE_FILE, Settings
 from ..library.scanner import find_mp3s
 from ..library.matching import local_duration
+from ..library.media import (
+    AudioMetadata,
+    is_tagged_container,
+    media_format,
+    read_tagged_metadata,
+)
 from ..lyrics.engine import verify_file
 from ..lyrics.sidecar import sidecar_lrc_path
 from ..state import sha256_file
@@ -45,7 +51,7 @@ class LibraryStateStatus(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class LibraryTrack:
-    """Presentation-neutral read-only information about one local MP3."""
+    """Presentation-neutral read-only information about one local audio file."""
 
     reference: str
     path: Path
@@ -60,6 +66,9 @@ class LibraryTrack:
     lrc_path: Path | None
     state_status: LibraryStateStatus
     warning: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    media_format: str = "MP3"
 
     @property
     def needs_attention(self) -> bool:
@@ -116,7 +125,7 @@ class LibrarySnapshot:
 
 @dataclass(frozen=True, slots=True)
 class LibraryStatus:
-    """Read-only snapshot of the application's MP3 library status."""
+    """Read-only snapshot of the application's local audio library status."""
 
     library_path: Path
     track_count: int
@@ -162,8 +171,9 @@ def get_library_snapshot(
     verifier: LyricsVerifier = verify_file,
     duration_reader: DurationReader = local_duration,
     hasher: Callable[[Path], str] = sha256_file,
+    metadata_reader: Callable[[Path], AudioMetadata] = read_tagged_metadata,
 ) -> LibrarySnapshot:
-    """Inspect local MP3s and state without contacting APIs or writing files."""
+    """Inspect local MP3, FLAC, and M4A files without APIs or writes."""
 
     library_path = Path(settings.music_dir)
     if not library_path.is_dir():
@@ -183,6 +193,25 @@ def get_library_snapshot(
         raw_entry = state_files.get(reference)
         entry = raw_entry if isinstance(raw_entry, dict) else None
         track_warnings: list[str] = []
+        metadata: AudioMetadata | None = None
+        metadata_safe_for_matching = True
+
+        if is_tagged_container(path):
+            try:
+                metadata = metadata_reader(path)
+                missing_metadata = [
+                    label
+                    for label, value in (("title", metadata.title), ("artist", metadata.artist))
+                    if not value
+                ]
+                if missing_metadata:
+                    metadata_safe_for_matching = False
+                    track_warnings.append(
+                        f"{media_format(path)} metadata is missing {', '.join(missing_metadata)}; track cannot be matched safely."
+                    )
+            except Exception as exc:
+                metadata_safe_for_matching = False
+                track_warnings.append(f"{media_format(path)} metadata could not be read: {exc}")
 
         try:
             valid, verification = verifier(path)
@@ -218,11 +247,24 @@ def get_library_snapshot(
             candidate_title = entry.get("api_name")
             if candidate_title is not None and str(candidate_title).strip():
                 matched_title = str(candidate_title).strip()
-        matched = bool(matched_title or (entry is not None and entry.get("song_id") is not None))
+        matched = metadata_safe_for_matching and bool(
+            matched_title or (entry is not None and entry.get("song_id") is not None)
+        )
 
+        expected_synced = bool(
+            entry is not None
+            and entry.get("lyric_type") in {
+                "SYLT",
+                "FLAC_LYRICS_SYNCED",
+                "M4A_LYRICS_SYNCED",
+            }
+        )
+        adjacent_lrc = sidecar_lrc_path(path)
         lrc_path = (
-            sidecar_lrc_path(path)
+            adjacent_lrc
             if lyric_status is LibraryLyricStatus.SYNCED
+            or expected_synced
+            or (is_tagged_container(path) and adjacent_lrc.is_file())
             else None
         )
         if lrc_path is None:
@@ -234,7 +276,11 @@ def get_library_snapshot(
             track_warnings.append("Adjacent external LRC file is missing.")
 
         try:
-            duration = duration_reader(path)
+            duration = (
+                metadata.duration_seconds
+                if metadata is not None
+                else duration_reader(path)
+            )
         except Exception as exc:
             duration = None
             track_warnings.append(f"Duration unavailable: {exc}")
@@ -245,7 +291,7 @@ def get_library_snapshot(
                 path=path,
                 relative_path=relative_path,
                 filename=path.name,
-                title=path.stem,
+                title=metadata.title if metadata is not None and metadata.title else path.stem,
                 duration_seconds=duration,
                 match_status=(
                     LibraryMatchStatus.MATCHED if matched else LibraryMatchStatus.UNMATCHED
@@ -255,6 +301,9 @@ def get_library_snapshot(
                 lrc_status=lrc_status,
                 lrc_path=lrc_path,
                 state_status=state_status,
+                artist=metadata.artist if metadata is not None else None,
+                album=metadata.album if metadata is not None else None,
+                media_format=media_format(path),
                 warning=" ".join(track_warnings) or None,
             )
         )
@@ -292,10 +341,8 @@ def get_library_status(
         entry = state_files.get(relative)
         if not isinstance(entry, dict) or entry.get("sha256") != sha256_file(path):
             new_or_changed += 1
-        if (
-            valid
-            and message.startswith("SYLT")
-            and sidecar_lrc_path(path).is_file()
+        if sidecar_lrc_path(path).is_file() and (
+            (valid and message.startswith("SYLT")) or is_tagged_container(path)
         ):
             lrc += 1
 

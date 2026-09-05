@@ -66,7 +66,7 @@ def test_command_status_with_settings(tmp_path, capsys, monkeypatch):
     out = capsys.readouterr().out
     assert "Library Status" in out
     assert "External lyrics:      Beside each song (.lrc)" in out
-    assert "MP3 files:            0" in out
+    assert "Audio files:          0" in out
 
     # Status with an MP3 file
     mp3 = tmp_path / "track.mp3"
@@ -75,7 +75,7 @@ def test_command_status_with_settings(tmp_path, capsys, monkeypatch):
     rc = cli.command_status(settings, use_color=False)
     assert rc == 0
     out = capsys.readouterr().out
-    assert "MP3 files:            1" in out
+    assert "Audio files:          1" in out
     assert "Embedded synced:      1" in out
 
 

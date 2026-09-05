@@ -108,7 +108,7 @@ actions. The one-line footer advertises only the primary action and context;
 `?` keeps Remove, Clear, history cleanup, Refresh, and Retry discoverable
 without making the normal workflow look like queue administration.
 
-In Library, arrows or `j`/`k` select local MP3 tracks, Home/End select the first
+In Library, arrows or `j`/`k` select local MP3, FLAC, and M4A tracks, Home/End select the first
 or last track, and PageUp/PageDown move through longer lists. Press `/` for a
 local title/filename search and use the Status selector for Matched, Unmatched,
 Synced lyrics, Plain lyrics, No lyrics, or Needs attention. These filters operate
@@ -118,7 +118,9 @@ refresh the read-only snapshot. Press `s` explicitly to generate an API-backed
 sync plan. It is a preview only: no audio, state, backup, LRC, configuration, or
 rmpc changes are made. The existing API cache may be updated by that explicit
 preview. Actual library sync remains CLI-only via `juice-lyrics sync`. The
-scanner is currently MP3-focused; native FLAC support remains planned.
+scanner recursively supports MP3, FLAC, and M4A. FLAC and M4A matching reads
+native title, artist, album, and duration metadata and conservatively leaves
+tracks with missing title or artist metadata unmatched.
 
 In Settings, the Music folder, Download folder, sidecar lyric behavior, and rmpc status are
 shown before the Advanced configuration, provenance, cache, and state details.
@@ -127,15 +129,20 @@ The view reports the active config file, reliable default/config/runtime source
 labels, that external lyrics live beside each song, path existence, and whether
 rmpc indexes the music tree containing those sidecars. Press `r`
 to refresh. The screen is strictly read-only: configuration changes and setup
-remain CLI-only, no missing XDG paths are created, the scanner remains MP3-only,
-and native FLAC support remains planned.
+remain CLI-only, and no missing XDG paths are created.
 
-External synchronized LRC files use the finalized audio path: `song.mp3` maps to
-`song.lrc` in the same directory. Content is generated before an atomic replace,
+External synchronized LRC files use the finalized audio path: `song.mp3`,
+`song.flac`, and `song.m4a` map to `song.lrc` in the same directory. Content is generated before an atomic replace,
 and read-only inspection or planning creates nothing. The legacy `lyrics_dir`
 setting remains parseable but cannot redirect current output; neither historical
 state nor rmpc configuration is an output-path authority. Existing centralized
 files are not migrated by the application.
+
+FLAC and M4A files are never converted. Mutagen writes standard plain-text
+Vorbis `LYRICS` for FLAC and MP4 `©lyr` for M4A while preserving unrelated
+metadata and the audio stream. Synchronized timing is kept in the adjacent LRC
+because neither container provides an interoperable SYLT equivalent. Backups
+and restore support MP3, FLAC, and M4A.
 
 ## Source of truth and Git workflow
 

@@ -535,7 +535,15 @@ def write_state_entry(state: dict[str, Any], path: Path, settings: Settings, ana
         "sha256": sha256_file(path),
         "song_id": analysis["candidate"].get("id") if analysis.get("candidate") else None,
         "api_name": analysis["candidate"].get("name") if analysis.get("candidate") else None,
-        "lyric_type": "SYLT" if analysis.get("synced") else ("USLT" if analysis.get("plain") else "NONE"),
+        "lyric_type": (
+            "FLAC_LYRICS_SYNCED" if analysis.get("synced") else "FLAC_LYRICS_PLAIN"
+        ) if path.suffix.casefold() == ".flac" else (
+            (
+                "M4A_LYRICS_SYNCED" if analysis.get("synced") else "M4A_LYRICS_PLAIN"
+            ) if path.suffix.casefold() == ".m4a" else (
+                "SYLT" if analysis.get("synced") else ("USLT" if analysis.get("plain") else "NONE")
+            )
+        ),
         "lrc": str(lrc_path) if lrc_path else None,
         "updated": now_iso(),
     }
@@ -554,7 +562,11 @@ def state_is_current(state: dict[str, Any], path: Path, settings: Settings, want
     valid, _ = verify_file(path)
     if not valid:
         return False
-    if want_rmpc and entry.get("lyric_type") == "SYLT":
+    if want_rmpc and entry.get("lyric_type") in {
+        "SYLT",
+        "FLAC_LYRICS_SYNCED",
+        "M4A_LYRICS_SYNCED",
+    }:
         if not sidecar_lrc_path(path).is_file():
             return False
     return True
@@ -612,7 +624,7 @@ def embed_batch(settings: Settings, files: list[Path], use_color: bool, refresh:
         if not sys.stdin.isatty():
             print("Non-interactive mode: use --yes to confirm synchronization.")
             return 2
-        if input(f"Apply lyrics to {len(ready)} changed/new MP3(s)? [y/N] ").strip().lower() not in {"y", "yes"}:
+        if input(f"Apply lyrics to {len(ready)} changed/new audio file(s)? [y/N] ").strip().lower() not in {"y", "yes"}:
             print("Cancelled. No files changed.")
             return 0
     backup_root = make_backup_root()
@@ -850,7 +862,7 @@ def command_sync(args: argparse.Namespace, settings: Settings, use_color: bool) 
         if not sys.stdin.isatty():
             print("Non-interactive mode: use --yes to confirm synchronization.")
             return 2
-        if input(f"Apply lyrics to {plan.ready_files} changed/new MP3(s)? [y/N] ").strip().lower() not in {"y", "yes"}:
+        if input(f"Apply lyrics to {plan.ready_files} changed/new audio file(s)? [y/N] ").strip().lower() not in {"y", "yes"}:
             print("Cancelled. No files changed.")
             return 0
 
@@ -883,7 +895,7 @@ def command_status(settings: Settings, use_color: bool) -> int:
     print_header("Library Status", use_color)
     print(f"Library:              {status.library_path}")
     print("External lyrics:      Beside each song (.lrc)")
-    print(f"MP3 files:            {status.track_count}")
+    print(f"Audio files:          {status.track_count}")
     print(f"Embedded synced:      {status.embedded_synced_count}")
     print(f"Embedded plain:       {status.embedded_plain_count}")
     print(f"Missing/invalid:      {status.missing_or_invalid_count}")
@@ -1010,9 +1022,9 @@ UNDO
   juice-lyrics restore
 
 WHAT SYNC DOES
-  1. Matches new/changed MP3s to the API.
-  2. Prefers synced lyrics (SYLT).
-  3. Falls back to normal embedded lyrics (USLT).
+  1. Matches new/changed MP3, FLAC, and M4A files to the API.
+  2. Prefers synchronized lyrics and adjacent LRC files.
+  3. Embeds supported lyrics without converting audio.
   4. Generates .lrc files for rmpc when synced lyrics exist.
   5. Backs up files before changing them.
   6. Verifies the result.
@@ -1053,7 +1065,7 @@ def command_restore(args: argparse.Namespace, settings: Settings, use_color: boo
         if input("Restore this backup? [y/N] ").strip().lower() not in {"y", "yes"}:
             print("Cancelled."); return 0
     count = restore_backup(root, settings.music_dir)
-    print(f"Restored {count} MP3s.")
+    print(f"Restored {count} audio file(s).")
     return 0
 
 
@@ -1514,9 +1526,9 @@ def command_tui(settings: Settings) -> int:
     return run_tui(settings)
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog=APP_NAME, description="Manage lyrics metadata and rmpc LRC files for local MP3 libraries.")
+    parser = argparse.ArgumentParser(prog=APP_NAME, description="Manage lyrics metadata and rmpc LRC files for local MP3, FLAC, and M4A libraries.")
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
-    parser.add_argument("--path", help="MP3 library directory (overrides config).")
+    parser.add_argument("--path", help="Music library directory (overrides config).")
     parser.add_argument("--api-base", help="Override the API base URL.")
     parser.add_argument("--no-color", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1536,14 +1548,14 @@ def build_parser() -> argparse.ArgumentParser:
     scan = sub.add_parser("scan", help="Scan the API and report matches.")
     scan.add_argument("--refresh", action="store_true")
 
-    embed = sub.add_parser("embed", help="Low-level command: embed lyrics into MP3s.")
+    embed = sub.add_parser("embed", help="Low-level command: embed lyrics into supported audio files.")
     embed.add_argument("--yes", action="store_true")
     embed.add_argument("--dry-run", action="store_true")
     embed.add_argument("--refresh", action="store_true")
 
     verify = sub.add_parser("verify", help="Verify embedded lyrics.")
 
-    restore = sub.add_parser("restore", help="Restore a previous MP3 backup.")
+    restore = sub.add_parser("restore", help="Restore a previous audio backup.")
     restore.add_argument("--backup")
     restore.add_argument("--yes", action="store_true")
 

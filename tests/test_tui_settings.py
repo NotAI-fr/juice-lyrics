@@ -72,8 +72,8 @@ def _snapshot(
         ),
         application_version="1.4.0",
         limitations=(
-            "Local library scanning currently supports MP3 files only.",
-            "Native FLAC support is planned but not implemented.",
+            "Local library scanning supports MP3, FLAC, and M4A files.",
+            "FLAC and M4A timing use adjacent LRC; embedded lyrics are plain text.",
             "Settings inspection remains read-only in the TUI.",
             "Library sync execution remains CLI-only.",
             "Configuration changes remain CLI-only.",
@@ -127,7 +127,7 @@ def test_settings_replaces_placeholder_and_renders_configuration_paths_and_limit
             assert "Duration tolerance" in configuration and "[Runtime override]" in configuration
             assert "Detected and configured" in _text(app, "#settings-integrations")
             capabilities = _text(app, "#settings-capabilities")
-            assert "MP3 files only" in capabilities and "FLAC support is planned" in capabilities
+            assert "MP3, FLAC, and M4A" in capabilities
             assert "Library sync execution remains CLI-only" in capabilities
 
             await pilot.press("down", "j")

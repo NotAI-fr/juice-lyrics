@@ -117,8 +117,8 @@ def test_paths_and_limitations_are_typed_and_read_only(tmp_path):
     assert paths["music"].exists is True
     assert paths["cache"].exists is False
     assert paths["state"].path == tmp_path / "data" / "state.json"
-    assert "MP3 files only" in snapshot.limitations[0]
-    assert any("FLAC" in item for item in snapshot.limitations)
+    assert "MP3, FLAC, and M4A" in snapshot.limitations[0]
+    assert any("FLAC and M4A timing use adjacent LRC" in item for item in snapshot.limitations)
     assert not (tmp_path / "cache").exists()
     assert not (tmp_path / "data").exists()
 

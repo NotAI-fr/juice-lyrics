@@ -7,6 +7,7 @@ from typing import Any
 from mutagen.mp3 import MP3
 
 from ..config.settings import Settings
+from .media import is_tagged_container, read_tagged_metadata, tagged_matching_title
 
 CANONICAL_SEARCH = {
     "chase the dragon": "Life's a Dungeon",
@@ -51,18 +52,21 @@ def parse_length(value: str) -> float | None:
 
 def local_duration(path: Path) -> float | None:
     try:
+        if is_tagged_container(path):
+            return read_tagged_metadata(path).duration_seconds
         return float(MP3(path).info.length)
     except Exception:
         return None
 
 
 def search_title_for(path: Path) -> str:
-    stripped = strip_version(path.stem)
+    raw_title = tagged_matching_title(path) if is_tagged_container(path) else path.stem
+    stripped = strip_version(raw_title)
     return CANONICAL_SEARCH.get(normalize(stripped), stripped)
 
 
 def score_candidate(settings: Settings, path: Path, candidate: dict[str, Any], search_title: str) -> tuple[float, list[str]]:
-    local_raw = path.stem
+    local_raw = tagged_matching_title(path) if is_tagged_container(path) else path.stem
     candidate_raw = str(candidate.get("name", ""))
     local = normalize(strip_version(local_raw))
     candidate_name = normalize(strip_version(candidate_raw))

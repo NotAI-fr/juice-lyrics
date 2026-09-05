@@ -8,9 +8,9 @@ The purpose is to prevent future redesigns from accidentally removing important 
 
 # Lyrics Architecture
 
-## Embedded lyrics are the primary source of truth
+## Embedded lyrics remain supported
 
-The application should always preserve lyrics inside the MP3 file when possible.
+The application should preserve lyrics inside MP3, FLAC, and M4A files when possible.
 
 Reasons:
 
@@ -29,6 +29,20 @@ Supported embedded formats:
   - Plain unsynchronized lyrics.
   - Used when only normal text lyrics are available.
 
+- FLAC Vorbis `LYRICS`:
+  - Standard plain-text embedded lyrics.
+  - Used for plain lyrics and as a plain-text representation when synchronized
+    source lyrics are available.
+  - FLAC has no sane interoperable equivalent to ID3 SYLT. Timing is not
+    invented or stored in a proprietary comment; the adjacent `.lrc` is authoritative.
+
+- M4A/MP4 `©lyr`:
+  - Standard plain-text embedded lyrics.
+  - Used for plain lyrics and as a plain-text representation when synchronized
+    source lyrics are available.
+  - M4A has no interoperable equivalent to ID3 SYLT. Timing remains in the
+    adjacent `.lrc`, not in a proprietary MP4 atom.
+
 ---
 
 # LRC Files and rmpc
@@ -38,7 +52,7 @@ rmpc does not read embedded ID3 lyrics.
 rmpc currently relies on external `.lrc` lyric files.
 
 Audio and external synchronized lyrics stay together. Every LRC destination is
-derived from the finalized audio path (`song.mp3` -> `song.lrc`) rather than a
+derived from the finalized audio path (`song.mp3`, `song.flac`, or `song.m4a` -> `song.lrc`) rather than a
 global directory, title metadata, historical state, or rmpc configuration.
 Read-only operations and plans create nothing. LRC writes generate complete
 content first and atomically replace the adjacent sidecar where practical.

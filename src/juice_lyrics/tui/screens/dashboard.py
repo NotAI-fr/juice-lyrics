@@ -110,7 +110,7 @@ class DashboardScreen(HubScreen):
 
         lines = (
             f"Path                 {status.library_path}",
-            f"MP3 tracks           {status.track_count}",
+            f"Audio tracks         {status.track_count}",
             f"Synced lyrics        {status.embedded_synced_count}",
             f"Plain lyrics         {status.embedded_plain_count}",
             f"Missing / invalid    {status.missing_or_invalid_count}",

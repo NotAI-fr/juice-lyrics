@@ -64,7 +64,7 @@ def test_app_starts_renders_injected_snapshots_and_exits(tmp_path):
             library = _rendered(app, "#library-data")
             queue = _rendered(app, "#queue-data")
             assert str(tmp_path / "music") in library
-            assert "MP3 tracks           4" in library
+            assert "Audio tracks         4" in library
             assert "Synced lyrics        2" in library
             assert "Plain lyrics         1" in library
             assert "Missing / invalid    1" in library
@@ -102,7 +102,7 @@ def test_dashboard_renders_empty_library_and_queue(tmp_path):
         )
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert "MP3 tracks           0" in _rendered(app, "#library-data")
+            assert "Audio tracks         0" in _rendered(app, "#library-data")
             assert "Search for songs in Browse" in _rendered(app, "#queue-data")
             assert "Press 2 to Browse" in _rendered(app, "#queue-data")
 
@@ -146,7 +146,7 @@ def test_refresh_calls_both_services_again(tmp_path):
             await pilot.press("r")
             await pilot.pause()
             assert calls == {"library": 2, "queue": 2}
-            assert "MP3 tracks           2" in _rendered(app, "#library-data")
+            assert "Audio tracks         2" in _rendered(app, "#library-data")
             assert "1 song ready to download" in _rendered(app, "#queue-data")
 
     asyncio.run(scenario())
@@ -241,7 +241,7 @@ def test_initial_shell_and_navigation_are_responsive_during_slow_load(tmp_path):
             release.set()
             await worker.wait()
             await pilot.pause()
-            assert "MP3 tracks           4" in _rendered(app, "#library-data")
+            assert "Audio tracks         4" in _rendered(app, "#library-data")
 
     try:
         asyncio.run(scenario())
@@ -266,7 +266,7 @@ def test_refresh_uses_background_worker_and_supersedes_loading_state(tmp_path):
         app = _app(tmp_path, library=library)
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert "MP3 tracks           1" in _rendered(app, "#library-data")
+            assert "Audio tracks         1" in _rendered(app, "#library-data")
             await pilot.press("r")
             await asyncio.to_thread(refresh_started.wait, 2)
             assert "Loading library status" in _rendered(app, "#library-data")
@@ -275,14 +275,14 @@ def test_refresh_uses_background_worker_and_supersedes_loading_state(tmp_path):
             assert current_worker is not None
             await current_worker.wait()
             await pilot.pause()
-            assert "MP3 tracks           3" in _rendered(app, "#library-data")
+            assert "Audio tracks         3" in _rendered(app, "#library-data")
             await pilot.press("4")
             await pilot.pause()
             assert app.screen.id == "screen-downloads"
             await pilot.press("1")
             release.set()
             await pilot.pause()
-            assert "MP3 tracks           3" in _rendered(app, "#library-data")
+            assert "Audio tracks         3" in _rendered(app, "#library-data")
 
     try:
         asyncio.run(scenario())
@@ -389,7 +389,7 @@ def test_narrow_terminal_uses_single_column_dashboard(tmp_path):
         async with app.run_test(size=(50, 20)) as pilot:
             await pilot.pause()
             assert "-narrow" in app.screen.classes
-            assert "MP3 tracks           4" in _rendered(app, "#library-data")
+            assert "Audio tracks         4" in _rendered(app, "#library-data")
             await pilot.press("5")
             await pilot.pause()
             assert app.screen.id == "screen-settings"

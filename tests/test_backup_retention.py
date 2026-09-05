@@ -224,3 +224,41 @@ def test_retained_backup_can_still_be_restored(tmp_path):
     assert result.removed == (roots[0],)
     assert restored == 1
     assert (target / "Track.mp3").read_bytes() == b"original audio"
+
+
+def test_completed_flac_backup_is_valid_for_retention_and_restore(tmp_path):
+    backup_dir = tmp_path / "backups"
+    roots = _backup_set(backup_dir, 10)
+    newest = backup_dir / "flac-backup"
+    (newest / "Nested").mkdir(parents=True)
+    (newest / "Nested" / "Track.FLAC").write_bytes(b"flac backup")
+    (newest / "manifest.json").write_text(
+        json.dumps({"created": "2026-02-01T00:00:00+00:00", "files": []}),
+        encoding="utf-8",
+    )
+
+    result = manager.prune_backup_history(backup_dir)
+    target = tmp_path / "restored"
+
+    assert result.removed == (roots[0],)
+    assert len(manager.list_backups(backup_dir)) == 10
+    assert manager.restore_backup(newest, target) == 1
+    assert (target / "Nested" / "Track.FLAC").read_bytes() == b"flac backup"
+
+
+def test_completed_m4a_backup_uses_existing_retention_policy(tmp_path):
+    backup_dir = tmp_path / "backups"
+    roots = _backup_set(backup_dir, 10)
+    newest = backup_dir / "m4a-backup"
+    newest.mkdir(parents=True)
+    (newest / "Track.M4A").write_bytes(b"m4a backup")
+    (newest / "manifest.json").write_text(
+        json.dumps({"created": "2026-02-01T00:00:00+00:00", "files": []}),
+        encoding="utf-8",
+    )
+
+    result = manager.prune_backup_history(backup_dir)
+
+    assert result.removed == (roots[0],)
+    assert len(manager.list_backups(backup_dir)) == 10
+    assert newest.is_dir()

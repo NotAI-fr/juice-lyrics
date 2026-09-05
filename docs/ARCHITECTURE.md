@@ -42,7 +42,7 @@ The API layer should not know about terminal prompts, MP3 tagging, or rmpc UI.
 
 Responsibilities:
 
-* scan local MP3s
+* scan local MP3, FLAC, and M4A files recursively
 * extract metadata
 * duration handling
 * fingerprints/state
@@ -57,8 +57,10 @@ Matching must remain version-aware, alias-aware, and duration-aware.
 Responsibilities:
 
 * parse API LRC-style `synced_lyrics`
-* produce SYLT frames
-* produce USLT frames
+* produce MP3 SYLT frames
+* produce MP3 USLT frames
+* write standard plain-text FLAC/Vorbis `LYRICS` comments
+* write standard plain-text M4A/MP4 `©lyr` atoms
 * verify lyric frames
 * write `.lrc` text when synchronized lyrics exist
 
@@ -226,7 +228,7 @@ Both CLI and TUI should reuse the same API, acquisition, library, and lyrics ser
 * duration matching
 * SYLT first / USLT fallback
 * rmpc `.lrc` generation only for synced lyrics
-* backups before MP3 metadata changes
+* backups before MP3, FLAC, or M4A metadata changes
 * verification after writes
 * incremental sync
 
@@ -236,10 +238,15 @@ Acquisition owns transport and persistent job state.
 
 After a successfully acquired MP3 is written, the optional post-processing hook passes the file through the existing lyrics engine.
 
-Synced lyrics become ID3 SYLT and a same-basename `.lrc` beside the audio.
+For MP3, synced lyrics become ID3 SYLT and a same-basename `.lrc` beside the audio.
 
-Plain lyrics become ID3 USLT.
+MP3 plain lyrics become ID3 USLT. FLAC embeds standard plain-text Vorbis
+`LYRICS`; synchronized timing remains in the adjacent `.lrc` because Vorbis
+comments have no interoperable equivalent to ID3 SYLT. M4A embeds standard
+plain-text MP4 `©lyr`; its synchronized timing likewise remains in the adjacent
+`.lrc`. No audio format is converted.
 
-Non-MP3 resources remain untouched for now.
+Acquisition post-processing remains MP3-only. Native FLAC and M4A support
+applies to existing local-library files.
 
 Post-processing errors fail the individual job item and are persisted.

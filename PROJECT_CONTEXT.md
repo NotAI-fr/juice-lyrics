@@ -17,7 +17,7 @@ Default local library:
 
 `~/Music/Juice WRLD/Unreleased`
 
-External synchronized lyrics use same-basename sidecars beside each song. The
+External synchronized lyrics use same-basename sidecars beside each MP3, FLAC, or M4A song. The
 music path remains configurable and portable.
 
 ## Existing proven behavior
@@ -38,9 +38,13 @@ The existing lyrics workflow is proven and should not be unnecessarily redesigne
 ## Lyrics behavior
 
 * Prefer API `synced_lyrics`.
-* Synced lyrics are embedded as ID3 SYLT.
+* Synced lyrics are embedded as ID3 SYLT in MP3 files.
 * Synced lyrics also produce `.lrc` files for rmpc.
-* If only API `lyrics` exists, embed them as ID3 USLT.
+* If only API `lyrics` exists, embed them as ID3 USLT in MP3 files.
+* FLAC files store standard plain-text Vorbis `LYRICS`; synchronized timing
+  remains in the adjacent `.lrc` because FLAC has no interoperable SYLT equivalent.
+* M4A files store standard plain-text MP4 `©lyr`; synchronized timing remains
+  in the adjacent `.lrc` rather than a proprietary tag.
 * Never invent timestamps or fake-sync plain lyrics.
 * Plain lyrics without timestamps do not generate timed `.lrc` files.
 
@@ -48,8 +52,8 @@ The existing lyrics workflow is proven and should not be unnecessarily redesigne
 
 Keep MPD + rmpc as the primary playback setup.
 
-Audio and external synchronized lyrics stay together: `song.mp3` maps to
-`song.lrc` in the same directory. The finalized audio path is the sole write
+Audio and external synchronized lyrics stay together: `song.mp3`, `song.flac`, or `song.m4a`
+maps to `song.lrc` in the same directory. The finalized audio path is the sole write
 authority. The legacy `lyrics_dir` key remains readable but is deprecated and
 cannot redirect current output. Read-only inspection and planning create
 nothing; rmpc configuration and historical state paths cannot redirect new
@@ -235,6 +239,7 @@ and failed items remain visible for future retry or removal.
 ## Acquisition → lyrics integration
 
 After successful MP3 acquisition, an optional post-processing hook uses the existing lyrics engine.
+Acquisition remains MP3-focused; native FLAC and M4A support applies to existing local-library files.
 
 The existing behavior remains:
 
@@ -256,7 +261,7 @@ A post-processing failure must be persisted as an item failure rather than repor
 
 ## File safety
 
-Before modifying an MP3:
+Before modifying an MP3, FLAC, or M4A file:
 
 * create a timestamped backup
 * write metadata safely
@@ -281,6 +286,10 @@ The latest development checkpoint reports:
 * persistent acquisition jobs and transient state recovery verified
 * generic transport downloader with HTTP range resume and validation verified
 * MP3 post-processing with ID3 SYLT/USLT and rmpc LRC integration verified
+* native recursive FLAC discovery, metadata matching, Vorbis lyric embedding,
+  verification, backup/restore, state, adjacent LRC, and rmpc notification verified
+* native recursive M4A discovery, MP4 metadata matching, standard `©lyr`
+  embedding, verification, backup/restore, state, adjacent LRC, and rmpc notification verified
 * Settings / Path CLI compatibility verified
 * responsive terminal-native Textual shell with `ansi_color=True`
 * all five main TUI sections are functional; Browse can explicitly add one or several stable-ID selections to the queue
@@ -290,18 +299,18 @@ The latest development checkpoint reports:
 * flat track-queue summaries, song navigation, details, structured failure stages, and retry eligibility
 * Library provides local track browsing, local filters, metadata/lyric/LRC/state details, and explicit read-only sync previews
 * Settings reports effective configuration, sidecar lyrics behavior, provenance where reliable, application paths, and rmpc integration without creating or changing files
-* TUI active-download cancel, configuration editing, and sync execution are not implemented
+* TUI Download selected, Download queue, Retry, Remove, Clear queue, and Clear
+  completed history are implemented; active-download cancel, configuration editing,
+  and library sync execution are not implemented
 * legacy CLI remains the way to run whole acquisition records, retry, delete jobs, and sync
-* 258 automated tests passing across the suite
+* 310 automated tests passing across the suite
 
 The repository for this checkpoint is `/home/nobloat/Downloads/juice-lyrics-codex`
 on branch `v2-redesign`. The planned product and executable name remains `999`,
-but no rename or migration has been performed. Native FLAC support remains
-planned.
+but no rename or migration has been performed.
 
-Recommended next milestones are: Downloads Download all,
-Remove / Clear / Retry actions, Library sync actions, the `999`
-naming migration, native FLAC support, then beta polish and release testing.
+Recommended next milestones are beta polish and release testing, followed by
+the separately planned `999` naming migration when explicitly approved.
 
 To resume:
 

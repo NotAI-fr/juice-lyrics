@@ -206,12 +206,10 @@ capability limitations. Editing remains planned.
 
 Recommended implementation order after the current checkpoint:
 
-1. Downloads Download all execution
-2. Downloads Remove / Clear / Retry actions
-3. Library sync actions
+1. Beta polish, packaging, and release testing
+2. Active-download cancellation, if still desired
+3. Library sync execution controls, if explicitly approved
 4. `999` command and naming migration
-5. Native FLAC support
-6. Beta polish, packaging, and release testing
 
 Possible future improvements:
 

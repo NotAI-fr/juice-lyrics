@@ -1,6 +1,6 @@
 # juice-lyrics 1.4.0
 
-A small, cautious Linux CLI for managing lyrics metadata in local MP3 libraries and generating synced `.lrc` files for rmpc.
+A small, cautious Linux CLI for managing lyrics metadata in local MP3, FLAC, and M4A libraries and generating synced `.lrc` files for rmpc.
 
 It uses the Juice WRLD API as a metadata/lyrics source, prefers synchronized lyrics (`SYLT`), and falls back to ordinary embedded lyrics (`USLT`) when timestamps are unavailable.
 
@@ -51,14 +51,16 @@ juice-lyrics guide
 ## What `sync` does
 
 ```text
-local MP3
+local MP3, FLAC, or M4A
    │
    ├── match to API using title + version + API path + duration
    │
-   ├── synced lyrics available ──► ID3 SYLT
-   │                               └── rmpc .lrc
+   ├── synced lyrics available ──► MP3: ID3 SYLT
+   │                               FLAC: plain-text Vorbis LYRICS
+   │                               M4A: plain-text MP4 ©lyr
+   │                               └── adjacent rmpc .lrc (timing authority)
    │
-   └── only ordinary lyrics ─────► ID3 USLT
+   └── only ordinary lyrics ─────► MP3: ID3 USLT / FLAC: Vorbis LYRICS / M4A: MP4 ©lyr
 ```
 
 Songs without synchronized lyrics still receive ordinary embedded lyrics. rmpc's synchronized Lyrics pane cannot display those as timed lyrics unless timestamps are available.
@@ -99,8 +101,8 @@ Before major changes, read `PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, and `docs/AR
 | `status` | Show current library state without API calls |
 | `scan` | Detailed API scan/troubleshooting |
 | `embed` | Lower-level embed-only command |
-| `verify` | Validate embedded SYLT/USLT frames |
-| `restore` | Restore a previous MP3 backup |
+| `verify` | Validate supported MP3/FLAC/M4A embedded lyrics |
+| `restore` | Restore a previous audio backup |
 | `doctor` | Diagnose Python, Mutagen, API, and paths |
 | `guide` | Show this workflow in the terminal |
 | `search` | Search the public song catalogue |
@@ -112,7 +114,7 @@ Before major changes, read `PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, and `docs/AR
 
 ## Safety
 
-Before modifying MP3s, the tool creates timestamped backups under:
+Before modifying MP3, FLAC, or M4A metadata, the tool creates timestamped backups under:
 
 ```text
 ~/.local/share/juice-lyrics/backups/
@@ -120,9 +122,13 @@ Before modifying MP3s, the tool creates timestamped backups under:
 
 Each modified file is verified after writing. If verification fails for that file, it is immediately restored from its backup.
 
-The audio stream is never decoded/re-encoded by this tool; it only edits MP3 metadata and writes separate LRC text files.
+The audio stream is never decoded/re-encoded by this tool. It edits MP3 ID3,
+FLAC Vorbis, or M4A MP4 metadata and writes separate adjacent LRC text files.
 
-Only lyric frames created by this tool (`desc = "Juice WRLD API"`) are replaced. Other unrelated lyric frames are preserved.
+For MP3, only lyric frames created by this tool (`desc = "Juice WRLD API"`) are
+replaced. For FLAC, the standard `LYRICS` field is updated while unrelated
+Vorbis comments are preserved. For M4A, standard `©lyr` is updated while
+unrelated MP4 atoms are preserved.
 
 ## Matching
 

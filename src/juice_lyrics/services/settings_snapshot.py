@@ -274,8 +274,8 @@ def get_settings_snapshot(
         ),
         application_version=__version__,
         limitations=(
-            "Local library scanning currently supports MP3 files only.",
-            "Native FLAC support is planned but not implemented.",
+            "Local library scanning supports MP3, FLAC, and M4A files.",
+            "FLAC and M4A timing use adjacent LRC; embedded lyrics are plain text.",
             "Settings inspection remains read-only in the TUI.",
             "Library sync execution remains CLI-only.",
             "Configuration changes remain CLI-only.",

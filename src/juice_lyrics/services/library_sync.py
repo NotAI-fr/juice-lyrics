@@ -12,6 +12,7 @@ from ..api.client import search_song_names
 from ..backup.manager import backup_file, make_backup_root, restore_file, write_manifest
 from ..config.settings import DEFAULT_RMPC_CONFIG, STATE_FILE, Settings
 from ..library.matching import choose_candidate, search_title_for
+from ..library.media import MediaMetadataError, is_flac, is_m4a
 from ..library.scanner import find_mp3s
 from ..lyrics.engine import embed_lyrics, parse_synced_lyrics, verify_file, write_lrc
 from ..lyrics.sidecar import sidecar_lrc_path
@@ -238,7 +239,11 @@ def _state_is_current(
     valid, _ = dependencies.verifier(path)
     if not valid:
         return False
-    if options.rmpc_enabled and entry.get("lyric_type") == SyncLyricType.SYNCED.value:
+    if options.rmpc_enabled and entry.get("lyric_type") in {
+        SyncLyricType.SYNCED.value,
+        "FLAC_LYRICS_SYNCED",
+        "M4A_LYRICS_SYNCED",
+    }:
         if not sidecar_lrc_path(path).is_file():
             return False
     return True
@@ -301,6 +306,16 @@ def plan_library_sync(
                 )
             )
             _emit(progress, SyncEventKind.MATCH_FOUND, path=path, message=lyric_type.value)
+        except MediaMetadataError as exc:
+            tracks.append(
+                TrackSyncPlan(
+                    path,
+                    MatchOutcome.UNRESOLVED,
+                    SyncLyricType.NONE,
+                    error=str(exc),
+                )
+            )
+            _emit(progress, SyncEventKind.UNRESOLVED, path=path, message=str(exc))
         except Exception as exc:
             tracks.append(TrackSyncPlan(path, MatchOutcome.FAILED, SyncLyricType.NONE, error=str(exc)))
             _emit(progress, SyncEventKind.TRACK_FAILED, path=path, message=str(exc))
@@ -339,11 +354,24 @@ def _state_entry(
     dependencies: LibrarySyncDependencies,
 ) -> None:
     candidate = track.candidate or {}
+    lyric_type = track.lyric_type.value
+    if is_flac(track.path):
+        lyric_type = (
+            "FLAC_LYRICS_SYNCED"
+            if track.lyric_type is SyncLyricType.SYNCED
+            else "FLAC_LYRICS_PLAIN"
+        )
+    elif is_m4a(track.path):
+        lyric_type = (
+            "M4A_LYRICS_SYNCED"
+            if track.lyric_type is SyncLyricType.SYNCED
+            else "M4A_LYRICS_PLAIN"
+        )
     state.setdefault("files", {})[str(track.path.relative_to(options.music_dir))] = {
         "sha256": dependencies.hasher(track.path),
         "song_id": candidate.get("id"),
         "api_name": candidate.get("name"),
-        "lyric_type": track.lyric_type.value,
+        "lyric_type": lyric_type,
         "lrc": str(lrc_path) if lrc_path else None,
         "updated": now_iso(),
     }
