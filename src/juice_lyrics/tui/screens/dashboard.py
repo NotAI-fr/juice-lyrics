@@ -104,7 +104,9 @@ class DashboardScreen(HubScreen):
     def _render_library(self, status: LibraryStatus | None, failure: str | None) -> None:
         error = self.query_one("#library-error", Static)
         if status is None:
-            self.query_one("#library-data", Static).update("Library data unavailable")
+            self.query_one("#library-data", Static).update(
+                "Library data unavailable\n\nPress 5 for Settings"
+            )
             error.update(f"Warning: {failure or 'Unknown library status error'}")
             return
 

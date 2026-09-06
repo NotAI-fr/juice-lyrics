@@ -48,7 +48,12 @@ New components should receive focused tests before being integrated into the mai
 
 ## Packaging
 
-The project uses `pyproject.toml` and exposes the `juice-lyrics` console script.
+The project uses `pyproject.toml` and exposes `999` as its primary console
+script. `juice-lyrics` is a legacy compatibility alias; both entry points call
+`juice_lyrics.cli:main`.
+
+The distribution remains `juice-wrld-lyrics`, the import package remains
+`juice_lyrics`, and XDG storage remains under `juice-lyrics` for compatibility.
 
 Keep the runtime dependency set small.
 
@@ -57,15 +62,24 @@ Keep the runtime dependency set small.
 From the repository's editable installation, launch the TUI with:
 
 ```bash
-.venv/bin/juice-lyrics tui
+.venv/bin/999
 ```
 
-Use `command -v juice-lyrics` before manual regression testing. A separately
+Use `command -v 999` before manual regression testing. A separately
 installed pipx copy is a frozen package snapshot and does not follow this working
 tree; reinstall it deliberately after a checkpoint or use the explicit `.venv`
 command above.
 
-The experimental shell provides functional Dashboard, Browse, Library,
+For a deterministic editable pipx installation:
+
+```bash
+pipx install --force --editable /absolute/path/to/juice-lyrics-codex
+hash -r
+command -v 999
+999 --help
+```
+
+The terminal interface provides functional Dashboard, Browse, Library,
 Downloads, and Settings screens. Its primary journey is **Browse → Add →
 Downloads → Download queue**. Browse supports both direct single-song Add and
 optional batch selection; Downloads makes `A` Download queue primary and keeps
@@ -117,7 +131,7 @@ Press Enter for track details in narrow terminals, Escape to return, and `r` to
 refresh the read-only snapshot. Press `s` explicitly to generate an API-backed
 sync plan. It is a preview only: no audio, state, backup, LRC, configuration, or
 rmpc changes are made. The existing API cache may be updated by that explicit
-preview. Actual library sync remains CLI-only via `juice-lyrics sync`. The
+preview. Actual library sync remains CLI-only via `999 sync`. The
 scanner recursively supports MP3, FLAC, and M4A. FLAC and M4A matching reads
 native title, artist, album, and duration metadata and conservatively leaves
 tracks with missing title or artist metadata unmatched.

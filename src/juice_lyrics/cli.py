@@ -22,9 +22,10 @@ from mutagen.mp3 import MP3
 
 from . import __version__
 from .config.settings import DEFAULT_LYRICS_DIR
+from .identity import PRODUCT_NAME, STORAGE_NAMESPACE
 from .lyrics.sidecar import sidecar_lrc_path
 
-APP_NAME = "juice-lyrics"
+APP_NAME = PRODUCT_NAME
 DEFAULT_API_BASE = "https://juicewrldapi.com/juicewrld"
 DEFAULT_MUSIC_DIR = Path.home() / "Music" / "Juice WRLD" / "Unreleased"
 DEFAULT_DESCRIPTION = "Juice WRLD API"
@@ -60,9 +61,9 @@ def xdg_dir(name: str, fallback: Path) -> Path:
 CONFIG_HOME = xdg_dir("XDG_CONFIG_HOME", Path.home() / ".config")
 CACHE_HOME = xdg_dir("XDG_CACHE_HOME", Path.home() / ".cache")
 DATA_HOME = xdg_dir("XDG_DATA_HOME", Path.home() / ".local" / "share")
-CONFIG_FILE = CONFIG_HOME / APP_NAME / "config.toml"
-CACHE_DIR = CACHE_HOME / APP_NAME
-DATA_DIR = DATA_HOME / APP_NAME
+CONFIG_FILE = CONFIG_HOME / STORAGE_NAMESPACE / "config.toml"
+CACHE_DIR = CACHE_HOME / STORAGE_NAMESPACE
+DATA_DIR = DATA_HOME / STORAGE_NAMESPACE
 BACKUP_DIR = DATA_DIR / "backups"
 STATE_FILE = DATA_DIR / "state.json"
 DEFAULT_RMPC_CONFIG = CONFIG_HOME / "rmpc" / "config.ron"
@@ -781,7 +782,7 @@ def load_settings(path_override: str | None = None, api_override: str | None = N
     return settings
 
 def command_setup(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    print_header("juice-lyrics First-Time Setup", use_color)
+    print_header("999 Library Setup", use_color)
     print(f"Library: {settings.music_dir}")
     if not settings.music_dir.is_dir():
         raise RuntimeError(f"Music directory does not exist: {settings.music_dir}")
@@ -791,12 +792,11 @@ def command_setup(args: argparse.Namespace, settings: Settings, use_color: bool)
         if not sys.stdin.isatty():
             print("Non-interactive mode: use --yes to confirm setup.")
             return 2
-        print("\nSetup will use the library, embed lyrics, and configure rmpc when detected.")
+        print("\nSetup will synchronize lyrics in the library.")
+        print("It will not change rmpc configuration; use `999 rmpc setup` for that.")
         if input("Continue? [Y/n] ").strip().lower() not in {"", "y", "yes"}:
             print("Cancelled.")
             return 0
-    if rmpc_available:
-        patch_rmpc_config(DEFAULT_RMPC_CONFIG, Path(settings.music_dir))
     files = find_mp3s(settings)
     return embed_batch(settings, files, use_color, args.refresh, False, True, rmpc_available)
 
@@ -991,35 +991,31 @@ def command_info(args: argparse.Namespace, settings: Settings, use_color: bool) 
 def command_guide() -> int:
     print(f"""{APP_NAME} quick guide
 
-FIRST TIME
-  juice-lyrics setup
+OPEN THE APP
+  999
 
 NORMAL USE
-  juice-lyrics sync
-  juice-lyrics status
+  999 status
+  999 sync --dry-run
+  999 sync
 
-ACQUISITION
-  juice-lyrics acquire search "rental"
-  juice-lyrics acquire add "rental" --index 1
-  juice-lyrics acquire manifest manifest.txt
-  juice-lyrics acquire jobs
-  juice-lyrics acquire run <job-id>
-  juice-lyrics acquire retry <job-id>
-  juice-lyrics acquire delete <job-id>
+OPTIONAL SETUP
+  999 config init
+  999 rmpc setup
 
 CHECK / TROUBLESHOOT
-  juice-lyrics scan
-  juice-lyrics verify
-  juice-lyrics doctor
-  juice-lyrics guide
+  999 verify
+  999 rmpc verify
+  999 doctor
+  999 guide
 
 FIND SONGS IN THE API
-  juice-lyrics search "rental"
-  juice-lyrics search --category unreleased --era DRFL "moncler"
-  juice-lyrics info "rental"
+  999 search "rental"
+  999 search --category unreleased --era DRFL "moncler"
+  999 info "rental"
 
 UNDO
-  juice-lyrics restore
+  999 restore
 
 WHAT SYNC DOES
   1. Matches new/changed MP3, FLAC, and M4A files to the API.
@@ -1070,7 +1066,7 @@ def command_restore(args: argparse.Namespace, settings: Settings, use_color: boo
 
 
 def command_doctor(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    print_header("juice-lyrics Doctor", use_color)
+    print_header("999 Doctor", use_color)
     problems = 0
     print(f"Version: {__version__}\nPython:  {sys.version.split()[0]}\nMutagen: OK\nLibrary: {settings.music_dir}")
     if not settings.music_dir.is_dir(): problems += 1; print(colorize("  Library directory does not exist", RED, use_color))
@@ -1202,7 +1198,7 @@ def command_acquire_search(args: argparse.Namespace, settings: Settings, use_col
     if shown == 0:
         print("No usable API results found.")
         return 1
-    print("\nUse: juice-lyrics acquire add \"<query>\" --index <number(s)>")
+    print("\nUse: 999 acquire add \"<query>\" --index <number(s)>")
     return 0
 
 
@@ -1326,7 +1322,7 @@ def command_acquire_add(args: argparse.Namespace, settings: Settings, use_color:
         print(f"Items ({len(items)}):")
         for item in items:
             print(f"  - {item.title} → {item.destination}")
-    print(f"\nRun it with: juice-lyrics acquire run {job.job_id}")
+    print(f"\nRun it with: 999 acquire run {job.job_id}")
     return 0
 
 
@@ -1396,7 +1392,7 @@ def command_acquire_manifest(args: argparse.Namespace, settings: Settings, use_c
         print(colorize("\nUnresolved / Skipped entries:", YELLOW, use_color))
         for u in unresolved:
             print(f"  - {u}")
-    print(f"\nRun it with: juice-lyrics acquire run {job.job_id}")
+    print(f"\nRun it with: 999 acquire run {job.job_id}")
     return 0
 
 
@@ -1519,7 +1515,7 @@ def command_acquire(args: argparse.Namespace, settings: Settings, use_color: boo
 
 
 def command_tui(settings: Settings) -> int:
-    """Launch the experimental Textual frontend without affecting CLI startup."""
+    """Launch the 999 terminal interface."""
 
     from .tui import run_tui
 
@@ -1531,9 +1527,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--path", help="Music library directory (overrides config).")
     parser.add_argument("--api-base", help="Override the API base URL.")
     parser.add_argument("--no-color", action="store_true")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
 
-    setup = sub.add_parser("setup", help="First-time setup: embed lyrics and configure rmpc when detected.")
+    setup = sub.add_parser("setup", help="Synchronize the current library without changing rmpc configuration.")
     setup.add_argument("--yes", action="store_true")
     setup.add_argument("--refresh", action="store_true")
 
@@ -1563,7 +1559,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     guide = sub.add_parser("guide", help="Show the built-in quick guide.")
 
-    sub.add_parser("tui", help="Launch the experimental read-only Textual interface.")
+    sub.add_parser("tui", help="Launch the 999 terminal interface.")
 
     search = sub.add_parser("search", help="Search the public Juice WRLD song catalogue.")
     search.add_argument("query")
@@ -1576,7 +1572,7 @@ def build_parser() -> argparse.ArgumentParser:
     info.add_argument("--index", type=int, help="Choose a result from the search list (1-based).")
     info.add_argument("--refresh", action="store_true")
 
-    acquire = sub.add_parser("acquire", help="Explicitly select and acquire API media resources.")
+    acquire = sub.add_parser("acquire", help="Advanced download operations.")
     ac = acquire.add_subparsers(dest="action", required=True)
     acs = ac.add_parser("search", help="Search acquisition candidates without downloading anything.")
     acs.add_argument("query")
@@ -1633,6 +1629,7 @@ def main(argv: list[str] | None = None) -> int:
     use_color = not args.no_color and sys.stdout.isatty()
     try:
         settings = load_settings(getattr(args, "path", None), getattr(args, "api_base", None))
+        if args.command is None: return command_tui(settings)
         if args.command == "setup": return command_setup(args, settings, use_color)
         if args.command == "sync": return command_sync(args, settings, use_color)
         if args.command == "status": return command_status(settings, use_color)

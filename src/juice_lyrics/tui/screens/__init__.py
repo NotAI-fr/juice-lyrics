@@ -1,4 +1,4 @@
-"""Screens for the experimental Textual frontend."""
+"""Screens for the 999 Textual frontend."""
 
 from .browse import BrowseScreen
 from .dashboard import DashboardScreen

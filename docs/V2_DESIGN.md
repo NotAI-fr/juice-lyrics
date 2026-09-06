@@ -1,8 +1,8 @@
-# juice-lyrics v2 Design Proposal
+# 999 Design Proposal
 
 ## Vision
 
-juice-lyrics has grown beyond a simple lyrics tagging tool.
+The project has grown beyond the original `juice-lyrics` lyrics-tagging scope.
 
 The project is becoming a complete Juice WRLD music management application for Linux:
 
@@ -21,7 +21,7 @@ Version 2 should transform the project from a powerful developer tool into a pol
 
 ## Problem
 
-The name "juice-lyrics" no longer represents the full application.
+The product is now named `999`; `juice-lyrics` remains a compatibility command.
 
 The project now includes:
 
@@ -125,11 +125,11 @@ Example:
 Current workflow:
 
 
-juice-lyrics acquire search "Rental"
+999 acquire search "Rental"
 
-juice-lyrics acquire add "Rental" --index 1
+999 acquire add "Rental" --index 1
 
-juice-lyrics acquire run <long-job-id>
+999 acquire run <long-job-id>
 
 
 This works, but it feels like developer tooling.

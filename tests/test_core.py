@@ -156,9 +156,10 @@ def test_command_guide(capsys):
     rc = cli.command_guide()
     assert rc == 0
     out = capsys.readouterr().out
-    assert "juice-lyrics quick guide" in out
-    assert "juice-lyrics acquire search" in out
-    assert "juice-lyrics sync" in out
+    assert "999 quick guide" in out
+    assert "999 sync --dry-run" in out
+    assert "999 rmpc setup" in out
+    assert "juice-lyrics" not in out
 
 
 def test_config_show_preserves_missing_and_existing_cli_behavior(tmp_path, monkeypatch, capsys):
@@ -271,3 +272,38 @@ def test_config_init_and_missing_library_setup_dispatch_remain_compatible(tmp_pa
             use_color=False,
         )
     assert not missing.exists()
+
+
+def test_library_setup_never_rewrites_rmpc_configuration(tmp_path, monkeypatch):
+    import juice_lyrics.cli as cli
+    from juice_lyrics.config.settings import Settings
+
+    rmpc_config = tmp_path / "rmpc" / "config.ron"
+    rmpc_config.parent.mkdir()
+    rmpc_config.write_text("original rmpc configuration", encoding="utf-8")
+    monkeypatch.setattr(cli, "DEFAULT_RMPC_CONFIG", rmpc_config)
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/rmpc")
+    monkeypatch.setattr(
+        cli,
+        "patch_rmpc_config",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("rmpc rewritten")),
+    )
+    monkeypatch.setattr(cli, "find_mp3s", lambda settings: [])
+    calls = []
+    monkeypatch.setattr(
+        cli,
+        "embed_batch",
+        lambda settings, files, use_color, refresh, dry_run, yes, with_rmpc: (
+            calls.append((files, with_rmpc)) or 0
+        ),
+    )
+
+    result = cli.command_setup(
+        argparse.Namespace(yes=True, refresh=False),
+        Settings(music_dir=tmp_path),
+        use_color=False,
+    )
+
+    assert result == 0
+    assert calls == [([], True)]
+    assert rmpc_config.read_text(encoding="utf-8") == "original rmpc configuration"

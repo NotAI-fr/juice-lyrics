@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "juice-wrld-lyrics"
 version = "1.4.0"
-description = "Manage local lyrics metadata and rmpc LRC files for MP3, FLAC, and M4A libraries"
+description = "999: a Juice WRLD music hub for Linux"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -25,6 +25,7 @@ classifiers = [
 ]
 
 [project.scripts]
+999 = "juice_lyrics.cli:main"
 juice-lyrics = "juice_lyrics.cli:main"
 
 [project.urls]

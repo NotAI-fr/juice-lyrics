@@ -213,6 +213,11 @@ Responsibilities:
 
 Normal user commands should be easy to remember.
 
+The product and primary executable are named `999`. The legacy
+`juice-lyrics` console script resolves to the same `juice_lyrics.cli:main`
+function. The import namespace remains `juice_lyrics`, and persisted XDG paths
+remain under `juice-lyrics`; branding must not create a second storage tree.
+
 ## UI layer
 
 Long term, an interactive TUI can sit on top of the same services.

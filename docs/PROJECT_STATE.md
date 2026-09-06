@@ -1,11 +1,11 @@
 # 999 Project State
 
 ## Current Status
-Backend services remain stable. The experimental Textual frontend supports
+Backend services remain stable. The `999` Textual interface supports
 explicit confirmed single- and multi-song Browse Add to queue actions and
 selected or whole-queue downloads. The interface now prioritizes the streamlined
 Browse → Add → Downloads → Download queue journey. The current working-tree
-checkpoint has 310 passing tests.
+checkpoint has 318 passing tests.
 
 ## Current Branch
 v2-redesign
@@ -47,7 +47,7 @@ v2-redesign
 
 ## Available through the CLI
 
-The legacy CLI remains the supported way to run whole acquisition records,
+The advanced CLI remains the supported way to run whole acquisition records,
 retry failures, delete durable acquisition records, and sync the library.
 
 ## Current limitations
@@ -58,8 +58,10 @@ retry failures, delete durable acquisition records, and sync the library.
   completed history without deleting downloaded files.
 - Acquisition post-processing remains MP3-only; native FLAC and M4A support
   targets existing local-library files.
-- The planned executable/product name remains `999`; package, distribution, and
-  data paths remain named `juice-lyrics`.
+- `999` is the primary product and executable name. `juice-lyrics` remains a
+  legacy compatibility command. The Python namespace remains `juice_lyrics`,
+  the distribution remains `juice-wrld-lyrics`, and existing XDG data remains
+  under `juice-lyrics` without migration.
 
 ## Important Decisions
 - Keep embedded lyrics
@@ -70,10 +72,9 @@ retry failures, delete durable acquisition records, and sync the library.
 
 ## Recommended next milestones
 
-1. Beta polish, packaging, and release testing
+1. Final beta polish and release testing
 2. Active-download cancellation, if still desired
 3. Library sync execution controls in the TUI, if explicitly approved
-4. `999` command and naming migration
 
 ## Resume development
 
@@ -81,5 +82,5 @@ retry failures, delete durable acquisition records, and sync the library.
 cd /home/nobloat/Downloads/juice-lyrics-codex
 git switch v2-redesign
 .venv/bin/pytest -q
-.venv/bin/juice-lyrics tui
+.venv/bin/999
 ```

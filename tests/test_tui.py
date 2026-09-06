@@ -325,6 +325,7 @@ def test_service_exceptions_are_visible_and_navigation_survives(tmp_path):
         async with app.run_test() as pilot:
             await pilot.pause()
             assert "library directory is unavailable" in _rendered(app, "#library-error")
+            assert "Press 5 for Settings" in _rendered(app, "#library-data")
             assert "queue data is malformed" in _rendered(app, "#queue-error")
             await pilot.press("2")
             await pilot.pause()

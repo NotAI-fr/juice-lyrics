@@ -4,7 +4,11 @@ import os
 from pathlib import Path
 from dataclasses import dataclass
 
-APP_NAME = "juice-lyrics"
+from ..identity import STORAGE_NAMESPACE
+
+# Compatibility alias for older imports. This identifies persisted storage,
+# not the user-facing product or command name.
+APP_NAME = STORAGE_NAMESPACE
 DEFAULT_API_BASE = "https://juicewrldapi.com/juicewrld"
 DEFAULT_MUSIC_DIR = Path.home() / "Music" / "Juice WRLD" / "Unreleased"
 DEFAULT_TIMEOUT = 20
@@ -23,9 +27,9 @@ def xdg_dir(name: str, fallback: Path) -> Path:
 CONFIG_HOME = xdg_dir("XDG_CONFIG_HOME", Path.home() / ".config")
 CACHE_HOME = xdg_dir("XDG_CACHE_HOME", Path.home() / ".cache")
 DATA_HOME = xdg_dir("XDG_DATA_HOME", Path.home() / ".local" / "share")
-CONFIG_FILE = CONFIG_HOME / APP_NAME / "config.toml"
-CACHE_DIR = CACHE_HOME / APP_NAME
-DATA_DIR = DATA_HOME / APP_NAME
+CONFIG_FILE = CONFIG_HOME / STORAGE_NAMESPACE / "config.toml"
+CACHE_DIR = CACHE_HOME / STORAGE_NAMESPACE
+DATA_DIR = DATA_HOME / STORAGE_NAMESPACE
 BACKUP_DIR = DATA_DIR / "backups"
 STATE_FILE = DATA_DIR / "state.json"
 ACQUISITION_JOBS_FILE = DATA_DIR / "acquisition_jobs.json"

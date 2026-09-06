@@ -113,7 +113,7 @@ def test_settings_replaces_placeholder_and_renders_configuration_paths_and_limit
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_settings(app, pilot)
             assert screen.__class__.__name__ == "SettingsScreen"
-            assert "Read-only settings view — configuration changes remain CLI-only" in _text(app, "#settings-warning")
+            assert "Read-only settings — configuration changes use the 999 CLI" in _text(app, "#settings-warning")
             paths = _text(app, "#settings-paths")
             assert "Music folder" in paths and "Download location" in paths
             assert "External lyrics" in paths
@@ -275,7 +275,7 @@ def test_long_settings_scroll_at_80x24_and_other_supported_sizes(tmp_path):
             assert scroll.scroll_y > 0
             await pilot.press("pageup")
             assert screen.selected_index < len(screen.rows) - 1
-            assert "Read-only settings view" in _text(app, "#settings-warning")
+            assert "configuration changes use the 999 CLI" in _text(app, "#settings-warning")
 
     for size in ((80, 24), (100, 30), (120, 40)):
         asyncio.run(scenario(size))

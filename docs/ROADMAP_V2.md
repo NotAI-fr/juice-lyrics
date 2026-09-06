@@ -1,6 +1,6 @@
 # v2 Development Roadmap
 
-This document defines the order of work for transforming juice-lyrics into a polished Juice WRLD music management application.
+This document defines the order of work for transforming the project into the polished `999` Juice WRLD music application.
 
 The existing backend is considered stable and should be preserved.
 
@@ -67,6 +67,8 @@ Do not change user-facing behaviour unless necessary.
 
 # Phase 2 — Identity and Migration
 
+Status: Complete for beta preparation.
+
 Goal:
 
 Introduce the new application identity.
@@ -76,24 +78,24 @@ Tasks:
 - Choose final name.
 - Update package metadata.
 - Create new CLI command.
-- Add migration from old configuration paths.
-- Preserve juice-lyrics compatibility.
+- Keep existing configuration paths without creating a second data tree.
+- Preserve the legacy `juice-lyrics` command and storage compatibility.
 
 Example:
 
-Old:
-
-
-juice-lyrics sync
-
-
-New:
+Primary:
 
 
 999 sync
 
 
-Both should work during transition.
+Legacy compatibility:
+
+
+juice-lyrics sync
+
+
+Both invoke the same CLI implementation during the transition.
 
 ---
 

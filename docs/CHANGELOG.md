@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — 999 beta identity and packaging
+
+* Made `999` the primary product name and console entry point while retaining
+  `juice-lyrics` as an alias to the same CLI implementation.
+* Kept the internal `juice_lyrics` package, `juice-wrld-lyrics` distribution,
+  and `juice-lyrics` XDG storage namespace stable for compatibility.
+* Made no-argument startup open the existing TUI and kept startup read-only with
+  respect to rmpc configuration and deprecated centralized lyrics paths.
+* Clarified setup responsibilities: `config init` writes starter configuration,
+  `setup` synchronizes the library, and only explicit `rmpc setup` changes rmpc.
+* Added isolated entry-point, first-run, storage compatibility, shell, and
+  editable-install verification.
+* Verified 318 automated tests with isolated temporary HOME/XDG paths.
+
 ## Unreleased — Native M4A library support
 
 * Added recursive, case-insensitive `.m4a` library discovery without broadening

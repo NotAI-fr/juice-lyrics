@@ -1,6 +1,6 @@
-# juice-lyrics 1.4.0
+# 999
 
-A small, cautious Linux CLI for managing lyrics metadata in local MP3, FLAC, and M4A libraries and generating synced `.lrc` files for rmpc.
+A terminal-native Juice WRLD music hub for Linux, with cautious lyrics management for local MP3, FLAC, and M4A libraries and synchronized `.lrc` sidecars for rmpc.
 
 It uses the Juice WRLD API as a metadata/lyrics source, prefers synchronized lyrics (`SYLT`), and falls back to ordinary embedded lyrics (`USLT`) when timestamps are unavailable.
 
@@ -9,10 +9,19 @@ It uses the Juice WRLD API as a metadata/lyrics source, prefers synchronized lyr
 ### First time
 
 ```bash
-juice-lyrics setup
+999
 ```
 
-This configures the library, embeds available lyrics, and configures rmpc automatically when rmpc and its config are detected.
+This opens the TUI. Missing configuration or library folders are reported in
+the interface without changing rmpc or starting a download.
+
+Configuration is optional. To write a starter configuration, or explicitly
+configure rmpc later:
+
+```bash
+999 config init
+999 rmpc setup
+```
 
 Your Juice WRLD folder is kept together:
 
@@ -31,7 +40,7 @@ Your Juice WRLD folder is kept together:
 After adding or changing songs:
 
 ```bash
-juice-lyrics sync
+999 sync
 ```
 
 `sync` remembers the files it has already processed. Unchanged, verified files are skipped, so normal updates are much faster than a full rescan.
@@ -39,13 +48,13 @@ juice-lyrics sync
 Useful status command:
 
 ```bash
-juice-lyrics status
+999 status
 ```
 
 Built-in guide:
 
 ```bash
-juice-lyrics guide
+999 guide
 ```
 
 ## What `sync` does
@@ -70,9 +79,9 @@ Songs without synchronized lyrics still receive ordinary embedded lyrics. rmpc's
 The API's catalogue can be searched without downloading media:
 
 ```bash
-juice-lyrics search "red dead"
-juice-lyrics search --category unreleased --era DRFL "moncler"
-juice-lyrics info "Rental"
+999 search "red dead"
+999 search --category unreleased --era DRFL "moncler"
+999 info "Rental"
 ```
 
 `search` shows useful catalogue metadata, lyric availability, era, duration, and file path information. `info` fetches the detailed song record when possible.
@@ -96,7 +105,7 @@ Before major changes, read `PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, and `docs/AR
 
 | Command | Purpose |
 |---|---|
-| `setup` | First-time setup and rmpc integration |
+| `setup` | Compatibility shortcut for an initial library sync; never rewrites rmpc |
 | `sync` | Normal day-to-day library update |
 | `status` | Show current library state without API calls |
 | `scan` | Detailed API scan/troubleshooting |
@@ -108,7 +117,7 @@ Before major changes, read `PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, and `docs/AR
 | `search` | Search the public song catalogue |
 | `info` | Inspect a song's API metadata |
 | `acquire` | Explicitly select, queue, and acquire API media resources |
-| `rmpc setup/sync/verify` | Advanced rmpc-only operations |
+| `rmpc setup/sync/verify` | Explicit advanced rmpc operations |
 | `config` | Manage persistent configuration |
 | `cache clear` | Clear cached API responses |
 
@@ -163,9 +172,9 @@ remain supported.
 The advanced commands remain available:
 
 ```bash
-juice-lyrics rmpc setup
-juice-lyrics rmpc sync
-juice-lyrics rmpc verify
+999 rmpc setup
+999 rmpc sync
+999 rmpc verify
 ```
 
 ## Configuration
@@ -173,24 +182,36 @@ juice-lyrics rmpc verify
 Defaults are designed for the user's common Linux layout, but the library can be overridden globally:
 
 ```bash
-juice-lyrics config init
-juice-lyrics config show
+999 config init
+999 config show
 ```
 
 or for a single command:
 
 ```bash
-juice-lyrics --path ~/Music/MyLibrary status
+999 --path ~/Music/MyLibrary status
 ```
 
 The tool follows XDG locations for its config, cache, state, and backups.
 
 ## Installation
 
-### pipx
+### Recommended pipx editable install
 
 ```bash
-pipx install .
+pipx install --editable /absolute/path/to/juice-lyrics-codex
+command -v 999
+999 --help
+```
+
+The distribution remains named `juice-wrld-lyrics` for update compatibility.
+If pipx already has an older copy, replace it deliberately:
+
+```bash
+pipx install --force --editable /absolute/path/to/juice-lyrics-codex
+hash -r
+command -v 999
+999 --help
 ```
 
 ### Editable development install
@@ -204,13 +225,16 @@ pip install -e .
 For development checkpoints, invoke the repository environment explicitly:
 
 ```bash
-.venv/bin/juice-lyrics tui
+.venv/bin/999
 ```
 
-If `command -v juice-lyrics` points at an older pipx installation, that command
-will not contain current uncommitted source changes. Reinstall it deliberately or
-keep using `.venv/bin/juice-lyrics`; changing the repository cannot update an
-already installed copy.
+If `command -v 999` points at an older pipx installation, that command will not
+contain current checkout changes. Reinstall it deliberately or keep using
+`.venv/bin/999`; changing the repository cannot update an installed copy.
+
+`juice-lyrics` remains available as a legacy compatibility command. Both names
+run the same CLI. Existing config, state, queue, cache, and backups continue to
+use the `juice-lyrics` XDG namespace so no data migration is required.
 
 ## Development
 
@@ -227,23 +251,23 @@ The project includes an acquisition subsystem for explicitly selected API resour
 
 ```bash
 # 1. Search the catalogue and check downloadable resources
-juice-lyrics acquire search "rental"
+999 acquire search "rental"
 
 # 2. Queue selected item(s) by 1-based index (or use --manifest)
-juice-lyrics acquire add "rental" --index 1
+999 acquire add "rental" --index 1
 
 # 3. Queue from a plain-text manifest file
-juice-lyrics acquire manifest manifest.txt
+999 acquire manifest manifest.txt
 
 # 4. View queued persistent jobs
-juice-lyrics acquire jobs
+999 acquire jobs
 
 # 5. Run a persistent job (with automatic resume, size/hash checks, and post-processing)
-juice-lyrics acquire run <job-id>
+999 acquire run <job-id>
 
 # 6. Retry failed/pending items or delete job records
-juice-lyrics acquire retry <job-id>
-juice-lyrics acquire delete <job-id>
+999 acquire retry <job-id>
+999 acquire delete <job-id>
 ```
 
 Acquisition is intentionally opt-in and operates only on explicitly selected resources. The transport downloader streams via temporary `.part` files, supports HTTP range resume, validates payload size and checksums, and integrates acquired MP3s directly with the synced/plain lyrics and rmpc workflow.

@@ -183,3 +183,19 @@ Major systems:
 - backup system
 
 Future redesigns should build on these systems rather than replacing them.
+
+---
+
+# Product Identity and Compatibility
+
+- Product name: `999`
+- Primary executable: `999`
+- Legacy compatibility executable: `juice-lyrics`
+- Python package: `juice_lyrics`
+- Distribution name: `juice-wrld-lyrics`
+- XDG storage namespace: `juice-lyrics`
+
+Both executable names call the same CLI implementation. Existing configuration,
+cache, state, queue records, and backups are not renamed or duplicated. Normal
+startup never rewrites rmpc configuration; only explicit `999 rmpc setup` may
+do that.

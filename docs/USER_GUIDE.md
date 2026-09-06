@@ -1,16 +1,21 @@
 # User Guide
 
-## First-time setup
+## First run
 
 Run:
 
 ```bash
-juice-lyrics setup
+999
 ```
 
-When rmpc is detected, setup generates synchronized LRC sidecars and updates
-rmpc to index the configured music tree after its normal confirmation. Merely
-loading configuration creates no directories or files.
+This opens the terminal interface. It does not download anything or rewrite
+rmpc configuration. If the default library is missing, Settings shows the
+configured path and the next action without a traceback.
+
+Configuration is optional. `999 config init` writes a starter config only.
+`999 setup` remains a compatibility shortcut for an initial library lyric sync;
+it does not configure rmpc. Only the explicit `999 rmpc setup` command changes
+rmpc configuration.
 
 ## Configuration
 
@@ -39,7 +44,7 @@ adjacent `.lrc`.
 After adding or changing local songs:
 
 ```bash
-juice-lyrics sync
+999 sync
 ```
 
 `sync` should be the main command to remember.
@@ -49,7 +54,7 @@ It matches songs, fetches lyrics, embeds metadata, generates rmpc LRC files when
 ## Check health
 
 ```bash
-juice-lyrics status
+999 status
 ```
 
 Use this when you simply want to know whether the library is up to date.
@@ -57,8 +62,8 @@ Use this when you simply want to know whether the library is up to date.
 ## Find songs in the API catalogue
 
 ```bash
-juice-lyrics search "rental"
-juice-lyrics info "Rental"
+999 search "rental"
+999 info "Rental"
 ```
 
 Search and info provide catalogue metadata and discovery.
@@ -71,25 +76,25 @@ The workflow commands:
 
 ```bash
 # Search for downloadable candidates
-juice-lyrics acquire search "rental"
+999 acquire search "rental"
 
 # Add one or more items (1-based index, e.g. 1 or 1,2,4)
-juice-lyrics acquire add "rental" --index 1
+999 acquire add "rental" --index 1
 
 # Add from a plain-text manifest file
-juice-lyrics acquire manifest manifest.txt
+999 acquire manifest manifest.txt
 
 # List queued acquisition jobs
-juice-lyrics acquire jobs
+999 acquire jobs
 
 # Run an acquisition job
-juice-lyrics acquire run <job-id>
+999 acquire run <job-id>
 
 # Retry failed or pending items in a job
-juice-lyrics acquire retry <job-id>
+999 acquire retry <job-id>
 
 # Delete a job record
-juice-lyrics acquire delete <job-id>
+999 acquire delete <job-id>
 ```
 
 The acquisition system maintains persistent job state, skips already-present files, supports HTTP range download resumption, validates payloads, and automatically applies the lyrics and rmpc pipeline to downloaded MP3s.
@@ -110,25 +115,25 @@ Those plain-only songs are still tagged correctly, but rmpc's synchronized Lyric
 ## Troubleshooting
 
 ```bash
-juice-lyrics doctor
+999 doctor
 ```
 
 For detailed matching:
 
 ```bash
-juice-lyrics scan
+999 scan
 ```
 
 For metadata verification:
 
 ```bash
-juice-lyrics verify
+999 verify
 ```
 
 For rmpc-specific problems:
 
 ```bash
-juice-lyrics rmpc verify
+999 rmpc verify
 ```
 
 ## Backups
@@ -142,7 +147,7 @@ MP3, FLAC, and M4A metadata changes create timestamped backups under:
 Restore the most recent backup with:
 
 ```bash
-juice-lyrics restore
+999 restore
 ```
 
 ## Paths
@@ -167,3 +172,17 @@ third-song.lrc
 The audio path is authoritative; no global LRC destination is configured.
 Existing centralized LRC files are not moved automatically. Use the separate
 explicit migration utility if migration is required.
+
+## Compatibility names and data
+
+`999` is the product and primary executable. `juice-lyrics` remains a legacy
+compatibility command and invokes the same Python CLI. The internal package is
+still `juice_lyrics`, while existing XDG data remains under `juice-lyrics`:
+
+```text
+~/.config/juice-lyrics/
+~/.cache/juice-lyrics/
+~/.local/share/juice-lyrics/
+```
+
+No duplicate `999` data tree is created and no migration is required.

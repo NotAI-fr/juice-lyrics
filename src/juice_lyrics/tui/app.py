@@ -60,7 +60,7 @@ SettingsSnapshotProvider = Callable[[Any], SettingsSnapshot]
 
 
 class JuiceLyricsApp(App[None]):
-    """The first read-only application shell for the planned 999 interface."""
+    """The 999 terminal application."""
 
     TITLE = "999"
     SUB_TITLE = "Juice WRLD Music Hub"

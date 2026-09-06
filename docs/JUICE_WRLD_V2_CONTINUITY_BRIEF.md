@@ -38,7 +38,8 @@ A Juice WRLD music management hub containing:
 - rmpc integration
 - backup and recovery systems
 
-The current name no longer fully represents the project scope.
+The product is now named `999`. The primary console command is `999`, while
+`juice-lyrics` remains a legacy compatibility command.
 
 ---
 
@@ -52,7 +53,7 @@ Milestone reached:
 
 The current development branch is `v2-redesign` in
 `/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
-310 passing tests.
+318 passing tests.
 
 Completed and integrated:
 
@@ -94,11 +95,11 @@ sequential Download queue, Retry, Remove, Clear queue, and Clear completed histo
 Active-download cancellation, configuration editing, and library sync execution
 are not implemented.
 Durable jobs remain an internal backend detail and completed entries are hidden
-from the active track queue. The legacy CLI remains the way to run downloads,
+from the active track queue. The advanced CLI remains the way to run downloads,
 delete jobs, and sync. Existing local FLAC and M4A files are now first-class library
-tracks; acquisition remains MP3-focused. The planned
-product/executable name remains `999`; package, distribution, and data paths
-have not been renamed.
+tracks; acquisition remains MP3-focused. The product and primary executable are
+`999`; the internal package, distribution identifier, and XDG data namespace
+remain compatible with existing installations.
 
 Live API acquisition was tested successfully.
 
@@ -412,7 +413,7 @@ Current application architecture keeps each same-basename LRC beside its MP3, FL
 file. The finalized audio path is authoritative; the legacy centralized
 `lyrics_dir` configuration is accepted only for compatibility and does not
 direct new output. Existing centralized files require a separate explicit
-migration and are never moved automatically by `juice-lyrics`.
+migration and are never moved automatically by `999`.
 
 Therefore:
 
@@ -450,64 +451,32 @@ This is accepted as a player limitation.
 
 ---
 
-# Future CLI Direction
+# Command Direction
 
-The CLI should become simpler.
+The normal product entry point is simply:
 
-Current:
+```bash
+999
+```
 
-
-juice-lyrics acquire search Rental
-
-juice-lyrics acquire add Rental --index 1
-
-juice-lyrics acquire run UUID
-
-
-Future:
-
-
-999 search Rental
-
-999 get Rental
-
-
-The old commands can remain as compatibility commands.
+Advanced compatibility commands remain available under `999 acquire`.
+`juice-lyrics` is an executable alias to the same CLI implementation.
 
 ---
 
-# Possible Rename
+# Product Identity
 
-The application probably needs a new name.
+The naming decision for beta is:
 
-Current favourite ideas:
+- product: `999`
+- primary command: `999`
+- legacy command: `juice-lyrics`
+- Python package: `juice_lyrics`
+- distribution: `juice-wrld-lyrics`
+- XDG storage namespace: `juice-lyrics`
 
-## 999
-
-Pros:
-- Juice WRLD connection
-- memorable
-- short command
-- fits terminal culture
-
-Possible command:
-
-
-999
-
-
-or:
-
-
-999 search Rental
-
-
-Other possibilities:
-
-- Abyss
-- JuiceBox
-
-No final decision yet.
+These compatibility names avoid breaking imports, installed-package upgrades,
+or existing config, state, queue, cache, and backup data.
 
 ---
 
@@ -528,12 +497,11 @@ Design
 
 
 ## Phase 2
-Migration
+Command compatibility
 
-- new package name
-- new command
-- compatibility layer
-- preserve old data
+- primary `999` command
+- legacy command alias
+- preserve old data and internal package paths
 
 
 ## Phase 3

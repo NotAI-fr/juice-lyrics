@@ -53,7 +53,7 @@ class SettingsScreen(HubScreen):
 
     def compose_content(self) -> Iterable[Widget]:
         yield Static(
-            "Read-only settings view — configuration changes remain CLI-only",
+            "Read-only settings — configuration changes use the 999 CLI",
             id="settings-warning",
             markup=False,
         )

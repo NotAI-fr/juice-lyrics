@@ -58,7 +58,7 @@ authority. The legacy `lyrics_dir` key remains readable but is deprecated and
 cannot redirect current output. Read-only inspection and planning create
 nothing; rmpc configuration and historical state paths cannot redirect new
 output. During development use the repository entry
-point (`.venv/bin/juice-lyrics`) so a stale separately installed package is not
+point (`.venv/bin/999`) so a stale separately installed package is not
 mistaken for the current working tree.
 
 Preserve unrelated rmpc configuration when modifying configuration files.
@@ -66,9 +66,9 @@ Preserve unrelated rmpc configuration when modifying configuration files.
 Advanced commands:
 
 ```bash
-juice-lyrics rmpc setup
-juice-lyrics rmpc sync
-juice-lyrics rmpc verify
+999 rmpc setup
+999 rmpc sync
+999 rmpc verify
 ```
 
 ## Matching
@@ -87,26 +87,26 @@ This helps prevent version mix-ups such as selecting `Starstruck (v1)` for a loc
 
 ## Normal workflow
 
-First-time setup:
+Open the application:
 
 ```bash
-juice-lyrics setup
+999
 ```
 
 Normal maintenance:
 
 ```bash
-juice-lyrics sync
+999 sync
 ```
 
 Useful commands:
 
 ```bash
-juice-lyrics status
-juice-lyrics search
-juice-lyrics info
-juice-lyrics guide
-juice-lyrics doctor
+999 status
+999 search
+999 info
+999 guide
+999 doctor
 ```
 
 ## Project direction
@@ -209,10 +209,10 @@ It should not:
 The initial acquisition workflow is:
 
 ```bash
-juice-lyrics acquire search "rental"
-juice-lyrics acquire add "rental" --index 1
-juice-lyrics acquire jobs
-juice-lyrics acquire run <job-id>
+999 acquire search "rental"
+999 acquire add "rental" --index 1
+999 acquire jobs
+999 acquire run <job-id>
 ```
 
 The selection model must remain explicit. A search operation should not silently create acquisition jobs for every result.
@@ -302,15 +302,16 @@ The latest development checkpoint reports:
 * TUI Download selected, Download queue, Retry, Remove, Clear queue, and Clear
   completed history are implemented; active-download cancel, configuration editing,
   and library sync execution are not implemented
-* legacy CLI remains the way to run whole acquisition records, retry, delete jobs, and sync
-* 310 automated tests passing across the suite
+* advanced CLI remains the way to run whole acquisition records, retry, delete jobs, and sync
+* 318 automated tests passing across the suite
 
 The repository for this checkpoint is `/home/nobloat/Downloads/juice-lyrics-codex`
-on branch `v2-redesign`. The planned product and executable name remains `999`,
-but no rename or migration has been performed.
+on branch `v2-redesign`. The product and primary executable are `999`.
+`juice-lyrics` remains a legacy command alias; the internal `juice_lyrics`
+package, `juice-wrld-lyrics` distribution, and existing `juice-lyrics` XDG
+storage namespace remain stable for compatibility.
 
-Recommended next milestones are beta polish and release testing, followed by
-the separately planned `999` naming migration when explicitly approved.
+Recommended next milestone is final beta polish and release testing.
 
 To resume:
 
@@ -318,7 +319,7 @@ To resume:
 cd /home/nobloat/Downloads/juice-lyrics-codex
 git switch v2-redesign
 .venv/bin/pytest -q
-.venv/bin/juice-lyrics tui
+.venv/bin/999
 ```
 
 ## Development rules
