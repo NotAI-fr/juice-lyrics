@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from juice_lyrics.config.settings import (
     DEFAULT_LYRICS_DIR,
     LEGACY_IMPLICIT_LYRICS_DIR,
@@ -97,6 +99,7 @@ def test_current_cli_read_only_and_failed_write_flows_never_create_legacy_path(
         XDG_CONFIG_HOME=str(home / ".config"),
         XDG_CACHE_HOME=str(home / ".cache"),
         XDG_DATA_HOME=str(home / ".local" / "share"),
+        PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src"),
     )
     command = [sys.executable, "-m", "juice_lyrics.cli"]
     legacy = home / "Music" / "Juice WRLD" / "lyrics"

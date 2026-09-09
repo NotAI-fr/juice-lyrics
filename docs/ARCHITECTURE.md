@@ -40,6 +40,12 @@ The API layer should not know about terminal prompts, MP3 tagging, or rmpc UI.
 
 ## Library layer
 
+The Library TUI is an orchestration frontend over the same scanner, status,
+sync, verification, backup/restore, and rmpc services used by the CLI. It never
+shells out to `999` and does not duplicate matching or media mutation rules.
+Planning and verification are read-only; applying a reviewed plan, restoring a
+backup, and configuring rmpc require explicit cancel-first confirmation.
+
 Responsibilities:
 
 * scan local MP3, FLAC, and M4A files recursively

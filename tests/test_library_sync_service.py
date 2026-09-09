@@ -15,6 +15,7 @@ from juice_lyrics.services.library_sync import (
     SyncEventKind,
     SyncLyricType,
     execute_library_sync,
+    execute_library_sync_preview,
     get_library_sync_preview,
     plan_library_sync,
 )
@@ -238,6 +239,57 @@ def test_frontend_preview_helper_is_dry_run_and_non_mutating(tmp_path):
     assert path.read_bytes() == b"original"
     assert not backup_root.exists()
     assert not (tmp_path / "lyrics").exists()
+
+
+def test_frontend_preview_can_scope_one_track_and_force_refresh(tmp_path):
+    selected = tmp_path / "Selected.mp3"
+    other = tmp_path / "Other.mp3"
+    selected.write_bytes(b"selected")
+    other.write_bytes(b"other")
+    calls = []
+    deps, _, _, _ = _dependencies(tmp_path, {"Selected": _candidate(), "Other": _candidate()})
+    original_searcher = deps.searcher
+    deps.searcher = lambda settings, title, refresh=False: calls.append((title, refresh)) or original_searcher(settings, title, refresh=refresh)
+
+    plan = get_library_sync_preview(
+        Settings(music_dir=tmp_path),
+        rmpc_enabled=True,
+        state_file=tmp_path / "missing-state.json",
+        dependencies=deps,
+        refresh=True,
+        selected_paths=(selected,),
+    )
+
+    assert [track.path for track in plan.tracks] == [selected]
+    assert calls == [("Selected", True)]
+
+
+def test_reviewed_preview_executes_through_existing_sync_engine(tmp_path):
+    path = tmp_path / "Track.mp3"
+    path.write_bytes(b"original")
+    deps, _, saved, backup_root = _dependencies(tmp_path, {"Track": _candidate("plain")})
+    deps.embedder = lambda target, *_: target.write_bytes(b"updated") or "USLT"
+    deps.verifier = lambda target: (True, "USLT")
+    preview = get_library_sync_preview(
+        Settings(music_dir=tmp_path),
+        rmpc_enabled=False,
+        state_file=tmp_path / "missing-state.json",
+        dependencies=deps,
+    )
+
+    result = execute_library_sync_preview(preview, dependencies=deps)
+
+    assert result.updated_files == 1
+    assert path.read_bytes() == b"updated"
+    assert (backup_root / "Track.mp3").read_bytes() == b"original"
+    assert saved[0]["files"]["Track.mp3"]["lyric_type"] == "USLT"
+
+
+def test_execution_boundary_rejects_unreviewed_live_plan(tmp_path):
+    deps, _, _, _ = _dependencies(tmp_path)
+    live = plan_library_sync(_options(tmp_path), dependencies=deps)
+    with pytest.raises(ValueError, match="dry-run preview"):
+        execute_library_sync_preview(live, dependencies=deps)
 
 
 def test_no_rmpc_suppresses_lrc_and_notification_for_synced_track(tmp_path):

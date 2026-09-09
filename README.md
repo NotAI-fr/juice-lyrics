@@ -37,13 +37,12 @@ Your Juice WRLD folder is kept together:
 
 ### Normal use
 
-After adding or changing songs:
+Open `999`, choose **Library**, then use **Refresh**, **Maintain lyrics**,
+**Verify**, or **Backups**. Maintenance always shows a non-mutating preview and
+a cancel-first confirmation before changing audio metadata or sidecars.
 
-```bash
-999 sync
-```
-
-`sync` remembers the files it has already processed. Unchanged, verified files are skipped, so normal updates are much faster than a full rescan.
+The CLI remains available for scripting and automation. `999 sync` remembers
+files it has already processed, so unchanged verified files are skipped.
 
 Useful status command:
 
@@ -117,7 +116,7 @@ Before major changes, read `PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, and `docs/AR
 | `search` | Search the public song catalogue |
 | `info` | Inspect a song's API metadata |
 | `acquire` | Explicitly select, queue, and acquire API media resources |
-| `rmpc setup/sync/verify` | Explicit advanced rmpc operations |
+| `rmpc setup/sync/verify` | Scriptable and advanced rmpc operations; basic check/setup is also in Library |
 | `config` | Manage persistent configuration |
 | `cache clear` | Clear cached API responses |
 

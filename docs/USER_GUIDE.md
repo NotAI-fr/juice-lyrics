@@ -39,17 +39,18 @@ synchronized natively without conversion. FLAC embeds plain-text Vorbis
 `LYRICS`; M4A embeds standard MP4 `©lyr`; synchronized timing remains in the
 adjacent `.lrc`.
 
-## Normal day-to-day use
+## Manage your local library
 
-After adding or changing local songs:
+Open `999`, choose **Library**, and use:
 
-```bash
-999 sync
-```
+* **Refresh** to rescan MP3, FLAC, and M4A files without changing them;
+* **Maintain lyrics** to preview needed changes, then explicitly approve them;
+* **Verify** for a read-only health check and attention list;
+* **Backups** to inspect valid backups and restore one with confirmation;
+* **Player** to check rmpc and explicitly configure its sidecar indexing.
 
-`sync` should be the main command to remember.
-
-It matches songs, fetches lyrics, embeds metadata, generates rmpc LRC files when synchronized lyrics exist, verifies results, and updates state.
+Select a song and press `l` to refresh lyrics for only that song. The CLI
+equivalent, `999 sync`, remains useful for scripting and automation.
 
 ## Check health
 
@@ -130,7 +131,7 @@ For metadata verification:
 999 verify
 ```
 
-For rmpc-specific problems:
+For advanced or scripted rmpc checks:
 
 ```bash
 999 rmpc verify
@@ -144,7 +145,8 @@ MP3, FLAC, and M4A metadata changes create timestamped backups under:
 ~/.local/share/juice-lyrics/backups/
 ```
 
-Restore the most recent backup with:
+Backups can be browsed and restored from **Library → Backups**. For scripted or
+unusual recovery, restore the most recent backup with:
 
 ```bash
 999 restore

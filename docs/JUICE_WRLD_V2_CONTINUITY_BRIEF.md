@@ -53,7 +53,7 @@ Milestone reached:
 
 The current development branch is `v2-redesign` in
 `/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
-318 passing tests.
+328 passing tests.
 
 Completed and integrated:
 
@@ -85,18 +85,18 @@ pagination with scrollable 50-result pages, stable ID-based song details, and a
 Downloads screen with a flat track queue, song navigation, details, failure
 stages, retry eligibility, an explicit Browse Add to queue flow that never
 starts a download, and an explicitly confirmed Download selected action for one
-eligible queued song, a read-only Library screen with local
-track browsing, filters, details, and explicit sync previews, and a read-only
+eligible queued song, a Library maintenance centre with local track browsing,
+filters, details, read-only refresh/verification, confirmed lyric maintenance,
+backup/restore, and rmpc checks, and a read-only
 Settings screen with effective configuration, paths, provenance, and rmpc state.
 
 All five primary TUI sections are functional. Browse supports confirmed single
 and batch queue additions. Downloads supports confirmed Download selected,
 sequential Download queue, Retry, Remove, Clear queue, and Clear completed history.
-Active-download cancellation, configuration editing, and library sync execution
-are not implemented.
+Active-download cancellation and general configuration editing are not implemented.
 Durable jobs remain an internal backend detail and completed entries are hidden
-from the active track queue. The advanced CLI remains the way to run downloads,
-delete jobs, and sync. Existing local FLAC and M4A files are now first-class library
+from the active track queue. The CLI remains available for automation,
+diagnostics, and internal job recovery. Existing local FLAC and M4A files are first-class library
 tracks; acquisition remains MP3-focused. The product and primary executable are
 `999`; the internal package, distribution identifier, and XDG data namespace
 remain compatible with existing installations.
@@ -160,8 +160,8 @@ docs/
 
 
 The project is in incremental v2 implementation. The backend remains stable.
-Mutating TUI actions are explicit and cancel-first; Library and Settings remain
-read-only views, with library sync execution available through the CLI.
+Mutating TUI actions are explicit and cancel-first. Library uses shared services
+for maintenance and restore; Settings remains read-only.
 
 ---
 
@@ -333,9 +333,11 @@ Shows:
 
 Actions:
 
-- sync
-- verify
-- open details
+- refresh and verify without writes
+- preview and confirm lyric maintenance
+- open details and refresh one selected song
+- browse and restore valid backups
+- verify or explicitly configure rmpc
 
 ---
 

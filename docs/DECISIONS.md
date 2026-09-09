@@ -197,5 +197,5 @@ Future redesigns should build on these systems rather than replacing them.
 
 Both executable names call the same CLI implementation. Existing configuration,
 cache, state, queue records, and backups are not renamed or duplicated. Normal
-startup never rewrites rmpc configuration; only explicit `999 rmpc setup` may
-do that.
+startup never rewrites rmpc configuration. Only explicit `999 rmpc setup` or
+the cancel-first **Library → Player → Set up rmpc** action may do that.

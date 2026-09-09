@@ -69,6 +69,7 @@ class LibraryTrack:
     artist: str | None = None
     album: str | None = None
     media_format: str = "MP3"
+    synchronized_source: bool = False
 
     @property
     def needs_attention(self) -> bool:
@@ -78,6 +79,19 @@ class LibraryTrack:
             or self.lrc_status is LibraryLrcStatus.MISSING
             or self.state_status is not LibraryStateStatus.CURRENT
             or self.warning is not None
+        )
+
+    @property
+    def fully_covered(self) -> bool:
+        """Whether format-appropriate embedded lyrics and a synced sidecar are healthy."""
+
+        return (
+            self.match_status is LibraryMatchStatus.MATCHED
+            and self.state_status is LibraryStateStatus.CURRENT
+            and self.synchronized_source
+            and self.lrc_status is LibraryLrcStatus.PRESENT
+            and self.lyric_status is not LibraryLyricStatus.NONE
+            and self.warning is None
         )
 
 
@@ -121,6 +135,30 @@ class LibrarySnapshot:
     @property
     def needs_attention_count(self) -> int:
         return sum(track.needs_attention for track in self.tracks)
+
+    @property
+    def fully_covered_count(self) -> int:
+        return sum(track.fully_covered for track in self.tracks)
+
+    @property
+    def plain_only_count(self) -> int:
+        return sum(
+            track.match_status is LibraryMatchStatus.MATCHED
+            and track.lyric_status is LibraryLyricStatus.PLAIN
+            and not track.fully_covered
+            for track in self.tracks
+        )
+
+    @property
+    def missing_lyrics_count(self) -> int:
+        return sum(
+            track.match_status is LibraryMatchStatus.MATCHED
+            and track.lyric_status is LibraryLyricStatus.NONE
+            for track in self.tracks
+        )
+
+    def format_count(self, name: str) -> int:
+        return sum(track.media_format.casefold() == name.casefold() for track in self.tracks)
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,6 +342,7 @@ def get_library_snapshot(
                 artist=metadata.artist if metadata is not None else None,
                 album=metadata.album if metadata is not None else None,
                 media_format=media_format(path),
+                synchronized_source=expected_synced,
                 warning=" ".join(track_warnings) or None,
             )
         )

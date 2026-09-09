@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -62,6 +62,7 @@ class LibrarySyncOptions:
     rmpc_config_path: Path | None = None
     duration_tolerance: float = 3.0
     state_file: Path = STATE_FILE
+    selected_paths: tuple[Path, ...] = ()
 
     def __post_init__(self) -> None:
         # Kept as a constructor field for compatibility with older callers.
@@ -79,6 +80,7 @@ class LibrarySyncOptions:
         lyrics_dir: Path | None = None,
         rmpc_config_path: Path | None = None,
         state_file: Path = STATE_FILE,
+        selected_paths: tuple[Path, ...] = (),
     ) -> "LibrarySyncOptions":
         return cls(
             settings=settings,
@@ -90,6 +92,7 @@ class LibrarySyncOptions:
             rmpc_config_path=Path(rmpc_config_path) if rmpc_config_path is not None else None,
             duration_tolerance=settings.duration_tolerance,
             state_file=Path(state_file),
+            selected_paths=tuple(Path(path) for path in selected_paths),
         )
 
 
@@ -257,6 +260,9 @@ def plan_library_sync(
 ) -> LibrarySyncPlan:
     dependencies = dependencies or LibrarySyncDependencies()
     files = dependencies.scanner(options.settings)
+    if options.selected_paths:
+        selected = {path.resolve() for path in options.selected_paths}
+        files = [path for path in files if path.resolve() in selected]
     state = _read_state(options.state_file) if options.dry_run else dependencies.state_loader()
     tracks: list[TrackSyncPlan] = []
     _emit(progress, SyncEventKind.SCAN_STARTED, total=len(files))
@@ -331,6 +337,8 @@ def get_library_sync_preview(
     state_file: Path = STATE_FILE,
     dependencies: LibrarySyncDependencies | None = None,
     progress: ProgressCallback | None = None,
+    refresh: bool = False,
+    selected_paths: tuple[Path, ...] = (),
 ) -> LibrarySyncPlan:
     """Build a non-mutating sync plan suitable for read-only frontends."""
 
@@ -339,11 +347,31 @@ def get_library_sync_preview(
     options = LibrarySyncOptions.from_settings(
         settings,
         dry_run=True,
+        refresh=refresh,
         rmpc_enabled=rmpc_enabled,
         lyrics_dir=lyrics_dir,
         state_file=state_file,
+        selected_paths=selected_paths,
     )
     return plan_library_sync(options, dependencies=dependencies, progress=progress)
+
+
+def execute_library_sync_preview(
+    preview: LibrarySyncPlan,
+    *,
+    dependencies: LibrarySyncDependencies | None = None,
+    progress: ProgressCallback | None = None,
+) -> LibrarySyncResult:
+    """Apply an explicitly reviewed dry-run plan through the normal sync engine."""
+
+    if not preview.options.dry_run:
+        raise ValueError("library maintenance requires a dry-run preview")
+    live_plan = LibrarySyncPlan(
+        replace(preview.options, dry_run=False),
+        preview.tracks,
+        preview.state,
+    )
+    return execute_library_sync(live_plan, dependencies=dependencies, progress=progress)
 
 
 def _state_entry(

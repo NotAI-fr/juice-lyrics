@@ -5,7 +5,7 @@ Backend services remain stable. The `999` Textual interface supports
 explicit confirmed single- and multi-song Browse Add to queue actions and
 selected or whole-queue downloads. The interface now prioritizes the streamlined
 Browse → Add → Downloads → Download queue journey. The current working-tree
-checkpoint has 318 passing tests.
+checkpoint has 328 passing tests.
 
 ## Current Branch
 v2-redesign
@@ -27,7 +27,10 @@ v2-redesign
 - Simplified primary shortcut bars, optional Browse selection indicators,
   plain-language confirmations, Dashboard journey prompts, and Settings folders
   before advanced diagnostics; all secondary queue actions remain available in Help.
-- Library summary, local track navigation, typed lyric/match/LRC/state details, local filters, and explicit read-only sync preview.
+- Library is the normal maintenance centre: format-aware summary, track details,
+  read-only refresh/verification, non-mutating maintenance preview, confirmed
+  shared-service execution, selected-song refresh, backup browsing/restore, and
+  rmpc verification/setup.
 - Settings configuration provenance, XDG/application paths, sidecar external-lyrics behavior, rmpc integration status, and current capability limitations.
 - Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.
 - Local FLAC files are recursively discovered and matched using native title,
@@ -47,8 +50,8 @@ v2-redesign
 
 ## Available through the CLI
 
-The advanced CLI remains the supported way to run whole acquisition records,
-retry failures, delete durable acquisition records, and sync the library.
+The advanced CLI remains supported for scripting, whole acquisition records,
+low-level recovery, diagnostics, and durable acquisition-record operations.
 
 ## Current limitations
 
@@ -74,7 +77,7 @@ retry failures, delete durable acquisition records, and sync the library.
 
 1. Final beta polish and release testing
 2. Active-download cancellation, if still desired
-3. Library sync execution controls in the TUI, if explicitly approved
+3. Post-beta enhancements only after real-user feedback
 
 ## Resume development
 

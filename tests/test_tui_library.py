@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 from threading import Event
@@ -21,11 +22,21 @@ from juice_lyrics.services import (
     QueueSnapshot,
 )
 from juice_lyrics.services.library_sync import (
+    LibrarySyncResult,
     LibrarySyncOptions,
     LibrarySyncPlan,
     MatchOutcome,
     SyncLyricType,
     TrackSyncPlan,
+    TrackSyncResult,
+    SyncEvent,
+    SyncEventKind,
+)
+from juice_lyrics.backup.manager import BackupRecord
+from juice_lyrics.services.settings_snapshot import (
+    IntegrationSnapshot,
+    IntegrationStatus,
+    SettingsSnapshot,
 )
 from juice_lyrics.tui import JuiceLyricsApp
 
@@ -39,6 +50,8 @@ def _track(
     lrc: LibraryLrcStatus = LibraryLrcStatus.PRESENT,
     state: LibraryStateStatus = LibraryStateStatus.CURRENT,
     warning: str | None = None,
+    media_format: str = "MP3",
+    synchronized_source: bool = False,
 ) -> LibraryTrack:
     path = root / name
     lrc_path = path.with_suffix(".lrc") if lrc is not LibraryLrcStatus.NONE else None
@@ -56,6 +69,8 @@ def _track(
         lrc_path=lrc_path,
         state_status=state,
         warning=warning,
+        media_format=media_format,
+        synchronized_source=synchronized_source,
     )
 
 
@@ -74,7 +89,7 @@ def _plan(settings: Settings, tracks: tuple[TrackSyncPlan, ...]) -> LibrarySyncP
     return LibrarySyncPlan(options, tracks, {"files": {}})
 
 
-def _app(tmp_path: Path, snapshot_provider, preview_provider=None) -> JuiceLyricsApp:
+def _app(tmp_path: Path, snapshot_provider, preview_provider=None, **providers) -> JuiceLyricsApp:
     settings = Settings(music_dir=tmp_path / "music")
     status = LibraryStatus(settings.music_dir, 0, 0, 0, 0, 0, 0, 0, ())
     return JuiceLyricsApp(
@@ -84,6 +99,7 @@ def _app(tmp_path: Path, snapshot_provider, preview_provider=None) -> JuiceLyric
         catalogue_filters_provider=lambda *args, **kwargs: CatalogueFilterMetadata((), ()),
         library_snapshot_provider=snapshot_provider,
         library_preview_provider=preview_provider or (lambda settings: _plan(settings, ())),
+        **providers,
     )
 
 
@@ -127,9 +143,9 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             screen = await _open_library(app, pilot)
             assert screen.__class__.__name__ == "LibraryScreen"
             summary = _text(app, "#library-summary")
-            assert "Audio tracks 3" in summary and "Matched 2" in summary and "Unmatched 1" in summary
-            assert "Synced 1" in summary and "Plain 1" in summary and "No lyrics 1" in summary
-            assert "LRC 1" in summary and "Attention 2" in summary
+            assert "3 songs" in summary and "Unmatched 1" in summary
+            assert "Plain only 1" in summary and "Missing 0" in summary
+            assert "MP3 3" in summary and "FLAC 0" in summary and "M4A 0" in summary
             rows = _text(app, "#library-tracks")
             assert rows.index("A Synced") < rows.index("B Plain") < rows.index("C Unknown")
             assert "Synced lyrics" in rows and "Plain lyrics" in rows and "No lyrics" in rows
@@ -322,7 +338,7 @@ def test_refresh_selection_stale_result_and_preview_invalidation(tmp_path):
             await current.wait()
             await pilot.pause()
             assert screen.selected_track.reference == keep.reference
-            assert "Preview not generated" in _text(app, "#library-preview")
+            assert "Maintain lyrics" in _text(app, "#library-preview")
             release_stale.set()
             await pilot.pause()
             assert "First.mp3" not in _text(app, "#library-tracks")
@@ -369,7 +385,7 @@ def test_sync_preview_is_explicit_nonblocking_structured_and_handles_errors(tmp_
             assert calls == 0
             await pilot.press("s")
             await asyncio.to_thread(started.wait, 2)
-            assert "Generating sync preview" in _text(app, "#library-preview")
+            assert "Checking library needs" in _text(app, "#library-preview")
             await pilot.press("4")
             assert app.screen.id == "screen-downloads"
             await pilot.press("3")
@@ -478,3 +494,240 @@ def test_library_screen_never_calls_mutating_systems(tmp_path, monkeypatch):
     assert not list(tmp_path.rglob("*.mp3"))
     assert not list(tmp_path.rglob("*.lrc"))
     assert not list(tmp_path.rglob("*.json"))
+
+
+def test_library_summary_is_format_aware_and_flac_m4a_can_be_fully_covered(tmp_path):
+    root = tmp_path / "music"
+    tracks = (
+        _track(root, "One.mp3", synchronized_source=True),
+        _track(root, "Two.flac", lyric=LibraryLyricStatus.PLAIN, media_format="FLAC", synchronized_source=True),
+        _track(root, "Three.m4a", lyric=LibraryLyricStatus.PLAIN, media_format="M4A", synchronized_source=True),
+    )
+
+    async def scenario():
+        app = _app(tmp_path, lambda settings: _snapshot(root, *tracks))
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            summary = _text(app, "#library-summary")
+            assert "Fully covered 3" in summary
+            assert "Plain only 0" in summary
+            assert "MP3 1" in summary and "FLAC 1" in summary and "M4A 1" in summary
+            await pilot.press("down")
+            assert "Coverage       Fully covered" in _text(app, "#library-details")
+            assert screen.selected_track.media_format == "FLAC"
+
+    asyncio.run(scenario())
+
+
+def test_maintenance_preview_is_cancel_first_then_uses_shared_executor_with_progress(tmp_path):
+    root = tmp_path / "music"
+    track = _track(root, "Bandit.mp3", lyric=LibraryLyricStatus.NONE, lrc=LibraryLrcStatus.NONE)
+    plan = _plan(
+        Settings(music_dir=root),
+        (TrackSyncPlan(track.path, MatchOutcome.MATCHED, SyncLyricType.SYNCED, {"name": "Bandit"}),),
+    )
+    executions = []
+
+    def execute(received, *, progress):
+        executions.append(received)
+        progress(SyncEvent(SyncEventKind.TRACK_COMPLETED, path=track.path))
+        return LibrarySyncResult(
+            received,
+            (TrackSyncResult(track.path, MatchOutcome.MATCHED, SyncLyricType.SYNCED, updated=True),),
+            1, 0, 0, 1, 1, tmp_path / "backup",
+        )
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, track),
+            lambda settings: plan,
+            library_execution_provider=execute,
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("m")
+            await screen._preview_worker.wait(); await pilot.pause()
+            assert app.screen.__class__.__name__ == "MaintenanceDialog"
+            assert "No changes have been made" in _text(app, "#library-dialog-body")
+            await pilot.press("enter")
+            assert not executions
+            assert "cancelled" in _text(app, "#library-status")
+
+            await pilot.press("m")
+            await screen._preview_worker.wait(); await pilot.pause()
+            await pilot.press("y")
+            await pilot.pause()
+            assert executions == [plan]
+            if screen._snapshot_worker is not None:
+                await screen._snapshot_worker.wait(); await pilot.pause()
+            assert "Library updated · 1 song updated" in _text(app, "#library-status")
+
+    asyncio.run(scenario())
+
+
+def test_selected_lyric_refresh_scopes_preview_and_cancel_changes_nothing(tmp_path):
+    root = tmp_path / "music"
+    track = _track(root, "Selected.flac", lyric=LibraryLyricStatus.PLAIN, media_format="FLAC")
+    calls = []
+
+    def preview(settings, **kwargs):
+        calls.append(kwargs)
+        return _plan(settings, (TrackSyncPlan(track.path, MatchOutcome.MATCHED, SyncLyricType.PLAIN),))
+
+    async def scenario():
+        app = _app(tmp_path, lambda settings: _snapshot(root, track), preview)
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("l")
+            await screen._preview_worker.wait(); await pilot.pause()
+            assert calls == [{"refresh": True, "selected_paths": (track.path,)}]
+            assert app.screen.__class__.__name__ == "MaintenanceDialog"
+            await pilot.press("escape")
+            assert "cancelled" in _text(app, "#library-status")
+
+    asyncio.run(scenario())
+
+
+def test_verify_is_read_only_and_populates_attention_filter(tmp_path):
+    root = tmp_path / "music"
+    healthy = _track(root, "Healthy.mp3", synchronized_source=True)
+    problem = _track(root, "Problem.m4a", matched=False, lyric=LibraryLyricStatus.NONE, lrc=LibraryLrcStatus.NONE, media_format="M4A")
+    calls = 0
+
+    def snapshot(settings):
+        nonlocal calls
+        calls += 1
+        return _snapshot(root, healthy, problem)
+
+    async def scenario():
+        app = _app(tmp_path, snapshot)
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("v")
+            await screen._snapshot_worker.wait(); await pilot.pause()
+            assert calls == 2
+            assert "Verification complete" in _text(app, "#library-status")
+            assert screen.filtered_tracks == (problem,)
+            assert not list(tmp_path.rglob("*.lrc"))
+
+    asyncio.run(scenario())
+
+
+def test_backup_browser_orders_valid_records_and_restore_is_cancel_first(tmp_path):
+    root = tmp_path / "music"
+    old = tmp_path / "backups" / "old"; new = tmp_path / "backups" / "new"
+    old.mkdir(parents=True); new.mkdir(parents=True)
+    (old / "old.mp3").write_bytes(b"old"); (new / "new.flac").write_bytes(b"new")
+    records = (
+        BackupRecord(old, datetime(2026, 1, 1, tzinfo=timezone.utc)),
+        BackupRecord(new, datetime(2026, 2, 1, tzinfo=timezone.utc)),
+    )
+    restores = []
+
+    def restore(backup, music):
+        restores.append((backup, music)); return 1
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root),
+            backup_provider=lambda: records,
+            restore_provider=restore,
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("b"); await pilot.pause(0.1)
+            body = _text(app, "#library-dialog-body")
+            assert body.index("2026-02-01") < body.index("2026-01-01")
+            await pilot.press("r"); await pilot.pause()
+            assert app.screen.__class__.__name__ == "RestoreDialog"
+            await pilot.press("enter"); await pilot.pause(0.2)
+            assert not restores
+            assert screen._backup_worker is None
+            await pilot.press("b"); await pilot.pause(0.1)
+            assert app.screen.__class__.__name__ == "BackupBrowser"
+            await pilot.press("r"); await pilot.pause()
+            assert app.screen.__class__.__name__ == "RestoreDialog"
+            await pilot.press("y")
+            await pilot.pause(0.1)
+            assert app.screen.__class__.__name__ == "LibraryScreen"
+            assert restores == [(new, root)]
+
+    asyncio.run(scenario())
+
+
+def test_rmpc_check_is_read_only_and_setup_requires_explicit_confirmation(tmp_path):
+    root = tmp_path / "music"
+    config = tmp_path / "rmpc.ron"
+    integration = IntegrationSnapshot(
+        IntegrationStatus.DETECTED_NOT_CONFIGURED,
+        Path("/usr/bin/rmpc"),
+        config,
+        True,
+        False,
+        "rmpc is detected, but sidecar lyrics are not configured.",
+    )
+    settings_snapshot = SettingsSnapshot(config, False, (), (), integration, "1.4.0", ())
+    setups = []
+
+    def setup(path, music):
+        setups.append((path, music)); return path.with_suffix(".bak")
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root),
+            settings_snapshot_provider=lambda settings: settings_snapshot,
+            rmpc_setup_provider=setup,
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("p"); await pilot.pause(0.1)
+            assert "may update its configuration" in _text(app, "#library-dialog-body")
+            await pilot.press("enter"); await pilot.pause(0.2)
+            assert not setups
+            assert screen._rmpc_worker is None
+            await pilot.press("p"); await pilot.pause(0.1)
+            assert app.screen.__class__.__name__ == "RmpcDialog"
+            await pilot.press("y")
+            await pilot.pause(0.1)
+            assert app.screen.__class__.__name__ == "LibraryScreen"
+            assert setups == [(config, root)]
+
+    asyncio.run(scenario())
+
+
+def test_restore_failure_is_reported_safely_without_refreshing_library(tmp_path):
+    root = tmp_path / "music"
+    backup = tmp_path / "backups" / "run"
+    backup.mkdir(parents=True)
+    (backup / "song.m4a").write_bytes(b"backup")
+    record = BackupRecord(backup, datetime(2026, 3, 1, tzinfo=timezone.utc))
+    scans = 0
+
+    def snapshot(settings):
+        nonlocal scans
+        scans += 1
+        return _snapshot(root)
+
+    def fail_restore(*args):
+        raise OSError("destination is read-only")
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            snapshot,
+            backup_provider=lambda: (record,),
+            restore_provider=fail_restore,
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("b"); await pilot.pause(0.1)
+            await pilot.press("r"); await pilot.pause()
+            await pilot.press("y"); await pilot.pause(0.1)
+            assert "Restore failed safely: destination is read-only" in _text(app, "#library-status")
+            assert scans == 1
+            assert screen.snapshot is not None
+
+    asyncio.run(scenario())

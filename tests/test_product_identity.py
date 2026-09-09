@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import tomllib
 from pathlib import Path
+import sys
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from juice_lyrics import cli
 from juice_lyrics.config import settings as config_settings

@@ -10,8 +10,10 @@ from rich.text import Text
 from textual import work
 from textual.binding import Binding
 from textual.containers import Container, Grid, Vertical, VerticalScroll
-from textual.events import Key, Resize, ScreenResume
+from textual.events import Click, Key, Resize, ScreenResume
 from textual.geometry import Region
+from textual.message import Message
+from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.widgets import Input, Select, Static
 from textual.worker import Worker, WorkerState
@@ -25,10 +27,18 @@ from ...services.library_status import (
     LibraryTrack,
 )
 from ...services.library_sync import LibrarySyncPlan, MatchOutcome, SyncLyricType
+from ...services.library_sync import LibrarySyncResult, SyncEvent, SyncEventKind
+from ...backup.manager import BackupRecord
+from ...services.settings_snapshot import IntegrationStatus, SettingsSnapshot
 from .base import HubScreen
 
 SnapshotProvider = Callable[[Any], LibrarySnapshot]
 PreviewProvider = Callable[[Any], LibrarySyncPlan]
+ExecutionProvider = Callable[..., LibrarySyncResult]
+BackupProvider = Callable[[], tuple[BackupRecord, ...]]
+RestoreProvider = Callable[[Path, Path], int]
+RmpcStatusProvider = Callable[[Any], SettingsSnapshot]
+RmpcSetupProvider = Callable[[Path, Path], Path]
 
 
 class LibraryFilter(str, Enum):
@@ -106,8 +116,250 @@ class PreviewOutcome:
     error: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ExecutionOutcome:
+    result: LibrarySyncResult | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BackupOutcome:
+    records: tuple[BackupRecord, ...] = ()
+    error: str | None = None
+
+
+class LibraryDialogAction(Static):
+    can_focus = True
+
+    class Activated(Message):
+        def __init__(self, action: str) -> None:
+            self.action = action
+            super().__init__()
+
+    def __init__(self, label: str, action: str, *, id: str) -> None:
+        super().__init__(label, id=id, markup=False)
+        self.action = action
+
+    def on_click(self, event: Click) -> None:
+        self.post_message(self.Activated(self.action))
+
+
+class MaintenanceDialog(ModalScreen[LibrarySyncPlan | None]):
+    """Cancel-first confirmation for an already non-mutating maintenance preview."""
+
+    def __init__(self, plan: LibrarySyncPlan) -> None:
+        super().__init__()
+        self.plan = plan
+        self._choice = "cancel"
+        self._confirmed = False
+
+    def compose(self) -> Iterable[Widget]:
+        problems = self.plan.unresolved_files + self.plan.no_lyrics_files + self.plan.analysis_failures
+        count = self.plan.ready_files
+        body = (
+            f"{count + problems} song{'s' if count + problems != 1 else ''} need attention\n\n"
+            f"{self.plan.synced_files:2}  Synced lyrics available\n"
+            f"{self.plan.plain_files:2}  Plain lyrics available\n"
+            f"{self.plan.unresolved_files:2}  Could not be matched\n"
+            f"{self.plan.no_lyrics_files:2}  Lyrics unavailable\n"
+            f"{self.plan.analysis_failures:2}  Could not be checked\n\n"
+            "No changes have been made."
+        )
+        with Container(id="library-dialog"):
+            yield Static("Library maintenance", id="library-dialog-title")
+            yield Static(body, id="library-dialog-body", markup=False)
+            with Grid(id="library-dialog-actions"):
+                yield LibraryDialogAction(
+                    f"Update {count} song{'s' if count != 1 else ''}", "confirm", id="library-dialog-confirm"
+                )
+                yield LibraryDialogAction("Cancel", "cancel", id="library-dialog-cancel")
+
+    def on_mount(self) -> None:
+        self._render_choice()
+        self.call_after_refresh(self.query_one("#library-dialog-cancel", LibraryDialogAction).focus)
+
+    def _render_choice(self) -> None:
+        confirm = self.query_one("#library-dialog-confirm", Static)
+        cancel = self.query_one("#library-dialog-cancel", Static)
+        confirm.update(f"[Update {self.plan.ready_files} song{'s' if self.plan.ready_files != 1 else ''}]" if self._choice == "confirm" else f"Update {self.plan.ready_files} song{'s' if self.plan.ready_files != 1 else ''}")
+        cancel.update("[Cancel]" if self._choice == "cancel" else "Cancel")
+
+    def on_library_dialog_action_activated(self, event: LibraryDialogAction.Activated) -> None:
+        if not self._confirmed:
+            self._choice = event.action
+            self._render_choice()
+            self._activate()
+
+    def on_key(self, event: Key) -> None:
+        if self._confirmed:
+            event.prevent_default(); event.stop(); return
+        if event.key in {"escape", "n"}:
+            self.dismiss(None)
+        elif event.key == "y" and self.plan.ready_files:
+            self._choice = "confirm"; self._render_choice(); self._activate()
+        elif event.key in {"left", "right", "tab", "shift+tab"} and self.plan.ready_files:
+            self._choice = "confirm" if self._choice == "cancel" else "cancel"
+            self._render_choice()
+            target = "#library-dialog-confirm" if self._choice == "confirm" else "#library-dialog-cancel"
+            self.query_one(target, LibraryDialogAction).focus()
+        elif event.key == "enter":
+            self._activate()
+        elif event.key in {"1", "2", "3", "4", "5"}:
+            pass
+        else:
+            return
+        event.prevent_default(); event.stop()
+
+    def _activate(self) -> None:
+        if self._choice == "cancel" or not self.plan.ready_files:
+            self.dismiss(None)
+        elif not self._confirmed:
+            self._confirmed = True
+            self.dismiss(self.plan)
+
+
+class BackupBrowser(ModalScreen[BackupRecord | None]):
+    """Read-only valid backup browser; choosing Restore returns a record."""
+
+    def __init__(self, records: tuple[BackupRecord, ...]) -> None:
+        super().__init__()
+        self.records = tuple(reversed(records))
+        self.index = 0
+
+    def compose(self) -> Iterable[Widget]:
+        with Container(id="library-dialog"):
+            yield Static("Backups", id="library-dialog-title")
+            yield Static("", id="library-dialog-body", markup=False)
+            yield Static("↑/↓ select · r restore · Escape close", id="library-dialog-help", markup=False)
+
+    def on_mount(self) -> None:
+        self._render_records()
+
+    def _render_records(self) -> None:
+        if not self.records:
+            self.query_one("#library-dialog-body", Static).update("No backups available")
+            return
+        lines = [f"{len(self.records)} valid backup{'s' if len(self.records) != 1 else ''}\n"]
+        for index, record in enumerate(self.records):
+            marker = ">" if index == self.index else " "
+            stamp = record.created_at.astimezone().strftime("%Y-%m-%d %H:%M")
+            lines.append(f"{marker} {stamp} · {record.file_count} file{'s' if record.file_count != 1 else ''}")
+        self.query_one("#library-dialog-body", Static).update("\n".join(lines))
+
+    def on_key(self, event: Key) -> None:
+        if event.key == "escape": self.dismiss(None)
+        elif event.key in {"down", "j"} and self.records: self.index = min(len(self.records) - 1, self.index + 1); self._render_records()
+        elif event.key in {"up", "k"} and self.records: self.index = max(0, self.index - 1); self._render_records()
+        elif event.key == "r" and self.records: self.dismiss(self.records[self.index])
+        elif event.key in {"1", "2", "3", "4", "5"}: pass
+        else: return
+        event.prevent_default(); event.stop()
+
+
+class RestoreDialog(ModalScreen[BackupRecord | None]):
+    """Cancel-first destructive restore confirmation."""
+
+    def __init__(self, record: BackupRecord) -> None:
+        super().__init__(); self.record = record; self._choice = "cancel"; self._confirmed = False
+
+    def compose(self) -> Iterable[Widget]:
+        with Container(id="library-dialog"):
+            yield Static("Restore backup?", id="library-dialog-title")
+            yield Static(
+                f"This will replace {self.record.file_count} current audio file{'s' if self.record.file_count != 1 else ''}\nwith copies from the selected backup.",
+                id="library-dialog-body", markup=False,
+            )
+            with Grid(id="library-dialog-actions"):
+                yield LibraryDialogAction("Restore", "confirm", id="library-dialog-confirm")
+                yield LibraryDialogAction("Cancel", "cancel", id="library-dialog-cancel")
+
+    def on_mount(self) -> None:
+        self._render_choice(); self.call_after_refresh(self.query_one("#library-dialog-cancel", LibraryDialogAction).focus)
+
+    def _render_choice(self) -> None:
+        self.query_one("#library-dialog-confirm", Static).update("[Restore]" if self._choice == "confirm" else "Restore")
+        self.query_one("#library-dialog-cancel", Static).update("[Cancel]" if self._choice == "cancel" else "Cancel")
+
+    def on_library_dialog_action_activated(self, event: LibraryDialogAction.Activated) -> None:
+        if not self._confirmed: self._choice = event.action; self._render_choice(); self._activate()
+
+    def on_key(self, event: Key) -> None:
+        if self._confirmed: event.prevent_default(); event.stop(); return
+        if event.key in {"escape", "n"}: self.dismiss(None)
+        elif event.key == "y": self._choice = "confirm"; self._render_choice(); self._activate()
+        elif event.key in {"left", "right", "tab", "shift+tab"}:
+            self._choice = "confirm" if self._choice == "cancel" else "cancel"; self._render_choice()
+            self.query_one("#library-dialog-confirm" if self._choice == "confirm" else "#library-dialog-cancel", LibraryDialogAction).focus()
+        elif event.key == "enter": self._activate()
+        elif event.key in {"1", "2", "3", "4", "5"}: pass
+        else: return
+        event.prevent_default(); event.stop()
+
+    def _activate(self) -> None:
+        if self._choice == "cancel": self.dismiss(None)
+        elif not self._confirmed: self._confirmed = True; self.dismiss(self.record)
+
+
+class RmpcDialog(ModalScreen[SettingsSnapshot | None]):
+    """Read-only rmpc check with an explicit, cancel-first setup option."""
+
+    def __init__(self, snapshot: SettingsSnapshot) -> None:
+        super().__init__(); self.snapshot = snapshot; self._choice = "cancel"; self._confirmed = False
+
+    @property
+    def can_setup(self) -> bool:
+        return (
+            self.snapshot.rmpc.status is IntegrationStatus.DETECTED_NOT_CONFIGURED
+            and self.snapshot.rmpc.config_exists
+        )
+
+    def compose(self) -> Iterable[Widget]:
+        body = self.snapshot.rmpc.detail
+        if self.can_setup:
+            body += "\n\nSet up rmpc? This may update its configuration."
+        elif (
+            self.snapshot.rmpc.status is IntegrationStatus.DETECTED_NOT_CONFIGURED
+            and not self.snapshot.rmpc.config_exists
+        ):
+            body += "\n\nOpen rmpc once to create its configuration, then check again."
+        with Container(id="library-dialog"):
+            yield Static("rmpc integration", id="library-dialog-title")
+            yield Static(body, id="library-dialog-body", markup=False)
+            with Grid(id="library-dialog-actions"):
+                yield LibraryDialogAction("Set up rmpc", "confirm", id="library-dialog-confirm")
+                yield LibraryDialogAction("Close", "cancel", id="library-dialog-cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#library-dialog-confirm", LibraryDialogAction).disabled = not self.can_setup
+        self._render_choice(); self.call_after_refresh(self.query_one("#library-dialog-cancel", LibraryDialogAction).focus)
+
+    def _render_choice(self) -> None:
+        self.query_one("#library-dialog-confirm", Static).update("[Set up rmpc]" if self._choice == "confirm" else "Set up rmpc")
+        self.query_one("#library-dialog-cancel", Static).update("[Close]" if self._choice == "cancel" else "Close")
+
+    def on_library_dialog_action_activated(self, event: LibraryDialogAction.Activated) -> None:
+        if event.action == "confirm" and not self.can_setup: return
+        if not self._confirmed: self._choice = event.action; self._render_choice(); self._activate()
+
+    def on_key(self, event: Key) -> None:
+        if self._confirmed: event.prevent_default(); event.stop(); return
+        if event.key in {"escape", "n"}: self.dismiss(None)
+        elif event.key == "y" and self.can_setup: self._choice = "confirm"; self._render_choice(); self._activate()
+        elif event.key in {"left", "right", "tab", "shift+tab"} and self.can_setup:
+            self._choice = "confirm" if self._choice == "cancel" else "cancel"; self._render_choice()
+            self.query_one("#library-dialog-confirm" if self._choice == "confirm" else "#library-dialog-cancel", LibraryDialogAction).focus()
+        elif event.key == "enter": self._activate()
+        elif event.key in {"1", "2", "3", "4", "5"}: pass
+        else: return
+        event.prevent_default(); event.stop()
+
+    def _activate(self) -> None:
+        if self._choice == "cancel": self.dismiss(None)
+        elif self.can_setup and not self._confirmed: self._confirmed = True; self.dismiss(self.snapshot)
+
+
 class LibraryScreen(HubScreen):
-    """Read-only local audio library browser and sync-plan preview."""
+    """Local library browser and safe maintenance centre."""
 
     BINDINGS = [Binding("/", "focus_search", "Search", show=False)]
 
@@ -117,11 +369,21 @@ class LibraryScreen(HubScreen):
         *,
         snapshot_provider: SnapshotProvider,
         preview_provider: PreviewProvider,
+        execution_provider: ExecutionProvider,
+        backup_provider: BackupProvider,
+        restore_provider: RestoreProvider,
+        rmpc_status_provider: RmpcStatusProvider,
+        rmpc_setup_provider: RmpcSetupProvider,
     ) -> None:
         super().__init__("library", "Library")
         self.settings = settings
         self._snapshot_provider = snapshot_provider
         self._preview_provider = preview_provider
+        self._execution_provider = execution_provider
+        self._backup_provider = backup_provider
+        self._restore_provider = restore_provider
+        self._rmpc_status_provider = rmpc_status_provider
+        self._rmpc_setup_provider = rmpc_setup_provider
         self.snapshot: LibrarySnapshot | None = None
         self.filtered_tracks: tuple[LibraryTrack, ...] = ()
         self.selected_index = 0
@@ -131,10 +393,20 @@ class LibraryScreen(HubScreen):
         self._preview_worker: Worker[PreviewOutcome] | None = None
         self._pending_snapshot: SnapshotOutcome | None = None
         self._pending_preview: PreviewOutcome | None = None
+        self._preview_action: str | None = None
+        self._execution_worker: Worker[ExecutionOutcome] | None = None
+        self._backup_worker: Worker[BackupOutcome] | None = None
+        self._restore_worker: Worker[tuple[int | None, str | None]] | None = None
+        self._rmpc_worker: Worker[tuple[SettingsSnapshot | None, str | None]] | None = None
+        self._rmpc_setup_worker: Worker[tuple[Path | None, str | None]] | None = None
+        self._snapshot_action = "scan"
+        self._maintenance_completed = 0
+        self._maintenance_total = 0
+        self._completion_message: tuple[str, bool] | None = None
 
     def compose_content(self) -> Iterable[Widget]:
         yield Static(
-            "Audio tracks 0 · Matched 0 · Unmatched 0 · Synced 0 · Plain 0 · No lyrics 0 · LRC 0 · Attention 0",
+            "0 songs · Fully covered 0 · Plain only 0 · Missing 0 · Unmatched 0\nFormats · MP3 0 · FLAC 0 · M4A 0",
             id="library-summary",
             markup=False,
         )
@@ -155,8 +427,8 @@ class LibraryScreen(HubScreen):
                 yield Static("Track details", classes="panel-title")
                 with VerticalScroll(id="library-details-scroll"):
                     yield Static("Select a track to inspect it.", id="library-details", markup=False)
-        yield Static("Preview not generated · press s · Preview only — no files changed", id="library-preview", markup=False)
-        yield Static("r refresh · s preview · / search", id="library-position", markup=False)
+        yield Static("Choose Maintain lyrics to preview changes safely.", id="library-preview", markup=False)
+        yield Static("r Refresh · m Maintain lyrics · v Verify · b Backups · p Player · ? Help", id="library-position", markup=False)
 
     def action_focus_search(self) -> None:
         self.query_one("#library-query", Input).focus()
@@ -167,7 +439,7 @@ class LibraryScreen(HubScreen):
             self._apply_snapshot(outcome)
         elif self.snapshot is None and self._snapshot_worker is None:
             self.refresh_snapshot()
-        elif self.filtered_tracks:
+        else:
             self.call_after_refresh(self.set_focus, None)
         if self._pending_preview is not None:
             outcome, self._pending_preview = self._pending_preview, None
@@ -178,10 +450,8 @@ class LibraryScreen(HubScreen):
             self.query_one("#library-tracks", Static).update("Loading tracks…")
             self.query_one("#library-details", Static).update("Waiting for library data…")
         self.preview = None
-        self.query_one("#library-preview", Static).update(
-            "Preview not generated · press s · Preview only — no files changed"
-        )
-        self._set_status("Refreshing local audio library…")
+        self.query_one("#library-preview", Static).update("Choose Maintain lyrics to preview changes safely.")
+        self._set_status("Verifying library…" if self._snapshot_action == "verify" else "Scanning library…")
         self._snapshot_worker = self._load_snapshot()
 
     def invalidate_snapshot(self) -> None:
@@ -199,19 +469,26 @@ class LibraryScreen(HubScreen):
         except Exception as exc:
             return SnapshotOutcome(error=str(exc) or type(exc).__name__)
 
-    def generate_preview(self) -> None:
+    def generate_preview(self, *, action: str = "preview", selected_path: Path | None = None) -> None:
         if self.snapshot is None:
             self._set_status("Load the library before generating a sync preview.", error=True)
             return
-        self.query_one("#library-preview", Static).update(
-            "Generating sync preview… · Preview only — no files changed"
-        )
-        self._preview_worker = self._load_preview()
+        self._preview_action = action
+        self.query_one("#library-preview", Static).update("Checking library needs… · No files are being changed")
+        self._preview_worker = self._load_preview(selected_path)
 
     @work(thread=True, exclusive=True, group="library-preview", exit_on_error=False)
-    def _load_preview(self) -> PreviewOutcome:
+    def _load_preview(self, selected_path: Path | None = None) -> PreviewOutcome:
         try:
-            return PreviewOutcome(self._preview_provider(self.settings))
+            if selected_path is None:
+                return PreviewOutcome(self._preview_provider(self.settings))
+            return PreviewOutcome(
+                self._preview_provider(
+                    self.settings,
+                    refresh=True,
+                    selected_paths=(selected_path,),
+                )
+            )
         except Exception as exc:
             return PreviewOutcome(error=str(exc) or type(exc).__name__)
 
@@ -224,7 +501,7 @@ class LibraryScreen(HubScreen):
                 else:
                     self._pending_snapshot = outcome
             elif event.state is WorkerState.ERROR:
-                outcome = SnapshotOutcome(error="Library snapshot worker failed")
+                outcome = SnapshotOutcome(error="Library scan stopped unexpectedly")
                 if self._can_render():
                     self._apply_snapshot(outcome)
                 else:
@@ -237,11 +514,42 @@ class LibraryScreen(HubScreen):
                 else:
                     self._pending_preview = outcome
             elif event.state is WorkerState.ERROR:
-                outcome = PreviewOutcome(error="Sync preview worker failed")
+                outcome = PreviewOutcome(error="Maintenance preview stopped unexpectedly")
                 if self._can_render():
                     self._apply_preview(outcome)
                 else:
                     self._pending_preview = outcome
+        elif event.worker is self._execution_worker:
+            if event.state is WorkerState.SUCCESS:
+                self._apply_execution(event.worker.result)
+            elif event.state is WorkerState.ERROR:
+                self._apply_execution(ExecutionOutcome(error="Library maintenance stopped unexpectedly."))
+        elif event.worker is self._backup_worker:
+            if event.state is WorkerState.SUCCESS:
+                self._apply_backups(event.worker.result)
+            elif event.state is WorkerState.ERROR:
+                self._apply_backups(BackupOutcome(error="Backups could not be inspected."))
+        elif event.worker is self._restore_worker:
+            if event.state is WorkerState.SUCCESS:
+                count, error = event.worker.result
+                self._apply_restore(count, error)
+            elif event.state is WorkerState.ERROR:
+                self._apply_restore(None, "Restore stopped unexpectedly.")
+        elif event.worker is self._rmpc_worker and event.state is WorkerState.SUCCESS:
+            snapshot, error = event.worker.result
+            self._rmpc_worker = None
+            if error or snapshot is None: self._set_status(f"rmpc check failed: {error or 'Unknown error'}", error=True)
+            else: self.app.push_screen(RmpcDialog(snapshot), self._rmpc_dialog_closed)
+        elif event.worker is self._rmpc_worker and event.state is WorkerState.ERROR:
+            self._rmpc_worker = None
+            self._set_status("rmpc check stopped unexpectedly.", error=True)
+        elif event.worker is self._rmpc_setup_worker and event.state is WorkerState.SUCCESS:
+            path, error = event.worker.result
+            self._rmpc_setup_worker = None
+            self._set_status(f"rmpc setup failed safely: {error}", error=True) if error else self._set_status(f"rmpc setup complete · previous config backed up at {path}")
+        elif event.worker is self._rmpc_setup_worker and event.state is WorkerState.ERROR:
+            self._rmpc_setup_worker = None
+            self._set_status("rmpc setup stopped safely.", error=True)
 
     def _can_render(self) -> bool:
         if not self.is_mounted or not list(self.query("#library-summary")):
@@ -269,14 +577,30 @@ class LibraryScreen(HubScreen):
         self.remove_class("-details-mode")
         self._render_summary()
         self._apply_local_filter(preferred_reference=previous_reference)
+        action, self._snapshot_action = self._snapshot_action, "scan"
+        completion, self._completion_message = self._completion_message, None
         if not outcome.snapshot.directory_exists:
             self._set_status(outcome.snapshot.warnings[0], error=True)
         elif not outcome.snapshot.tracks:
             self._set_status("No supported MP3, FLAC, or M4A tracks found.")
         elif outcome.snapshot.warnings:
             self._set_status(" ".join(outcome.snapshot.warnings), error=True)
+        elif completion is not None:
+            self._set_status(completion[0], error=completion[1])
+        elif action == "verify":
+            healthy = outcome.snapshot.total_track_count - outcome.snapshot.needs_attention_count
+            self._set_status(
+                f"Verification complete · {healthy} healthy · "
+                f"{outcome.snapshot.needs_attention_count} need attention "
+                f"(including {outcome.snapshot.unmatched_count} unmatched)"
+            )
+            if outcome.snapshot.needs_attention_count:
+                self.query_one("#library-filter", Select).value = LibraryFilter.ATTENTION.value
         else:
-            self._set_status(f"Local audio library · {outcome.snapshot.library_path}")
+            self._set_status(
+                f"Library refreshed · {outcome.snapshot.total_track_count} "
+                f"song{'s' if outcome.snapshot.total_track_count != 1 else ''} found"
+            )
 
     def _apply_preview(self, outcome: PreviewOutcome) -> None:
         if outcome.error or outcome.plan is None:
@@ -297,8 +621,14 @@ class LibraryScreen(HubScreen):
             f"Unresolved {plan.unresolved_files} · No lyrics {plan.no_lyrics_files} · Errors {plan.analysis_failures}"
             f"{lrc_destination}"
         )
-        self._set_status("Sync preview complete. No files were changed.")
+        self._set_status("Maintenance preview ready. No files were changed.")
         self._render_details()
+        action, self._preview_action = self._preview_action, None
+        if action in {"maintain", "selected"} and self.app.screen is self:
+            if plan.ready_files or plan.unresolved_files or plan.no_lyrics_files or plan.analysis_failures:
+                self.app.push_screen(MaintenanceDialog(plan), self._maintenance_dialog_closed)
+            else:
+                self._set_status("Your library is up to date." if action == "maintain" else "This song is up to date.")
 
     @property
     def selected_track(self) -> LibraryTrack | None:
@@ -311,10 +641,10 @@ class LibraryScreen(HubScreen):
         if snapshot is None:
             return
         self.query_one("#library-summary", Static).update(
-            f"Audio tracks {snapshot.total_track_count} · Matched {snapshot.matched_count} · "
-            f"Unmatched {snapshot.unmatched_count} · Synced {snapshot.synced_count} · "
-            f"Plain {snapshot.plain_count} · No lyrics {snapshot.no_lyrics_count} · "
-            f"LRC {snapshot.external_lrc_count} · Attention {snapshot.needs_attention_count}"
+            f"{snapshot.total_track_count} songs · Fully covered {snapshot.fully_covered_count} · "
+            f"Plain only {snapshot.plain_only_count} · Missing {snapshot.missing_lyrics_count} · "
+            f"Unmatched {snapshot.unmatched_count}\nFormats · MP3 {snapshot.format_count('MP3')} · "
+            f"FLAC {snapshot.format_count('FLAC')} · M4A {snapshot.format_count('M4A')}"
         )
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -391,6 +721,7 @@ class LibraryScreen(HubScreen):
             f"LRC path       {track.lrc_path or 'Not recorded'}",
             f"Library state  {_state_label(track.state_status)}",
             f"Attention      {'Yes' if track.needs_attention else 'No'}",
+            f"Coverage       {'Fully covered' if track.fully_covered else _coverage_label(track)}",
         ]
         if track.warning:
             lines.extend(("", f"Warning        {track.warning}"))
@@ -399,9 +730,9 @@ class LibraryScreen(HubScreen):
 
     def _update_position(self) -> None:
         if not self.filtered_tracks:
-            self.query_one("#library-position", Static).update("r refresh · s preview · / search")
+            self.query_one("#library-position", Static).update("r Refresh · m Maintain lyrics · v Verify · b Backups · p Player · ? Help")
             return
-        suffix = "Esc track list · PgUp/PgDn details" if self._details_mode else "Enter details · r refresh · s preview · / search"
+        suffix = "Esc track list · l Refresh lyrics · PgUp/PgDn details" if self._details_mode else "Enter details · r Refresh · m Maintain · v Verify · b Backups"
         self.query_one("#library-position", Static).update(
             f"Track {self.selected_index + 1} of {len(self.filtered_tracks)} · {suffix}"
         )
@@ -413,6 +744,17 @@ class LibraryScreen(HubScreen):
             return
         if event.key == "s":
             self.generate_preview()
+        elif event.key == "m":
+            self.generate_preview(action="maintain")
+        elif event.key == "v":
+            self._snapshot_action = "verify"
+            self.refresh_snapshot()
+        elif event.key == "b":
+            self._open_backups()
+        elif event.key == "p":
+            self._check_rmpc()
+        elif event.key == "l" and self.selected_track is not None:
+            self.generate_preview(action="selected", selected_path=self.selected_track.path)
         elif event.key == "escape" and self._details_mode:
             self._details_mode = False
             self.remove_class("-details-mode")
@@ -467,6 +809,130 @@ class LibraryScreen(HubScreen):
         status.update(message)
         status.set_class(error, "-error")
 
+    def _maintenance_dialog_closed(self, plan: LibrarySyncPlan | None) -> None:
+        if plan is None:
+            self._set_status("Library maintenance cancelled. No files were changed.")
+            return
+        if self._execution_worker is not None:
+            return
+        self._maintenance_completed = 0
+        self._maintenance_total = plan.ready_files
+        self._set_status(f"Maintaining library… 0 / {plan.ready_files} songs")
+        self._execution_worker = self._execute_maintenance(plan)
+
+    @work(thread=True, exclusive=True, group="library-maintenance", exit_on_error=False)
+    def _execute_maintenance(self, plan: LibrarySyncPlan) -> ExecutionOutcome:
+        try:
+            return ExecutionOutcome(self._execution_provider(plan, progress=self._maintenance_progress))
+        except Exception as exc:
+            return ExecutionOutcome(error=str(exc) or type(exc).__name__)
+
+    def _maintenance_progress(self, event: SyncEvent) -> None:
+        if event.kind not in {SyncEventKind.TRACK_COMPLETED, SyncEventKind.TRACK_FAILED}:
+            return
+        self._maintenance_completed += 1
+        title = event.path.stem if event.path is not None else ""
+        try:
+            self.app.call_from_thread(
+                self._set_status,
+                f"Maintaining library… {self._maintenance_completed} / {self._maintenance_total} songs · {title}",
+            )
+        except RuntimeError:
+            pass
+
+    def _apply_execution(self, outcome: ExecutionOutcome) -> None:
+        self._execution_worker = None
+        if outcome.error or outcome.result is None:
+            self._set_status(f"Library maintenance failed safely: {outcome.error or 'Unknown error'}", error=True)
+            return
+        result = outcome.result
+        remaining = result.failed_files + result.plan.unresolved_files + result.plan.no_lyrics_files
+        updated_word = "song" if result.updated_files == 1 else "songs"
+        message = f"Library updated · {result.updated_files} {updated_word} updated"
+        if remaining:
+            message += f" · {remaining} still need attention"
+        if result.warnings:
+            message += f" · {result.warnings[0]}"
+        self._completion_message = (message, bool(result.failed_files))
+        self.snapshot = None
+        self.preview = None
+        self._snapshot_action = "scan"
+        self.refresh_snapshot()
+
+    def _open_backups(self) -> None:
+        if self._backup_worker is None:
+            self._set_status("Loading backups…")
+            self._backup_worker = self._load_backups()
+
+    @work(thread=True, exclusive=True, group="library-backups", exit_on_error=False)
+    def _load_backups(self) -> BackupOutcome:
+        try:
+            return BackupOutcome(self._backup_provider())
+        except Exception as exc:
+            return BackupOutcome(error=str(exc) or type(exc).__name__)
+
+    def _apply_backups(self, outcome: BackupOutcome) -> None:
+        self._backup_worker = None
+        if outcome.error:
+            self._set_status(f"Backups unavailable: {outcome.error}", error=True)
+            return
+        self.app.push_screen(BackupBrowser(outcome.records), self._backup_selected)
+
+    def _backup_selected(self, record: BackupRecord | None) -> None:
+        self._backup_worker = None
+        if record is not None:
+            self.app.push_screen(RestoreDialog(record), self._restore_confirmed)
+
+    def _restore_confirmed(self, record: BackupRecord | None) -> None:
+        if record is None:
+            self._set_status("Restore cancelled. No files were changed.")
+            return
+        self._set_status("Restoring backup…")
+        self._restore_worker = self._restore(record)
+
+    @work(thread=True, exclusive=True, group="library-restore", exit_on_error=False)
+    def _restore(self, record: BackupRecord) -> tuple[int | None, str | None]:
+        try:
+            return self._restore_provider(record.path, Path(self.settings.music_dir)), None
+        except Exception as exc:
+            return None, str(exc) or type(exc).__name__
+
+    def _apply_restore(self, count: int | None, error: str | None) -> None:
+        self._restore_worker = None
+        if error is not None or count is None:
+            self._set_status(f"Restore failed safely: {error or 'Unknown error'}", error=True)
+            return
+        self._completion_message = (
+            f"Restored {count} audio file{'s' if count != 1 else ''}.",
+            False,
+        )
+        self.snapshot = None
+        self._snapshot_action = "scan"
+        self.refresh_snapshot()
+
+    def _check_rmpc(self) -> None:
+        if self._rmpc_worker is None:
+            self._set_status("Checking rmpc integration…")
+            self._rmpc_worker = self._load_rmpc()
+
+    @work(thread=True, exclusive=True, group="library-rmpc", exit_on_error=False)
+    def _load_rmpc(self) -> tuple[SettingsSnapshot | None, str | None]:
+        try: return self._rmpc_status_provider(self.settings), None
+        except Exception as exc: return None, str(exc) or type(exc).__name__
+
+    def _rmpc_dialog_closed(self, snapshot: SettingsSnapshot | None) -> None:
+        self._rmpc_worker = None
+        if snapshot is None:
+            self._set_status("rmpc check complete. No configuration was changed.")
+            return
+        self._set_status("Setting up rmpc…")
+        self._rmpc_setup_worker = self._setup_rmpc(snapshot)
+
+    @work(thread=True, exclusive=True, group="library-rmpc-setup", exit_on_error=False)
+    def _setup_rmpc(self, snapshot: SettingsSnapshot) -> tuple[Path | None, str | None]:
+        try: return self._rmpc_setup_provider(snapshot.rmpc.config_path, Path(self.settings.music_dir)), None
+        except Exception as exc: return None, str(exc) or type(exc).__name__
+
     def on_resize(self, event: Resize) -> None:
         super().on_resize(event)
         self.set_class(event.size.width < 110, "-library-narrow")
@@ -514,6 +980,18 @@ def _state_label(status: LibraryStateStatus) -> str:
         LibraryStateStatus.CHANGED: "Changed",
         LibraryStateStatus.INVALID: "Invalid",
     }[status]
+
+
+def _coverage_label(track: LibraryTrack) -> str:
+    if track.match_status is LibraryMatchStatus.UNMATCHED:
+        return "Needs a catalogue match"
+    if track.lyric_status is LibraryLyricStatus.NONE:
+        return "Missing lyrics"
+    if track.lrc_status is LibraryLrcStatus.MISSING:
+        return "Missing synced LRC"
+    if track.lyric_status is LibraryLyricStatus.PLAIN:
+        return "Plain lyrics only"
+    return "Needs attention" if track.needs_attention else "Lyrics present"
 
 
 def _duration(seconds: float | None) -> str:

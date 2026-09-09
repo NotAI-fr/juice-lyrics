@@ -267,31 +267,26 @@ Manage local files.
 Example:
 
 
-My Library
+Library
 
-Rental.mp3
+315 songs · Fully covered 287 · Plain only 14 · Missing 8 · Unmatched 6
+Formats · MP3 170 · FLAC 85 · M4A 60
 
-Lyrics:
-Synced
-
-rmpc:
-Ready
-
-Robbery.mp3
-
-Lyrics:
-Plain
-
-rmpc:
-Unavailable
+Rental.flac
+Catalogue match  ✓
+Embedded lyrics  ✓
+Synced LRC       ✓
 
 
 Actions:
 
 
-s Sync
+r Refresh
+m Maintain lyrics
 v Verify
-enter Details
+b Backups
+p Player integration
+enter Details; l refresh selected lyrics
 
 
 ---
@@ -405,8 +400,10 @@ l Lyrics
 ## Library
 
 
-s Sync
+r Refresh
+m Maintain lyrics
 v Verify
+b Backups
 
 
 ## Downloads

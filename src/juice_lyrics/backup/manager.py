@@ -32,6 +32,15 @@ class BackupRecord:
     path: Path
     created_at: datetime
 
+    @property
+    def file_count(self) -> int:
+        """Number of restorable audio files in this valid backup."""
+
+        try:
+            return len(_backup_audio_files(self.path))
+        except OSError:
+            return 0
+
 
 @dataclass(frozen=True, slots=True)
 class BackupPruneResult:

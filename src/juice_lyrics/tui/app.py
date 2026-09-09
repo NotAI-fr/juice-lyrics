@@ -7,6 +7,8 @@ from textual.app import App
 from textual.binding import Binding
 from textual.screen import ModalScreen
 
+from ..backup.manager import BackupRecord, list_backups, restore_backup
+from ..rmpc.integration import patch_rmpc_config
 from ..services.acquisition_queue import QueueSnapshot, get_queue_snapshot
 from ..services.catalogue import (
     CatalogueFilterMetadata,
@@ -35,7 +37,12 @@ from ..services.download_queue import (
     project_download_queue,
 )
 from ..services.library_status import LibrarySnapshot, LibraryStatus, get_library_snapshot, get_library_status
-from ..services.library_sync import LibrarySyncPlan, get_library_sync_preview
+from ..services.library_sync import (
+    LibrarySyncPlan,
+    LibrarySyncResult,
+    execute_library_sync_preview,
+    get_library_sync_preview,
+)
 from ..services.settings_snapshot import SettingsSnapshot, get_settings_snapshot
 from .screens.base import NavigationItem
 from .screens.browse import BrowseScreen
@@ -56,6 +63,7 @@ CatalogueDetailsProvider = Callable[..., SongDetails | None]
 CatalogueFiltersProvider = Callable[..., CatalogueFilterMetadata]
 LibrarySnapshotProvider = Callable[[Any], LibrarySnapshot]
 LibraryPreviewProvider = Callable[[Any], LibrarySyncPlan]
+LibraryExecutionProvider = Callable[..., LibrarySyncResult]
 SettingsSnapshotProvider = Callable[[Any], SettingsSnapshot]
 
 
@@ -75,6 +83,11 @@ class JuiceLyricsApp(App[None]):
         Binding("question_mark", "show_help", "Help", show=False),
         Binding("q", "quit", "Quit", show=False, priority=True),
     ]
+
+    def _get_dom_base(self):
+        """Keep application-level queries scoped to the visible section."""
+
+        return self.screen
 
     CSS = """
     Screen {
@@ -348,6 +361,53 @@ class JuiceLyricsApp(App[None]):
     DownloadAllDialog {
         align: center middle;
         background: transparent;
+    }
+
+    MaintenanceDialog,
+    BackupBrowser,
+    RestoreDialog,
+    RmpcDialog {
+        align: center middle;
+        background: transparent;
+    }
+
+    #library-dialog {
+        width: 76;
+        max-width: 92%;
+        max-height: 88%;
+        height: auto;
+        padding: 1 2;
+        border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #library-dialog-title {
+        height: 2;
+        text-style: bold;
+        color: ansi_blue;
+    }
+
+    #library-dialog-body {
+        height: auto;
+    }
+
+    #library-dialog-help {
+        height: 2;
+        text-style: dim;
+    }
+
+    #library-dialog-actions {
+        height: 2;
+        grid-size: 2 1;
+        grid-columns: 1fr 1fr;
+    }
+
+    #library-dialog-actions LibraryDialogAction {
+        background: transparent;
+        border: none;
+        color: ansi_blue;
+        text-style: bold;
+        text-align: center;
     }
 
     #download-confirm-dialog {
@@ -746,6 +806,10 @@ class JuiceLyricsApp(App[None]):
         download_all_execution_provider: Callable[..., Any] = execute_download_all,
         library_snapshot_provider: LibrarySnapshotProvider = get_library_snapshot,
         library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
+        library_execution_provider: LibraryExecutionProvider = execute_library_sync_preview,
+        backup_provider: Callable[[], tuple[BackupRecord, ...]] = list_backups,
+        restore_provider: Callable[[Any, Any], int] = restore_backup,
+        rmpc_setup_provider: Callable[[Any, Any], Any] = patch_rmpc_config,
         settings_snapshot_provider: SettingsSnapshotProvider = get_settings_snapshot,
     ) -> None:
         super().__init__(ansi_color=True)
@@ -777,6 +841,10 @@ class JuiceLyricsApp(App[None]):
         self.download_all_execution_provider = download_all_execution_provider
         self.library_snapshot_provider = library_snapshot_provider
         self.library_preview_provider = library_preview_provider
+        self.library_execution_provider = library_execution_provider
+        self.backup_provider = backup_provider
+        self.restore_provider = restore_provider
+        self.rmpc_setup_provider = rmpc_setup_provider
         self.settings_snapshot_provider = settings_snapshot_provider
 
     def on_mount(self) -> None:
@@ -804,6 +872,11 @@ class JuiceLyricsApp(App[None]):
                 self.settings,
                 snapshot_provider=self.library_snapshot_provider,
                 preview_provider=self.library_preview_provider,
+                execution_provider=self.library_execution_provider,
+                backup_provider=self.backup_provider,
+                restore_provider=self.restore_provider,
+                rmpc_status_provider=self.settings_snapshot_provider,
+                rmpc_setup_provider=self.rmpc_setup_provider,
             ),
             "library",
         )
@@ -880,8 +953,9 @@ class JuiceLyricsApp(App[None]):
             )
         elif section == "library":
             message = (
-                "↑/↓ or j/k select tracks  •  / local search  •  Home/End first/last  •  "
-                "PgUp/PgDn move tracks  •  Enter details  •  s read-only sync preview  •  r refresh"
+                "Main: r Refresh · m Maintain lyrics · v Verify · b Backups · p Player integration\n"
+                "Tracks: ↑/↓ or j/k select · / search · Enter details · l refresh selected lyrics. "
+                "Maintenance, restore, and player setup always show a cancel-first confirmation."
             )
         elif section == "settings":
             message = (

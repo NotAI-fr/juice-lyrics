@@ -382,7 +382,7 @@ esc Back
 
 ## Goal
 
-Users can inspect their own collection.
+Users can inspect and safely maintain their own collection.
 
 ---
 
@@ -406,11 +406,15 @@ Missing Lyrics
 Actions:
 
 
-s Sync Library
+r Refresh
 
-v Verify Lyrics
+m Maintain lyrics
 
-enter Details
+v Verify
+
+b Backups
+
+enter Details; l refresh selected lyrics
 
 
 ---
@@ -419,14 +423,14 @@ enter Details
 
 ## Goal
 
-Update new or changed files.
+Preview and update new or changed files without memorizing a CLI command.
 
 ---
 
 User:
 
 
-Press s
+Press m
 
 
 ---
@@ -434,15 +438,14 @@ Press s
 Confirmation:
 
 
-Sync library?
+Library maintenance
 
-Found:
+12 songs can be updated
+2 songs need attention
 
-12 new files
+No changes have been made.
 
-Continue?
-
-[Enter]
+[Update 12 songs] [Cancel]
 
 
 ---
@@ -450,7 +453,7 @@ Continue?
 Progress:
 
 
-Syncing...
+Maintaining library...
 
 Rental.mp3
 Matching...
@@ -467,7 +470,7 @@ Complete
 Summary:
 
 
-Sync Complete
+Library updated
 
 Updated:
 12

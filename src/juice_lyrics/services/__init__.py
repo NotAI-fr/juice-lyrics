@@ -93,6 +93,7 @@ from .library_sync import (
     TrackSyncPlan,
     TrackSyncResult,
     execute_library_sync,
+    execute_library_sync_preview,
     get_library_sync_preview,
     plan_library_sync,
 )
@@ -161,6 +162,7 @@ __all__ = [
     "TrackSyncPlan",
     "TrackSyncResult",
     "execute_library_sync",
+    "execute_library_sync_preview",
     "execute_selected_download",
     "get_library_sync_preview",
     "get_catalogue_filters",

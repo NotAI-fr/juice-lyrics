@@ -297,13 +297,16 @@ The latest development checkpoint reports:
 * canonical Category and Era selectors, filter-only searches, and correct case-sensitive API cache behaviour
 * server-side catalogue pagination with scrollable 50-result pages and stable ID-based song details
 * flat track-queue summaries, song navigation, details, structured failure stages, and retry eligibility
-* Library provides local track browsing, local filters, metadata/lyric/LRC/state details, and explicit read-only sync previews
+* Library provides local track browsing, format-aware coverage summaries,
+  read-only refresh/verification, confirmed lyric maintenance, selected-song
+  refresh, valid backup browsing/restore, and rmpc verification/setup
 * Settings reports effective configuration, sidecar lyrics behavior, provenance where reliable, application paths, and rmpc integration without creating or changing files
 * TUI Download selected, Download queue, Retry, Remove, Clear queue, and Clear
-  completed history are implemented; active-download cancel, configuration editing,
-  and library sync execution are not implemented
-* advanced CLI remains the way to run whole acquisition records, retry, delete jobs, and sync
-* 318 automated tests passing across the suite
+  completed history are implemented; active-download cancel and general
+  configuration editing are not implemented
+* advanced CLI remains available for scripting, diagnostics, internal records,
+  and unusual recovery
+* 328 automated tests pass across the suite
 
 The repository for this checkpoint is `/home/nobloat/Downloads/juice-lyrics-codex`
 on branch `v2-redesign`. The product and primary executable are `999`.
