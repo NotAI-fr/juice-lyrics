@@ -53,7 +53,7 @@ Milestone reached:
 
 The current development branch is `v2-redesign` in
 `/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
-328 passing tests.
+339 passing tests.
 
 Completed and integrated:
 
@@ -162,6 +162,10 @@ docs/
 The project is in incremental v2 implementation. The backend remains stable.
 Mutating TUI actions are explicit and cancel-first. Library uses shared services
 for maintenance and restore; Settings remains read-only.
+Library lyric health is independent of catalogue identity: format-appropriate
+embedded lyrics plus a parsed timestamped sidecar can be fully covered even
+when catalogue matching is unknown. Catalogue uncertainty remains visible but
+does not itself create lyric attention.
 
 ---
 

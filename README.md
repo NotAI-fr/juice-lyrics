@@ -40,6 +40,9 @@ Your Juice WRLD folder is kept together:
 Open `999`, choose **Library**, then use **Refresh**, **Maintain lyrics**,
 **Verify**, or **Backups**. Maintenance always shows a non-mutating preview and
 a cancel-first confirmation before changing audio metadata or sidecars.
+Library lyric coverage is determined from the local audio and a genuinely
+timestamped adjacent `.lrc`; catalogue matching is shown separately because it
+is needed for automatic refresh, not for recognizing already healthy lyrics.
 
 The CLI remains available for scripting and automation. `999 sync` remembers
 files it has already processed, so unchanged verified files are skipped.

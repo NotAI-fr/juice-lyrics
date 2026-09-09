@@ -929,7 +929,10 @@ def command_scan(args: argparse.Namespace, settings: Settings, use_color: bool) 
         counts[kind] += 1
     if files:
         print("\r" + " " * 100 + "\r", end="")
-    print(f"Synced: {counts['SYNCED']}  Plain: {counts['PLAIN']}  No lyrics: {counts['NONE']}  Uncertain: {counts['?']}")
+    print(
+        f"Synced: {counts['SYNCED']}  Plain: {counts['PLAIN']}  "
+        f"No lyrics: {counts['NONE']}  Catalogue uncertain: {counts['?']}"
+    )
     return 1 if counts["?"] else 0
 
 

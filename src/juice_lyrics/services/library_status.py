@@ -17,7 +17,7 @@ from ..library.media import (
     media_format,
     read_tagged_metadata,
 )
-from ..lyrics.engine import verify_file
+from ..lyrics.engine import parse_synced_lyrics, verify_file
 from ..lyrics.sidecar import sidecar_lrc_path
 from ..state import sha256_file
 
@@ -39,6 +39,7 @@ class LibraryMatchStatus(str, Enum):
 class LibraryLrcStatus(str, Enum):
     PRESENT = "present"
     MISSING = "missing"
+    INVALID = "invalid"
     NONE = "none"
 
 
@@ -73,25 +74,29 @@ class LibraryTrack:
 
     @property
     def needs_attention(self) -> bool:
-        return (
-            self.match_status is LibraryMatchStatus.UNMATCHED
-            or self.lyric_status is LibraryLyricStatus.NONE
-            or self.lrc_status is LibraryLrcStatus.MISSING
-            or self.state_status is not LibraryStateStatus.CURRENT
-            or self.warning is not None
-        )
+        if self.lyric_status is LibraryLyricStatus.NONE:
+            return True
+        if self.lrc_status is LibraryLrcStatus.INVALID:
+            return True
+        if self.lyric_status is LibraryLyricStatus.SYNCED:
+            return self.lrc_status is not LibraryLrcStatus.PRESENT
+        if self.synchronized_source:
+            return self.lrc_status is not LibraryLrcStatus.PRESENT
+        return False
 
     @property
     def fully_covered(self) -> bool:
         """Whether format-appropriate embedded lyrics and a synced sidecar are healthy."""
 
         return (
-            self.match_status is LibraryMatchStatus.MATCHED
-            and self.state_status is LibraryStateStatus.CURRENT
-            and self.synchronized_source
-            and self.lrc_status is LibraryLrcStatus.PRESENT
-            and self.lyric_status is not LibraryLyricStatus.NONE
-            and self.warning is None
+            self.lrc_status is LibraryLrcStatus.PRESENT
+            and (
+                self.lyric_status is LibraryLyricStatus.SYNCED
+                or (
+                    self.media_format.casefold() in {"flac", "m4a"}
+                    and self.lyric_status is LibraryLyricStatus.PLAIN
+                )
+            )
         )
 
 
@@ -143,19 +148,14 @@ class LibrarySnapshot:
     @property
     def plain_only_count(self) -> int:
         return sum(
-            track.match_status is LibraryMatchStatus.MATCHED
-            and track.lyric_status is LibraryLyricStatus.PLAIN
+            track.lyric_status is LibraryLyricStatus.PLAIN
             and not track.fully_covered
             for track in self.tracks
         )
 
     @property
     def missing_lyrics_count(self) -> int:
-        return sum(
-            track.match_status is LibraryMatchStatus.MATCHED
-            and track.lyric_status is LibraryLyricStatus.NONE
-            for track in self.tracks
-        )
+        return sum(track.lyric_status is LibraryLyricStatus.NONE for track in self.tracks)
 
     def format_count(self, name: str) -> int:
         return sum(track.media_format.casefold() == name.casefold() for track in self.tracks)
@@ -200,6 +200,16 @@ def _read_state_snapshot(path: Path) -> tuple[dict[str, Any], tuple[str, ...]]:
     if not isinstance(value.get("files", {}), dict):
         return {"files": {}, "updated": value.get("updated")}, ("Library state file records are malformed.",)
     return value, ()
+
+
+def _has_timed_lrc(path: Path) -> tuple[bool, str | None]:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return False, f"Adjacent LRC could not be read: {exc}"
+    if parse_synced_lyrics(raw):
+        return True, None
+    return False, "Adjacent LRC has no timestamped lyric lines."
 
 
 def get_library_snapshot(
@@ -298,17 +308,15 @@ def get_library_snapshot(
             }
         )
         adjacent_lrc = sidecar_lrc_path(path)
-        lrc_path = (
-            adjacent_lrc
-            if lyric_status is LibraryLyricStatus.SYNCED
-            or expected_synced
-            or (is_tagged_container(path) and adjacent_lrc.is_file())
-            else None
-        )
+        sidecar_exists = adjacent_lrc.is_file()
+        lrc_path = adjacent_lrc if lyric_status is LibraryLyricStatus.SYNCED or expected_synced or sidecar_exists else None
         if lrc_path is None:
             lrc_status = LibraryLrcStatus.NONE
-        elif lrc_path.is_file():
-            lrc_status = LibraryLrcStatus.PRESENT
+        elif sidecar_exists:
+            valid_lrc, lrc_warning = _has_timed_lrc(lrc_path)
+            lrc_status = LibraryLrcStatus.PRESENT if valid_lrc else LibraryLrcStatus.INVALID
+            if lrc_warning:
+                track_warnings.append(lrc_warning)
         else:
             lrc_status = LibraryLrcStatus.MISSING
             track_warnings.append("Adjacent external LRC file is missing.")
@@ -380,7 +388,8 @@ def get_library_status(
         entry = state_files.get(relative)
         if not isinstance(entry, dict) or entry.get("sha256") != sha256_file(path):
             new_or_changed += 1
-        if sidecar_lrc_path(path).is_file() and (
+        adjacent_lrc = sidecar_lrc_path(path)
+        if adjacent_lrc.is_file() and _has_timed_lrc(adjacent_lrc)[0] and (
             (valid and message.startswith("SYLT")) or is_tagged_container(path)
         ):
             lrc += 1

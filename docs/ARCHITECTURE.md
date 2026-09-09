@@ -58,6 +58,14 @@ Responsibilities:
 
 Matching must remain version-aware, alias-aware, and duration-aware.
 
+Local lyric health and catalogue matchability are independent axes. Coverage
+uses format-aware embedded lyric verification plus an adjacent LRC that parses
+to at least one timestamped lyric line. A catalogue match is required to fetch
+or refresh lyrics, but is not required to recognize an already covered local
+track. Ordinary TUI maintenance protects fully covered unmatched tracks; an
+explicit per-track refresh may retry conservative matching without changing the
+file when no safe candidate is found.
+
 ## Lyrics layer
 
 Responsibilities:

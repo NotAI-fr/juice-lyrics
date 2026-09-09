@@ -63,6 +63,7 @@ class LibrarySyncOptions:
     duration_tolerance: float = 3.0
     state_file: Path = STATE_FILE
     selected_paths: tuple[Path, ...] = ()
+    protected_paths: tuple[Path, ...] = ()
 
     def __post_init__(self) -> None:
         # Kept as a constructor field for compatibility with older callers.
@@ -81,6 +82,7 @@ class LibrarySyncOptions:
         rmpc_config_path: Path | None = None,
         state_file: Path = STATE_FILE,
         selected_paths: tuple[Path, ...] = (),
+        protected_paths: tuple[Path, ...] = (),
     ) -> "LibrarySyncOptions":
         return cls(
             settings=settings,
@@ -93,6 +95,7 @@ class LibrarySyncOptions:
             duration_tolerance=settings.duration_tolerance,
             state_file=Path(state_file),
             selected_paths=tuple(Path(path) for path in selected_paths),
+            protected_paths=tuple(Path(path) for path in protected_paths),
         )
 
 
@@ -247,7 +250,12 @@ def _state_is_current(
         "FLAC_LYRICS_SYNCED",
         "M4A_LYRICS_SYNCED",
     }:
-        if not sidecar_lrc_path(path).is_file():
+        lrc_path = sidecar_lrc_path(path)
+        try:
+            synced_lines = dependencies.lyric_parser(lrc_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError):
+            return False
+        if not synced_lines:
             return False
     return True
 
@@ -265,8 +273,20 @@ def plan_library_sync(
         files = [path for path in files if path.resolve() in selected]
     state = _read_state(options.state_file) if options.dry_run else dependencies.state_loader()
     tracks: list[TrackSyncPlan] = []
+    protected = {path.resolve() for path in options.protected_paths}
     _emit(progress, SyncEventKind.SCAN_STARTED, total=len(files))
     for index, path in enumerate(files, start=1):
+        if path.resolve() in protected:
+            tracks.append(TrackSyncPlan(path, MatchOutcome.UNCHANGED, SyncLyricType.NONE))
+            _emit(
+                progress,
+                SyncEventKind.TRACK_INSPECTED,
+                path=path,
+                index=index,
+                total=len(files),
+                message="locally covered",
+            )
+            continue
         if not options.refresh and _state_is_current(state, path, options, dependencies):
             _emit(
                 progress,
@@ -339,6 +359,7 @@ def get_library_sync_preview(
     progress: ProgressCallback | None = None,
     refresh: bool = False,
     selected_paths: tuple[Path, ...] = (),
+    protected_paths: tuple[Path, ...] = (),
 ) -> LibrarySyncPlan:
     """Build a non-mutating sync plan suitable for read-only frontends."""
 
@@ -352,6 +373,7 @@ def get_library_sync_preview(
         lyrics_dir=lyrics_dir,
         state_file=state_file,
         selected_paths=selected_paths,
+        protected_paths=protected_paths,
     )
     return plan_library_sync(options, dependencies=dependencies, progress=progress)
 

@@ -481,7 +481,20 @@ class LibraryScreen(HubScreen):
     def _load_preview(self, selected_path: Path | None = None) -> PreviewOutcome:
         try:
             if selected_path is None:
-                return PreviewOutcome(self._preview_provider(self.settings))
+                if self._preview_action != "maintain" or self.snapshot is None:
+                    return PreviewOutcome(self._preview_provider(self.settings))
+                protected_paths = tuple(
+                    track.path
+                    for track in self.snapshot.tracks
+                    if track.fully_covered
+                    and track.match_status is LibraryMatchStatus.UNMATCHED
+                )
+                return PreviewOutcome(
+                    self._preview_provider(
+                        self.settings,
+                        protected_paths=protected_paths,
+                    )
+                )
             return PreviewOutcome(
                 self._preview_provider(
                     self.settings,
@@ -643,7 +656,8 @@ class LibraryScreen(HubScreen):
         self.query_one("#library-summary", Static).update(
             f"{snapshot.total_track_count} songs · Fully covered {snapshot.fully_covered_count} · "
             f"Plain only {snapshot.plain_only_count} · Missing {snapshot.missing_lyrics_count} · "
-            f"Unmatched {snapshot.unmatched_count}\nFormats · MP3 {snapshot.format_count('MP3')} · "
+            f"Need attention {snapshot.needs_attention_count}\nCatalogue unmatched {snapshot.unmatched_count} · "
+            f"MP3 {snapshot.format_count('MP3')} · "
             f"FLAC {snapshot.format_count('FLAC')} · M4A {snapshot.format_count('M4A')}"
         )
 
@@ -714,7 +728,7 @@ class LibraryScreen(HubScreen):
             f"Album          {track.album or 'Not available'}",
             f"Relative path  {track.relative_path}",
             f"Full path      {track.path}",
-            f"Matched        {track.matched_title or _match_label(track)}",
+            f"Catalogue match {track.matched_title or _match_label(track)}",
             f"Duration       {_duration(track.duration_seconds)}",
             f"Lyrics         {_lyric_label(track.lyric_status)}",
             f"External LRC   {_lrc_label(track.lrc_status)}",
@@ -725,6 +739,8 @@ class LibraryScreen(HubScreen):
         ]
         if track.warning:
             lines.extend(("", f"Warning        {track.warning}"))
+        if track.match_status is LibraryMatchStatus.UNMATCHED:
+            lines.extend(("", "Automatic refresh requires a catalogue match."))
         lines.extend(("", "Sync preview", _track_preview_text(self.preview, track.path)))
         details.update(Text("\n".join(lines), overflow="ellipsis"))
 
@@ -954,7 +970,7 @@ def _matches_filter(track: LibraryTrack, selected: LibraryFilter) -> bool:
 
 
 def _match_label(track: LibraryTrack) -> str:
-    return "Matched" if track.match_status is LibraryMatchStatus.MATCHED else "Unmatched"
+    return "Matched" if track.match_status is LibraryMatchStatus.MATCHED else "Unknown"
 
 
 def _lyric_label(status: LibraryLyricStatus) -> str:
@@ -969,6 +985,7 @@ def _lrc_label(status: LibraryLrcStatus) -> str:
     return {
         LibraryLrcStatus.PRESENT: "Present",
         LibraryLrcStatus.MISSING: "Missing",
+        LibraryLrcStatus.INVALID: "Invalid",
         LibraryLrcStatus.NONE: "None",
     }[status]
 
@@ -983,12 +1000,12 @@ def _state_label(status: LibraryStateStatus) -> str:
 
 
 def _coverage_label(track: LibraryTrack) -> str:
-    if track.match_status is LibraryMatchStatus.UNMATCHED:
-        return "Needs a catalogue match"
+    if track.fully_covered:
+        return "Fully covered"
     if track.lyric_status is LibraryLyricStatus.NONE:
         return "Missing lyrics"
-    if track.lrc_status is LibraryLrcStatus.MISSING:
-        return "Missing synced LRC"
+    if track.lrc_status in {LibraryLrcStatus.MISSING, LibraryLrcStatus.INVALID}:
+        return "Synced LRC needs attention"
     if track.lyric_status is LibraryLyricStatus.PLAIN:
         return "Plain lyrics only"
     return "Needs attention" if track.needs_attention else "Lyrics present"

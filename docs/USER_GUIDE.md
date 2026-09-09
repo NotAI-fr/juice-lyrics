@@ -52,6 +52,14 @@ Open `999`, choose **Library**, and use:
 Select a song and press `l` to refresh lyrics for only that song. The CLI
 equivalent, `999 sync`, remains useful for scripting and automation.
 
+**Fully covered** describes local lyric health, not catalogue identity. A FLAC
+or M4A file is fully covered when it has embedded plain lyrics and its adjacent
+`.lrc` contains timestamped lyric lines. MP3 keeps its existing synchronized
+embedded-lyrics requirement. A healthy track may still show **Catalogue match:
+Unknown**; that only means automatic refresh cannot identify a safe catalogue
+record yet. The Library shows that count separately from songs needing lyric
+attention.
+
 ## Check health
 
 ```bash
@@ -59,6 +67,10 @@ equivalent, `999 sync`, remains useful for scripting and automation.
 ```
 
 Use this when you simply want to know whether the library is up to date.
+
+`999 scan` is the advanced catalogue-matching diagnostic. Its **Catalogue
+uncertain** count means identity could not be established safely; it does not by
+itself mean that local lyrics are missing or broken.
 
 ## Find songs in the API catalogue
 

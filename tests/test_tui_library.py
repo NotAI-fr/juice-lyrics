@@ -98,7 +98,7 @@ def _app(tmp_path: Path, snapshot_provider, preview_provider=None, **providers) 
         queue_snapshot_provider=lambda: QueueSnapshot((), 0, 0, 0, 0, 0),
         catalogue_filters_provider=lambda *args, **kwargs: CatalogueFilterMetadata((), ()),
         library_snapshot_provider=snapshot_provider,
-        library_preview_provider=preview_provider or (lambda settings: _plan(settings, ())),
+        library_preview_provider=preview_provider or (lambda settings, **kwargs: _plan(settings, ())),
         **providers,
     )
 
@@ -143,8 +143,9 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             screen = await _open_library(app, pilot)
             assert screen.__class__.__name__ == "LibraryScreen"
             summary = _text(app, "#library-summary")
-            assert "3 songs" in summary and "Unmatched 1" in summary
-            assert "Plain only 1" in summary and "Missing 0" in summary
+            assert "3 songs" in summary and "Catalogue unmatched 1" in summary
+            assert "Plain only 1" in summary and "Missing 1" in summary
+            assert "Need attention 1" in summary
             assert "MP3 3" in summary and "FLAC 0" in summary and "M4A 0" in summary
             rows = _text(app, "#library-tracks")
             assert rows.index("A Synced") < rows.index("B Plain") < rows.index("C Unknown")
@@ -154,7 +155,7 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             await pilot.press("down", "j")
             assert screen.selected_track.reference == unmatched.reference
             details = _text(app, "#library-details")
-            assert "Unmatched" in details and "No lyrics" in details
+            assert "Catalogue match Unknown" in details and "No lyrics" in details
             assert "Library state  New" in details and "Attention      Yes" in details
             assert "Recorded LRC is missing" in details
             await pilot.press("up", "k", "end", "home")
@@ -519,6 +520,45 @@ def test_library_summary_is_format_aware_and_flac_m4a_can_be_fully_covered(tmp_p
     asyncio.run(scenario())
 
 
+def test_healthy_unmatched_flac_is_covered_without_lyric_attention(tmp_path):
+    root = tmp_path / "music"
+    track = _track(
+        root,
+        "Bandit (with YoungBoy Never Broke Again).flac",
+        matched=False,
+        lyric=LibraryLyricStatus.PLAIN,
+        media_format="FLAC",
+        state=LibraryStateStatus.NEW,
+    )
+    preview_calls = []
+
+    def preview(settings, **kwargs):
+        preview_calls.append(kwargs)
+        return _plan(settings, (TrackSyncPlan(track.path, MatchOutcome.UNCHANGED, SyncLyricType.NONE),))
+
+    async def scenario():
+        app = _app(tmp_path, lambda settings: _snapshot(root, track), preview)
+        async with app.run_test(size=(120, 40)) as pilot:
+            screen = await _open_library(app, pilot)
+            summary = _text(app, "#library-summary")
+            assert "Fully covered 1" in summary
+            assert "Need attention 0" in summary
+            assert "Catalogue unmatched 1" in summary
+            details = _text(app, "#library-details")
+            assert "Catalogue match Unknown" in details
+            assert "External LRC   Present" in details
+            assert "Coverage       Fully covered" in details
+            assert "Attention      No" in details
+            assert "Automatic refresh requires a catalogue match" in details
+
+            await pilot.press("m")
+            await screen._preview_worker.wait(); await pilot.pause()
+            assert preview_calls == [{"protected_paths": (track.path,)}]
+            assert "up to date" in _text(app, "#library-status")
+
+    asyncio.run(scenario())
+
+
 def test_maintenance_preview_is_cancel_first_then_uses_shared_executor_with_progress(tmp_path):
     root = tmp_path / "music"
     track = _track(root, "Bandit.mp3", lyric=LibraryLyricStatus.NONE, lrc=LibraryLrcStatus.NONE)
@@ -541,7 +581,7 @@ def test_maintenance_preview_is_cancel_first_then_uses_shared_executor_with_prog
         app = _app(
             tmp_path,
             lambda settings: _snapshot(root, track),
-            lambda settings: plan,
+            lambda settings, **kwargs: plan,
             library_execution_provider=execute,
         )
         async with app.run_test() as pilot:

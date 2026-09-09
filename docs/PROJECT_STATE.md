@@ -5,7 +5,7 @@ Backend services remain stable. The `999` Textual interface supports
 explicit confirmed single- and multi-song Browse Add to queue actions and
 selected or whole-queue downloads. The interface now prioritizes the streamlined
 Browse → Add → Downloads → Download queue journey. The current working-tree
-checkpoint has 328 passing tests.
+checkpoint has 339 passing tests.
 
 ## Current Branch
 v2-redesign
@@ -31,6 +31,10 @@ v2-redesign
   read-only refresh/verification, non-mutating maintenance preview, confirmed
   shared-service execution, selected-song refresh, backup browsing/restore, and
   rmpc verification/setup.
+- Library lyric health is independent of catalogue identity: valid local
+  embedded lyrics plus a genuinely timestamped adjacent sidecar can be fully
+  covered even when the catalogue match is unknown. Catalogue-unmatched totals
+  remain visible separately and do not inflate lyric-attention totals.
 - Settings configuration provenance, XDG/application paths, sidecar external-lyrics behavior, rmpc integration status, and current capability limitations.
 - Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.
 - Local FLAC files are recursively discovered and matched using native title,

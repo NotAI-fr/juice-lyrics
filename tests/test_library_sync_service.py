@@ -264,6 +264,73 @@ def test_frontend_preview_can_scope_one_track_and_force_refresh(tmp_path):
     assert calls == [("Selected", True)]
 
 
+def test_frontend_preview_protects_locally_covered_unmatched_track(tmp_path):
+    path = tmp_path / "Bandit.mp3"
+    path.write_bytes(b"covered audio")
+    path.with_suffix(".lrc").write_text("[00:05.77]Oh-oh\n", encoding="utf-8")
+    deps, _, _, backup_root = _dependencies(tmp_path)
+    deps.searcher = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("covered track was searched")
+    )
+
+    plan = get_library_sync_preview(
+        Settings(music_dir=tmp_path),
+        rmpc_enabled=True,
+        state_file=tmp_path / "missing-state.json",
+        dependencies=deps,
+        protected_paths=(path,),
+    )
+
+    assert plan.unchanged_files == 1
+    assert plan.tracks[0].outcome is MatchOutcome.UNCHANGED
+    assert path.read_bytes() == b"covered audio"
+    assert not backup_root.exists()
+
+
+def test_explicit_refresh_of_unmatched_covered_track_preserves_existing_files(tmp_path):
+    path = tmp_path / "Bandit.mp3"
+    sidecar = path.with_suffix(".lrc")
+    path.write_bytes(b"covered audio")
+    sidecar.write_text("[00:05.77]Oh-oh\n", encoding="utf-8")
+    deps, _, saved, backup_root = _dependencies(tmp_path)
+
+    preview = get_library_sync_preview(
+        Settings(music_dir=tmp_path),
+        rmpc_enabled=True,
+        state_file=tmp_path / "missing-state.json",
+        dependencies=deps,
+        refresh=True,
+        selected_paths=(path,),
+    )
+    result = execute_library_sync_preview(preview, dependencies=deps)
+
+    assert preview.tracks[0].outcome is MatchOutcome.UNRESOLVED
+    assert result.updated_files == 0
+    assert path.read_bytes() == b"covered audio"
+    assert sidecar.read_text(encoding="utf-8") == "[00:05.77]Oh-oh\n"
+    assert not backup_root.exists()
+    assert saved
+
+
+def test_current_synced_state_requires_a_parseable_timed_sidecar(tmp_path):
+    path = tmp_path / "Track.mp3"
+    path.write_bytes(b"current")
+    path.with_suffix(".lrc").write_text("plain lyrics only\n", encoding="utf-8")
+    deps, state, _, _ = _dependencies(tmp_path, {"Track": _candidate()})
+    state["files"]["Track.mp3"] = {
+        "sha256": deps.hasher(path),
+        "lyric_type": "SYLT",
+        "lrc": str(path.with_suffix(".lrc")),
+    }
+    deps.verifier = lambda target: (True, "SYLT")
+    deps.lyric_parser = lambda raw: [("line", 1000)] if "[00:" in raw else []
+
+    plan = plan_library_sync(_options(tmp_path, rmpc_enabled=True), dependencies=deps)
+
+    assert plan.ready_files == 1
+    assert plan.tracks[0].outcome is MatchOutcome.MATCHED
+
+
 def test_reviewed_preview_executes_through_existing_sync_engine(tmp_path):
     path = tmp_path / "Track.mp3"
     path.write_bytes(b"original")

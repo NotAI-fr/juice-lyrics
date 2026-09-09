@@ -2,9 +2,12 @@ import json
 from pathlib import Path
 import sys
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from juice_lyrics.config.settings import Settings
+from juice_lyrics.library.media import AudioMetadata
 from juice_lyrics.services.library_status import (
     LibraryLrcStatus,
     LibraryLyricStatus,
@@ -195,7 +198,7 @@ def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypa
     assert snapshot.plain_count == 1
     assert snapshot.no_lyrics_count == 1
     assert snapshot.external_lrc_count == 1
-    assert snapshot.needs_attention_count == 2
+    assert snapshot.needs_attention_count == 1
     assert snapshot.tracks[0].match_status is LibraryMatchStatus.MATCHED
     assert snapshot.tracks[0].lyric_status is LibraryLyricStatus.SYNCED
     assert snapshot.tracks[0].lrc_status is LibraryLrcStatus.PRESENT
@@ -203,6 +206,106 @@ def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypa
     assert snapshot.tracks[1].state_status is LibraryStateStatus.CHANGED
     assert snapshot.tracks[2].match_status is LibraryMatchStatus.UNMATCHED
     assert snapshot.tracks[2].lyric_status is LibraryLyricStatus.NONE
+    assert snapshot.tracks[2].needs_attention is True
+
+
+@pytest.mark.parametrize(
+    ("suffix", "verification", "format_name", "lyric_status"),
+    [
+        (".mp3", "SYLT (61 synced lines)", "MP3", LibraryLyricStatus.SYNCED),
+        (".flac", "FLAC LYRICS (500 characters)", "FLAC", LibraryLyricStatus.PLAIN),
+        (".m4a", "M4A LYRICS (500 characters)", "M4A", LibraryLyricStatus.PLAIN),
+    ],
+)
+def test_unmatched_track_with_format_appropriate_lyrics_is_fully_covered(
+    tmp_path, suffix, verification, format_name, lyric_status
+):
+    track = tmp_path / f"Bandit{suffix}"
+    track.write_bytes(b"audio")
+    track.with_suffix(".lrc").write_text(
+        "[ar:Juice WRLD]\n[00:05.77] Oh-oh\n[00:10.45] Yeah\n",
+        encoding="utf-8",
+    )
+
+    snapshot = get_library_snapshot(
+        Settings(music_dir=tmp_path),
+        state_file=tmp_path / "missing-state.json",
+        verifier=lambda path: (True, verification),
+        duration_reader=lambda path: 189.32,
+        metadata_reader=lambda path: AudioMetadata(
+            "Bandit (with YoungBoy Never Broke Again)",
+            "Juice WRLD, YoungBoy Never Broke Again",
+            "Death Race For Love (Bonus Track Version)",
+            189.32,
+        ),
+    )
+
+    item = snapshot.tracks[0]
+    assert item.media_format == format_name
+    assert item.match_status is LibraryMatchStatus.UNMATCHED
+    assert item.lyric_status is lyric_status
+    assert item.lrc_status is LibraryLrcStatus.PRESENT
+    assert item.fully_covered is True
+    assert item.needs_attention is False
+    assert snapshot.fully_covered_count == 1
+    assert snapshot.needs_attention_count == 0
+
+
+def test_existing_untimed_sidecar_is_invalid_and_needs_attention(tmp_path):
+    track = tmp_path / "Bandit.flac"
+    track.write_bytes(b"audio")
+    track.with_suffix(".lrc").write_text(
+        "[ar:Juice WRLD]\nThese are only plain lyrics.\n",
+        encoding="utf-8",
+    )
+    snapshot = get_library_snapshot(
+        Settings(music_dir=tmp_path),
+        state_file=tmp_path / "missing-state.json",
+        verifier=lambda path: (True, "FLAC LYRICS (30 characters)"),
+        metadata_reader=lambda path: AudioMetadata("Bandit", "Juice WRLD", None, 189.32),
+    )
+
+    item = snapshot.tracks[0]
+    assert item.lrc_status is LibraryLrcStatus.INVALID
+    assert item.fully_covered is False
+    assert item.needs_attention is True
+    assert "no timestamped lyric lines" in (item.warning or "")
+
+
+def test_matched_track_with_expected_synced_lyrics_and_missing_sidecar_needs_attention(tmp_path):
+    track = tmp_path / "Bandit.flac"
+    track.write_bytes(b"audio")
+    state_file = tmp_path / "state.json"
+    state_file.write_text(
+        json.dumps(
+            {
+                "files": {
+                    "Bandit.flac": {
+                        "sha256": sha256_file(track),
+                        "song_id": 1,
+                        "api_name": "Bandit",
+                        "lyric_type": "FLAC_LYRICS_SYNCED",
+                        "lrc": str(track.with_suffix(".lrc")),
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = get_library_snapshot(
+        Settings(music_dir=tmp_path),
+        state_file=state_file,
+        verifier=lambda path: (True, "FLAC LYRICS (500 characters)"),
+        metadata_reader=lambda path: AudioMetadata("Bandit", "Juice WRLD", None, 189.32),
+    )
+
+    item = snapshot.tracks[0]
+    assert item.match_status is LibraryMatchStatus.MATCHED
+    assert item.lyric_status is LibraryLyricStatus.PLAIN
+    assert item.lrc_status is LibraryLrcStatus.MISSING
+    assert item.fully_covered is False
+    assert item.needs_attention is True
 
 
 def test_library_snapshot_uses_adjacent_sidecar_not_config_or_historical_state_path(tmp_path):

@@ -163,6 +163,61 @@ def test_flac_matching_reuses_normal_version_title_and_duration_scoring(tmp_path
     assert any(reason.startswith("duration match") for reason in reasons)
 
 
+def test_bandit_collaboration_credit_searches_base_title_and_matches_by_duration(tmp_path):
+    path = _make_flac(
+        tmp_path / "opaque.flac",
+        title="Bandit (with YoungBoy Never Broke Again)",
+        artist="Juice WRLD, YoungBoy Never Broke Again",
+        album="Death Race For Love (Bonus Track Version)",
+        duration=189.322562,
+    )
+    candidate = {
+        **_candidate(),
+        "name": "Bandit (feat. YoungBoy Never Broke Again)",
+        "credited_artists": "Juice WRLD",
+        "album": "Death Race For Love",
+        "length": "3:09",
+        "category": "released",
+    }
+
+    search_title = search_title_for(path)
+    chosen, score, reasons, _ = choose_candidate(
+        Settings(music_dir=tmp_path), path, [candidate], search_title
+    )
+
+    assert search_title == "Bandit"
+    assert chosen is candidate
+    assert score >= 70
+    assert any(reason.startswith("duration match") for reason in reasons)
+
+
+def test_real_flac_with_embedded_plain_and_timed_sidecar_is_healthy_without_state(tmp_path):
+    path = _make_flac(
+        tmp_path / "Bandit (with YoungBoy Never Broke Again).flac",
+        title="Bandit (with YoungBoy Never Broke Again)",
+        artist="Juice WRLD, YoungBoy Never Broke Again",
+        album="Death Race For Love (Bonus Track Version)",
+        duration=189.322562,
+    )
+    embed_lyrics(path, [], "Oh-oh\nYeah")
+    path.with_suffix(".lrc").write_text(
+        "[00:05.77]Oh-oh\n[00:10.45]Yeah\n",
+        encoding="utf-8",
+    )
+
+    snapshot = get_library_snapshot(
+        Settings(music_dir=tmp_path),
+        state_file=tmp_path / "missing-state.json",
+    )
+
+    track = snapshot.tracks[0]
+    assert track.match_status is LibraryMatchStatus.UNMATCHED
+    assert track.lyric_status is LibraryLyricStatus.PLAIN
+    assert track.lrc_status is LibraryLrcStatus.PRESENT
+    assert track.fully_covered is True
+    assert track.needs_attention is False
+
+
 def test_flac_plain_embedding_preserves_unrelated_metadata_and_verifies(tmp_path):
     path = _make_flac(tmp_path / "Rental.flac")
     before_samples = FLAC(path).info.total_samples

@@ -36,6 +36,17 @@ def strip_version(text: str) -> str:
     return re.sub(r"\s*(?:\(|\[)?v\d+(?:\.\d+)?(?:\)|\])?\s*$", "", text, flags=re.I).strip()
 
 
+def strip_feature_credit(text: str) -> str:
+    """Remove only collaboration credits that commonly impede catalogue search."""
+
+    return re.sub(
+        r"\s*[\[(]\s*(?:feat(?:uring)?\.?|ft\.?|with)\s+[^\])]+[\])]\s*",
+        " ",
+        text,
+        flags=re.I,
+    ).strip()
+
+
 def parse_length(value: str) -> float | None:
     if not value:
         return None
@@ -61,7 +72,7 @@ def local_duration(path: Path) -> float | None:
 
 def search_title_for(path: Path) -> str:
     raw_title = tagged_matching_title(path) if is_tagged_container(path) else path.stem
-    stripped = strip_version(raw_title)
+    stripped = strip_feature_credit(strip_version(raw_title))
     return CANONICAL_SEARCH.get(normalize(stripped), stripped)
 
 
