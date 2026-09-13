@@ -37,6 +37,13 @@ from ..services.download_queue import (
     project_download_queue,
 )
 from ..services.library_status import LibrarySnapshot, LibraryStatus, get_library_snapshot, get_library_status
+from ..services.library_identity import IdentityBackfillResult, backfill_catalogue_identities
+from ..services.identity_rebuild import (
+    IdentityRebuildPlan,
+    IdentityRebuildResult,
+    execute_catalogue_identity_rebuild,
+    plan_catalogue_identity_rebuild,
+)
 from ..services.library_sync import (
     LibrarySyncPlan,
     LibrarySyncResult,
@@ -62,6 +69,9 @@ CatalogueSearchProvider = Callable[..., CataloguePage]
 CatalogueDetailsProvider = Callable[..., SongDetails | None]
 CatalogueFiltersProvider = Callable[..., CatalogueFilterMetadata]
 LibrarySnapshotProvider = Callable[[Any], LibrarySnapshot]
+LibraryIdentityProvider = Callable[..., IdentityBackfillResult]
+IdentityRebuildPlanProvider = Callable[..., IdentityRebuildPlan]
+IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
 LibraryPreviewProvider = Callable[[Any], LibrarySyncPlan]
 LibraryExecutionProvider = Callable[..., LibrarySyncResult]
 SettingsSnapshotProvider = Callable[[Any], SettingsSnapshot]
@@ -805,6 +815,9 @@ class JuiceLyricsApp(App[None]):
         download_all_plan_provider: Callable[..., Any] = plan_download_all,
         download_all_execution_provider: Callable[..., Any] = execute_download_all,
         library_snapshot_provider: LibrarySnapshotProvider = get_library_snapshot,
+        library_identity_provider: LibraryIdentityProvider = backfill_catalogue_identities,
+        identity_rebuild_plan_provider: IdentityRebuildPlanProvider = plan_catalogue_identity_rebuild,
+        identity_rebuild_execution_provider: IdentityRebuildExecutionProvider = execute_catalogue_identity_rebuild,
         library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
         library_execution_provider: LibraryExecutionProvider = execute_library_sync_preview,
         backup_provider: Callable[[], tuple[BackupRecord, ...]] = list_backups,
@@ -840,6 +853,9 @@ class JuiceLyricsApp(App[None]):
         self.download_all_plan_provider = download_all_plan_provider
         self.download_all_execution_provider = download_all_execution_provider
         self.library_snapshot_provider = library_snapshot_provider
+        self.library_identity_provider = library_identity_provider
+        self.identity_rebuild_plan_provider = identity_rebuild_plan_provider
+        self.identity_rebuild_execution_provider = identity_rebuild_execution_provider
         self.library_preview_provider = library_preview_provider
         self.library_execution_provider = library_execution_provider
         self.backup_provider = backup_provider
@@ -871,6 +887,9 @@ class JuiceLyricsApp(App[None]):
             LibraryScreen(
                 self.settings,
                 snapshot_provider=self.library_snapshot_provider,
+                identity_provider=self.library_identity_provider,
+                identity_rebuild_plan_provider=self.identity_rebuild_plan_provider,
+                identity_rebuild_execution_provider=self.identity_rebuild_execution_provider,
                 preview_provider=self.library_preview_provider,
                 execution_provider=self.library_execution_provider,
                 backup_provider=self.backup_provider,
@@ -954,8 +973,9 @@ class JuiceLyricsApp(App[None]):
         elif section == "library":
             message = (
                 "Main: r Refresh · m Maintain lyrics · v Verify · b Backups · p Player integration\n"
+                "Advanced: i Rebuild catalogue matches\n"
                 "Tracks: ↑/↓ or j/k select · / search · Enter details · l refresh selected lyrics. "
-                "Maintenance, restore, and player setup always show a cancel-first confirmation."
+                "Maintenance, identity rebuild, restore, and player setup always show a cancel-first confirmation."
             )
         elif section == "settings":
             message = (

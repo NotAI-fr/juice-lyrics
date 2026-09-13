@@ -166,6 +166,29 @@ operation.
 
 The backend can remain technical while the user interface becomes friendly.
 
+## Catalogue identity and state cleanup
+
+Catalogue identity is stored in the existing state file but is not a prerequisite
+for recognizing healthy local lyrics. Library Refresh may backfill a confident
+identity through the normal matcher; it must not manufacture lyric state or
+change media. Clearly stale external state records are ignored during normal
+lookup and deleted only by an explicit preview-first cleanup that makes a state
+backup. Legitimate historical relative keys are not speculatively deduplicated.
+
+A full catalogue-identity rebuild is an explicit recovery operation, not a
+library reset. It removes/replaces only `song_id` and `api_name` for current
+tracks after rerunning the conservative matcher. Preview is read-only; apply
+builds the result in memory, preserves isolated-failure identities, creates a
+complete state backup, and performs one atomic state write. Stale and
+non-current historical records are not deleted by the rebuild.
+
+Duration remains a primary matching safeguard. The configured tolerance is the
+normal trusted range. A small catalogue-duration discrepancy is eligible only
+for a normal released candidate with exact base title, no extra version or
+named variant, and exact or recognized-edition-compatible album/path evidence.
+The grace is bounded to two seconds beyond configured tolerance, five seconds
+absolute, and two percent of local duration, and carries a score penalty.
+
 ---
 
 # Backend Stability

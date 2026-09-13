@@ -362,6 +362,47 @@ def test_library_status_ignores_unrelated_centralized_lrc(tmp_path):
     assert not track.with_suffix(".lrc").exists()
 
 
+def test_unambiguous_historical_basename_identity_remains_readable(tmp_path):
+    library = tmp_path / "music"
+    track = library / "Unreleased" / "24 Hours.mp3"
+    track.parent.mkdir(parents=True)
+    track.write_bytes(b"audio")
+    state_file = tmp_path / "state.json"
+    state_file.write_text(
+        json.dumps(
+            {
+                "files": {
+                    "24 Hours.mp3": {
+                        "sha256": sha256_file(track),
+                        "song_id": 94760,
+                        "api_name": "24 Hours",
+                        "lyric_type": "USLT",
+                        "lrc": None,
+                    },
+                    "/tmp/pytest-of-someone/pytest-2/test_case/Ghost.flac": {
+                        "song_id": 1,
+                        "api_name": "Ghost",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = get_library_snapshot(
+        Settings(music_dir=library),
+        state_file=state_file,
+        verifier=lambda path: (True, "USLT (ordinary lyrics)"),
+        duration_reader=lambda path: 180.0,
+    )
+
+    item = snapshot.tracks[0]
+    assert item.reference == "Unreleased/24 Hours.mp3"
+    assert item.match_status is LibraryMatchStatus.MATCHED
+    assert item.matched_title == "24 Hours"
+    assert snapshot.unmatched_count == 0
+
+
 def test_track_snapshot_handles_missing_library_and_malformed_state(tmp_path):
     missing = tmp_path / "missing"
     snapshot = get_library_snapshot(Settings(music_dir=missing), state_file=tmp_path / "state.json")

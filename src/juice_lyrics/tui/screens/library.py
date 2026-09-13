@@ -26,6 +26,12 @@ from ...services.library_status import (
     LibraryStateStatus,
     LibraryTrack,
 )
+from ...services.library_identity import IdentityBackfillResult
+from ...services.identity_rebuild import (
+    IdentityRebuildPlan,
+    IdentityRebuildProgress,
+    IdentityRebuildResult,
+)
 from ...services.library_sync import LibrarySyncPlan, MatchOutcome, SyncLyricType
 from ...services.library_sync import LibrarySyncResult, SyncEvent, SyncEventKind
 from ...backup.manager import BackupRecord
@@ -33,6 +39,9 @@ from ...services.settings_snapshot import IntegrationStatus, SettingsSnapshot
 from .base import HubScreen
 
 SnapshotProvider = Callable[[Any], LibrarySnapshot]
+IdentityProvider = Callable[..., IdentityBackfillResult]
+IdentityRebuildPlanProvider = Callable[..., IdentityRebuildPlan]
+IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
 PreviewProvider = Callable[[Any], LibrarySyncPlan]
 ExecutionProvider = Callable[..., LibrarySyncResult]
 BackupProvider = Callable[[], tuple[BackupRecord, ...]]
@@ -111,6 +120,12 @@ class SnapshotOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class IdentityOutcome:
+    result: IdentityBackfillResult | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class PreviewOutcome:
     plan: LibrarySyncPlan | None = None
     error: str | None = None
@@ -125,6 +140,18 @@ class ExecutionOutcome:
 @dataclass(frozen=True, slots=True)
 class BackupOutcome:
     records: tuple[BackupRecord, ...] = ()
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IdentityRebuildPlanOutcome:
+    plan: IdentityRebuildPlan | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IdentityRebuildOutcome:
+    result: IdentityRebuildResult | None = None
     error: str | None = None
 
 
@@ -212,6 +239,79 @@ class MaintenanceDialog(ModalScreen[LibrarySyncPlan | None]):
 
     def _activate(self) -> None:
         if self._choice == "cancel" or not self.plan.ready_files:
+            self.dismiss(None)
+        elif not self._confirmed:
+            self._confirmed = True
+            self.dismiss(self.plan)
+
+
+class IdentityRebuildDialog(ModalScreen[IdentityRebuildPlan | None]):
+    """Cancel-first confirmation for rebuilding catalogue identity state."""
+
+    def __init__(self, plan: IdentityRebuildPlan) -> None:
+        super().__init__()
+        self.plan = plan
+        self._choice = "cancel"
+        self._confirmed = False
+
+    def compose(self) -> Iterable[Widget]:
+        body = (
+            "This will re-identify your current library using the latest matcher.\n"
+            "Audio and lyrics will not be modified.\n\n"
+            f"Current tracks       {self.plan.current_tracks}\n"
+            f"Existing identities {self.plan.existing_identities}\n"
+            f"Currently unknown   {self.plan.currently_unknown}\n"
+            f"Stale records ignored {len(self.plan.stale_keys)}"
+        )
+        with Container(id="library-dialog"):
+            yield Static("Rebuild catalogue matches?", id="library-dialog-title")
+            yield Static(body, id="library-dialog-body", markup=False)
+            with Grid(id="library-dialog-actions"):
+                yield LibraryDialogAction("Rebuild matches", "confirm", id="library-dialog-confirm")
+                yield LibraryDialogAction("Cancel", "cancel", id="library-dialog-cancel")
+
+    def on_mount(self) -> None:
+        self._render_choice()
+        self.call_after_refresh(
+            self.query_one("#library-dialog-cancel", LibraryDialogAction).focus
+        )
+
+    def _render_choice(self) -> None:
+        self.query_one("#library-dialog-confirm", Static).update(
+            "[Rebuild matches]" if self._choice == "confirm" else "Rebuild matches"
+        )
+        self.query_one("#library-dialog-cancel", Static).update(
+            "[Cancel]" if self._choice == "cancel" else "Cancel"
+        )
+
+    def on_library_dialog_action_activated(self, event: LibraryDialogAction.Activated) -> None:
+        if not self._confirmed:
+            self._choice = event.action
+            self._render_choice()
+            self._activate()
+
+    def on_key(self, event: Key) -> None:
+        if self._confirmed:
+            event.prevent_default(); event.stop(); return
+        if event.key in {"escape", "n"}:
+            self.dismiss(None)
+        elif event.key == "y":
+            self._choice = "confirm"; self._render_choice(); self._activate()
+        elif event.key in {"left", "right", "tab", "shift+tab"}:
+            self._choice = "confirm" if self._choice == "cancel" else "cancel"
+            self._render_choice()
+            target = "#library-dialog-confirm" if self._choice == "confirm" else "#library-dialog-cancel"
+            self.query_one(target, LibraryDialogAction).focus()
+        elif event.key == "enter":
+            self._activate()
+        elif event.key in {"1", "2", "3", "4", "5"}:
+            pass
+        else:
+            return
+        event.prevent_default(); event.stop()
+
+    def _activate(self) -> None:
+        if self._choice == "cancel":
             self.dismiss(None)
         elif not self._confirmed:
             self._confirmed = True
@@ -368,6 +468,9 @@ class LibraryScreen(HubScreen):
         settings: Any,
         *,
         snapshot_provider: SnapshotProvider,
+        identity_provider: IdentityProvider,
+        identity_rebuild_plan_provider: IdentityRebuildPlanProvider,
+        identity_rebuild_execution_provider: IdentityRebuildExecutionProvider,
         preview_provider: PreviewProvider,
         execution_provider: ExecutionProvider,
         backup_provider: BackupProvider,
@@ -378,6 +481,9 @@ class LibraryScreen(HubScreen):
         super().__init__("library", "Library")
         self.settings = settings
         self._snapshot_provider = snapshot_provider
+        self._identity_provider = identity_provider
+        self._identity_rebuild_plan_provider = identity_rebuild_plan_provider
+        self._identity_rebuild_execution_provider = identity_rebuild_execution_provider
         self._preview_provider = preview_provider
         self._execution_provider = execution_provider
         self._backup_provider = backup_provider
@@ -390,8 +496,12 @@ class LibraryScreen(HubScreen):
         self.preview: LibrarySyncPlan | None = None
         self._details_mode = False
         self._snapshot_worker: Worker[SnapshotOutcome] | None = None
+        self._identity_worker: Worker[IdentityOutcome] | None = None
+        self._identity_rebuild_plan_worker: Worker[IdentityRebuildPlanOutcome] | None = None
+        self._identity_rebuild_worker: Worker[IdentityRebuildOutcome] | None = None
         self._preview_worker: Worker[PreviewOutcome] | None = None
         self._pending_snapshot: SnapshotOutcome | None = None
+        self._pending_identity: IdentityOutcome | None = None
         self._pending_preview: PreviewOutcome | None = None
         self._preview_action: str | None = None
         self._execution_worker: Worker[ExecutionOutcome] | None = None
@@ -403,10 +513,13 @@ class LibraryScreen(HubScreen):
         self._maintenance_completed = 0
         self._maintenance_total = 0
         self._completion_message: tuple[str, bool] | None = None
+        self._identify_requested = False
+        self._identity_rebuild_completed = 0
 
     def compose_content(self) -> Iterable[Widget]:
         yield Static(
-            "0 songs · Fully covered 0 · Plain only 0 · Missing 0 · Unmatched 0\nFormats · MP3 0 · FLAC 0 · M4A 0",
+            "0 songs · Fully covered 0 · Plain only 0 · Missing 0 · Need attention 0\n"
+            "Catalogue unmatched 0 · MP3 0 · FLAC 0 · M4A 0",
             id="library-summary",
             markup=False,
         )
@@ -438,19 +551,23 @@ class LibraryScreen(HubScreen):
             outcome, self._pending_snapshot = self._pending_snapshot, None
             self._apply_snapshot(outcome)
         elif self.snapshot is None and self._snapshot_worker is None:
-            self.refresh_snapshot()
+            self.refresh_snapshot(identify=False)
         else:
             self.call_after_refresh(self.set_focus, None)
         if self._pending_preview is not None:
             outcome, self._pending_preview = self._pending_preview, None
             self._apply_preview(outcome)
+        if self._pending_identity is not None:
+            outcome, self._pending_identity = self._pending_identity, None
+            self._apply_identity(outcome)
 
-    def refresh_snapshot(self) -> None:
+    def refresh_snapshot(self, *, identify: bool = True) -> None:
         if self.snapshot is None:
             self.query_one("#library-tracks", Static).update("Loading tracks…")
             self.query_one("#library-details", Static).update("Waiting for library data…")
         self.preview = None
         self.query_one("#library-preview", Static).update("Choose Maintain lyrics to preview changes safely.")
+        self._identify_requested = identify and self._snapshot_action != "verify"
         self._set_status("Verifying library…" if self._snapshot_action == "verify" else "Scanning library…")
         self._snapshot_worker = self._load_snapshot()
 
@@ -458,8 +575,12 @@ class LibraryScreen(HubScreen):
         self.snapshot = None
         self.preview = None
         self._snapshot_worker = None
+        self._identity_worker = None
+        self._identity_rebuild_plan_worker = None
+        self._identity_rebuild_worker = None
         self._preview_worker = None
         self._pending_snapshot = None
+        self._pending_identity = None
         self._pending_preview = None
 
     @work(thread=True, exclusive=True, group="library-snapshot", exit_on_error=False)
@@ -519,6 +640,33 @@ class LibraryScreen(HubScreen):
                     self._apply_snapshot(outcome)
                 else:
                     self._pending_snapshot = outcome
+        elif event.worker is self._identity_worker:
+            if event.state is WorkerState.SUCCESS:
+                outcome = event.worker.result
+                if self._can_render():
+                    self._apply_identity(outcome)
+                else:
+                    self._pending_identity = outcome
+        elif event.worker is self._identity_rebuild_plan_worker:
+            if event.state is WorkerState.SUCCESS:
+                self._apply_identity_rebuild_plan(event.worker.result)
+            elif event.state is WorkerState.ERROR:
+                self._apply_identity_rebuild_plan(
+                    IdentityRebuildPlanOutcome(error="Catalogue rebuild preview stopped unexpectedly")
+                )
+        elif event.worker is self._identity_rebuild_worker:
+            if event.state is WorkerState.SUCCESS:
+                self._apply_identity_rebuild(event.worker.result)
+            elif event.state is WorkerState.ERROR:
+                self._apply_identity_rebuild(
+                    IdentityRebuildOutcome(error="Catalogue rebuild stopped unexpectedly")
+                )
+            elif event.state is WorkerState.ERROR:
+                outcome = IdentityOutcome(error="Catalogue identification stopped unexpectedly")
+                if self._can_render():
+                    self._apply_identity(outcome)
+                else:
+                    self._pending_identity = outcome
         elif event.worker is self._preview_worker:
             if event.state is WorkerState.SUCCESS:
                 outcome = event.worker.result
@@ -604,8 +752,8 @@ class LibraryScreen(HubScreen):
             healthy = outcome.snapshot.total_track_count - outcome.snapshot.needs_attention_count
             self._set_status(
                 f"Verification complete · {healthy} healthy · "
-                f"{outcome.snapshot.needs_attention_count} need attention "
-                f"(including {outcome.snapshot.unmatched_count} unmatched)"
+                f"{outcome.snapshot.needs_attention_count} need attention · "
+                f"{outcome.snapshot.unmatched_count} catalogue unknown"
             )
             if outcome.snapshot.needs_attention_count:
                 self.query_one("#library-filter", Select).value = LibraryFilter.ATTENTION.value
@@ -613,6 +761,61 @@ class LibraryScreen(HubScreen):
             self._set_status(
                 f"Library refreshed · {outcome.snapshot.total_track_count} "
                 f"song{'s' if outcome.snapshot.total_track_count != 1 else ''} found"
+            )
+        identify = self._identify_requested
+        self._identify_requested = False
+        if identify and outcome.snapshot.unmatched_count:
+            unknown = tuple(
+                track
+                for track in outcome.snapshot.tracks
+                if track.match_status is LibraryMatchStatus.UNMATCHED
+            )
+            self._set_status(
+                f"Library refreshed · {outcome.snapshot.total_track_count} "
+                f"song{'s' if outcome.snapshot.total_track_count != 1 else ''} found · "
+                f"Identifying {len(unknown)} catalogue entr{'y' if len(unknown) == 1 else 'ies'}…"
+            )
+            self._identity_worker = self._identify_unknown(unknown)
+
+    @work(thread=True, exclusive=True, group="library-identity", exit_on_error=False)
+    def _identify_unknown(self, tracks: tuple[LibraryTrack, ...]) -> IdentityOutcome:
+        try:
+            return IdentityOutcome(self._identity_provider(self.settings, tracks))
+        except Exception as exc:
+            return IdentityOutcome(error=str(exc) or type(exc).__name__)
+
+    def _apply_identity(self, outcome: IdentityOutcome) -> None:
+        self._identity_worker = None
+        snapshot = self.snapshot
+        if outcome.error or outcome.result is None:
+            self._set_status(
+                "Catalogue identification unavailable · Local library health is still available",
+                error=True,
+            )
+            return
+        result = outcome.result
+        if result.identified:
+            message = (
+                f"Catalogue identification complete · {result.identified} "
+                f"song{'s' if result.identified != 1 else ''} identified"
+            )
+            remaining = result.unknown + result.failed
+            if remaining:
+                message += f" · {remaining} remain unknown"
+            self._completion_message = (message, bool(result.failed))
+            self.refresh_snapshot(identify=False)
+            return
+        count = snapshot.total_track_count if snapshot is not None else result.inspected
+        if result.failed:
+            self._set_status(
+                f"Library refreshed · {count} song{'s' if count != 1 else ''} found · "
+                "Catalogue identification unavailable",
+                error=True,
+            )
+        else:
+            self._set_status(
+                f"Library refreshed · {count} song{'s' if count != 1 else ''} found · "
+                f"{result.unknown} catalogue match{'es' if result.unknown != 1 else ''} remain unknown"
             )
 
     def _apply_preview(self, outcome: PreviewOutcome) -> None:
@@ -769,6 +972,8 @@ class LibraryScreen(HubScreen):
             self._open_backups()
         elif event.key == "p":
             self._check_rmpc()
+        elif event.key == "i":
+            self._preview_identity_rebuild()
         elif event.key == "l" and self.selected_track is not None:
             self.generate_preview(action="selected", selected_path=self.selected_track.path)
         elif event.key == "escape" and self._details_mode:
@@ -836,6 +1041,87 @@ class LibraryScreen(HubScreen):
         self._set_status(f"Maintaining library… 0 / {plan.ready_files} songs")
         self._execution_worker = self._execute_maintenance(plan)
 
+    def _preview_identity_rebuild(self) -> None:
+        if self._identity_rebuild_plan_worker is not None or self._identity_rebuild_worker is not None:
+            return
+        self._set_status("Preparing catalogue rebuild preview…")
+        self._identity_rebuild_plan_worker = self._load_identity_rebuild_plan()
+
+    @work(thread=True, exclusive=True, group="library-identity-rebuild-plan", exit_on_error=False)
+    def _load_identity_rebuild_plan(self) -> IdentityRebuildPlanOutcome:
+        try:
+            return IdentityRebuildPlanOutcome(self._identity_rebuild_plan_provider(self.settings))
+        except Exception as exc:
+            return IdentityRebuildPlanOutcome(error=str(exc) or type(exc).__name__)
+
+    def _apply_identity_rebuild_plan(self, outcome: IdentityRebuildPlanOutcome) -> None:
+        self._identity_rebuild_plan_worker = None
+        if outcome.error or outcome.plan is None:
+            self._set_status(
+                f"Catalogue rebuild preview unavailable: {outcome.error or 'Unknown error'}",
+                error=True,
+            )
+            return
+        self.app.push_screen(IdentityRebuildDialog(outcome.plan), self._identity_rebuild_confirmed)
+
+    def _identity_rebuild_confirmed(self, plan: IdentityRebuildPlan | None) -> None:
+        if plan is None:
+            self._set_status("Catalogue rebuild cancelled. No state was changed.")
+            return
+        if self._identity_rebuild_worker is not None:
+            return
+        self._identity_rebuild_completed = 0
+        self._set_status(f"Rebuilding catalogue matches… 0 / {plan.current_tracks}")
+        self._identity_rebuild_worker = self._execute_identity_rebuild(plan)
+
+    @work(thread=True, exclusive=True, group="library-identity-rebuild", exit_on_error=False)
+    def _execute_identity_rebuild(self, plan: IdentityRebuildPlan) -> IdentityRebuildOutcome:
+        try:
+            return IdentityRebuildOutcome(
+                self._identity_rebuild_execution_provider(
+                    plan,
+                    progress=self._identity_rebuild_progress,
+                )
+            )
+        except Exception as exc:
+            return IdentityRebuildOutcome(error=str(exc) or type(exc).__name__)
+
+    def _identity_rebuild_progress(self, event: IdentityRebuildProgress) -> None:
+        self._identity_rebuild_completed = event.completed
+        try:
+            self.app.call_from_thread(
+                self._set_status,
+                f"Rebuilding catalogue matches… {event.completed} / {event.total} · {event.path.stem}",
+            )
+        except RuntimeError:
+            pass
+
+    def _apply_identity_rebuild(self, outcome: IdentityRebuildOutcome) -> None:
+        self._identity_rebuild_worker = None
+        if outcome.error or outcome.result is None:
+            self._set_status(
+                f"Catalogue rebuild failed safely: {outcome.error or 'Unknown error'}",
+                error=True,
+            )
+            return
+        result = outcome.result
+        if result.aborted:
+            self._set_status(
+                f"Catalogue rebuild aborted safely · {result.abort_reason}",
+                error=True,
+            )
+            return
+        message = (
+            f"Catalogue rebuild complete · {result.matched} matched · "
+            f"{result.unknown} unknown · {result.changed_identities} changed"
+        )
+        if result.failed_preserved:
+            message += f" · {result.failed_preserved} preserved after errors"
+        self._completion_message = (message, bool(result.failed_preserved))
+        self.snapshot = None
+        self._snapshot_action = "scan"
+        self.refresh_snapshot(identify=False)
+
     @work(thread=True, exclusive=True, group="library-maintenance", exit_on_error=False)
     def _execute_maintenance(self, plan: LibrarySyncPlan) -> ExecutionOutcome:
         try:
@@ -873,7 +1159,7 @@ class LibraryScreen(HubScreen):
         self.snapshot = None
         self.preview = None
         self._snapshot_action = "scan"
-        self.refresh_snapshot()
+        self.refresh_snapshot(identify=False)
 
     def _open_backups(self) -> None:
         if self._backup_worker is None:
@@ -924,7 +1210,7 @@ class LibraryScreen(HubScreen):
         )
         self.snapshot = None
         self._snapshot_action = "scan"
-        self.refresh_snapshot()
+        self.refresh_snapshot(identify=False)
 
     def _check_rmpc(self) -> None:
         if self._rmpc_worker is None:

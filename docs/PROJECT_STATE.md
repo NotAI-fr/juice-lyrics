@@ -5,7 +5,7 @@ Backend services remain stable. The `999` Textual interface supports
 explicit confirmed single- and multi-song Browse Add to queue actions and
 selected or whole-queue downloads. The interface now prioritizes the streamlined
 Browse → Add → Downloads → Download queue journey. The current working-tree
-checkpoint has 339 passing tests.
+checkpoint has 382 passing tests.
 
 ## Current Branch
 v2-redesign
@@ -35,6 +35,16 @@ v2-redesign
   embedded lyrics plus a genuinely timestamped adjacent sidecar can be fully
   covered even when the catalogue match is unknown. Catalogue-unmatched totals
   remain visible separately and do not inflate lyric-attention totals.
+- Library Refresh now backfills confident catalogue identities for newly
+  discovered MP3, FLAC, and M4A files through the shared conservative matcher,
+  without modifying audio or lyrics; offline failure leaves local health usable.
+- `999 state clean` previews clearly stale external records, while explicit
+  `--yes` creates a timestamped state safety copy and atomically prunes only the
+  reviewed records. Valid relative history and ambiguous duplicates are kept.
+- Catalogue identities can be rebuilt for all current tracks through an
+  explicit cancel-first Library action or `999 state rebuild-identities`.
+  Rebuilds preserve lyric state, audit changed IDs, back up state, and commit
+  atomically without touching media.
 - Settings configuration provenance, XDG/application paths, sidecar external-lyrics behavior, rmpc integration status, and current capability limitations.
 - Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.
 - Local FLAC files are recursively discovered and matched using native title,

@@ -49,6 +49,17 @@ Open `999`, choose **Library**, and use:
 * **Backups** to inspect valid backups and restore one with confirmation;
 * **Player** to check rmpc and explicitly configure its sidecar indexing.
 
+Press `?` in Library to see the infrequent **Rebuild catalogue matches** action.
+It previews current tracks and existing identities, then uses a cancel-first
+confirmation. The rebuild changes application identity state only; it does not
+modify audio or lyrics.
+
+Refresh displays local lyric health immediately, then checks unknown tracks
+against the catalogue in the background. Only confident identities are saved.
+Audio, embedded lyrics, sidecars, audio backups, and rmpc configuration are not
+changed. If the catalogue is unavailable, local health remains usable and the
+track stays **Unknown**.
+
 Select a song and press `l` to refresh lyrics for only that song. The CLI
 equivalent, `999 sync`, remains useful for scripting and automation.
 
@@ -71,6 +82,47 @@ Use this when you simply want to know whether the library is up to date.
 `999 scan` is the advanced catalogue-matching diagnostic. Its **Catalogue
 uncertain** count means identity could not be established safely; it does not by
 itself mean that local lyrics are missing or broken.
+
+## Clean clearly stale state records
+
+Preview first:
+
+```bash
+999 state clean
+```
+
+If the listed records are genuinely obsolete, apply the cleanup:
+
+```bash
+999 state clean --yes
+```
+
+The apply command writes a timestamped `state.json.pre-clean-...bak` safety
+copy before an atomic state update. It removes no audio or LRC files. Ordinary
+missing relative entries are retained because they may describe music moved
+within the configured library.
+
+## Rebuild catalogue matches
+
+If older persisted matches were created by an outdated matcher, preview a full
+current-library rebuild:
+
+```bash
+999 state rebuild-identities
+```
+
+Apply it only after reviewing the counts:
+
+```bash
+999 state rebuild-identities --yes --details
+```
+
+Use `--refresh` as well when cached catalogue search responses must be fetched
+again. The rebuild reconsiders MP3, FLAC, and M4A files, preserves all lyric and
+other state fields, ignores stale external records, makes a complete state
+backup, and commits the result atomically. Ambiguous tracks become Unknown.
+An individual API failure preserves that track's old identity; a catalogue-wide
+failure aborts without changing state.
 
 ## Find songs in the API catalogue
 

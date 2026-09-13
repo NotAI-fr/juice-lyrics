@@ -17,7 +17,7 @@ from ..library.scanner import find_mp3s
 from ..lyrics.engine import embed_lyrics, parse_synced_lyrics, verify_file, write_lrc
 from ..lyrics.sidecar import sidecar_lrc_path
 from ..rmpc.integration import notify_rmpc_index, patch_rmpc_config
-from ..state import load_state, save_state, sha256_file
+from ..state import load_state, resolve_state_entry, save_state, sha256_file
 from ..backup.manager import now_iso
 
 
@@ -233,8 +233,16 @@ def _state_is_current(
     path: Path,
     options: LibrarySyncOptions,
     dependencies: LibrarySyncDependencies,
+    library_relative_paths: tuple[Path, ...] = (),
 ) -> bool:
-    entry = state.get("files", {}).get(str(path.relative_to(options.music_dir)))
+    state_files = state.get("files", {})
+    if not isinstance(state_files, Mapping):
+        return False
+    _, entry = resolve_state_entry(
+        state_files,
+        path.relative_to(options.music_dir),
+        library_relative_paths,
+    )
     if not isinstance(entry, Mapping):
         return False
     try:
@@ -274,6 +282,7 @@ def plan_library_sync(
     state = _read_state(options.state_file) if options.dry_run else dependencies.state_loader()
     tracks: list[TrackSyncPlan] = []
     protected = {path.resolve() for path in options.protected_paths}
+    relative_paths = tuple(path.relative_to(options.music_dir) for path in files)
     _emit(progress, SyncEventKind.SCAN_STARTED, total=len(files))
     for index, path in enumerate(files, start=1):
         if path.resolve() in protected:
@@ -287,7 +296,13 @@ def plan_library_sync(
                 message="locally covered",
             )
             continue
-        if not options.refresh and _state_is_current(state, path, options, dependencies):
+        if not options.refresh and _state_is_current(
+            state,
+            path,
+            options,
+            dependencies,
+            relative_paths,
+        ):
             _emit(
                 progress,
                 SyncEventKind.TRACK_INSPECTED,

@@ -53,7 +53,7 @@ Milestone reached:
 
 The current development branch is `v2-redesign` in
 `/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
-339 passing tests.
+382 passing tests.
 
 Completed and integrated:
 
@@ -89,6 +89,8 @@ eligible queued song, a Library maintenance centre with local track browsing,
 filters, details, read-only refresh/verification, confirmed lyric maintenance,
 backup/restore, and rmpc checks, and a read-only
 Settings screen with effective configuration, paths, provenance, and rmpc state.
+Library Help also exposes a cancel-first, state-only catalogue identity rebuild
+for rerunning the latest matcher across current MP3, FLAC, and M4A files.
 
 All five primary TUI sections are functional. Browse supports confirmed single
 and batch queue additions. Downloads supports confirmed Download selected,

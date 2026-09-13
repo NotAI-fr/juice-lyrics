@@ -43,6 +43,9 @@ a cancel-first confirmation before changing audio metadata or sidecars.
 Library lyric coverage is determined from the local audio and a genuinely
 timestamped adjacent `.lrc`; catalogue matching is shown separately because it
 is needed for automatic refresh, not for recognizing already healthy lyrics.
+Library **Refresh** shows local health first, then identifies newly discovered
+tracks in the background and saves only confident catalogue identities. It
+does not rewrite audio, lyrics, backups, or rmpc configuration.
 
 The CLI remains available for scripting and automation. `999 sync` remembers
 files it has already processed, so unchanged verified files are skipped.
@@ -122,6 +125,8 @@ Before major changes, read `PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, and `docs/AR
 | `rmpc setup/sync/verify` | Scriptable and advanced rmpc operations; basic check/setup is also in Library |
 | `config` | Manage persistent configuration |
 | `cache clear` | Clear cached API responses |
+| `state clean` | Preview clearly stale external state records; `--yes` backs up state before pruning |
+| `state rebuild-identities` | Preview rematching current library identities; `--yes` backs up state and applies |
 
 ## Safety
 
@@ -141,6 +146,19 @@ replaced. For FLAC, the standard `LYRICS` field is updated while unrelated
 Vorbis comments are preserved. For M4A, standard `©lyr` is updated while
 unrelated MP4 atoms are preserved.
 
+State cleanup is intentionally explicit. `999 state clean` is preview-only;
+`999 state clean --yes` first copies `state.json` beside itself with a
+`pre-clean-...bak` suffix, then atomically removes only clearly stale external
+records. It never deletes audio or LRC files.
+
+Catalogue identity rebuilding is also preview-first. Use
+`999 state rebuild-identities` to inspect its scope, then add `--yes` to rerun
+the current matcher for every current library file. The operation changes only
+`song_id` and `api_name`, preserves lyric state and unrelated records, and
+creates a complete `state.json.pre-identity-rebuild-...bak` copy before one
+atomic state write. `--refresh` bypasses otherwise-valid catalogue search cache
+entries, and `--details` prints every changed mapping.
+
 ## Matching
 
 The matcher intentionally uses several signals rather than trusting a title alone:
@@ -151,9 +169,17 @@ The matcher intentionally uses several signals rather than trusting a title alon
 - title/original key
 - known Juice WRLD aliases
 - local audio duration vs API duration
-- category preference
+- candidate-only version/variant penalties
+- small released-category evidence
+- compatible local album/API path evidence
 
 This prevents common version mix-ups such as selecting `Starstruck (v1)` for `Starstruck (v2)`.
+Known durations normally use the configured three-second tolerance. A released,
+unversioned, unvaried candidate with exact base-title and compatible album/path
+evidence may use a tightly bounded catalogue-metadata grace: at most two
+additional seconds, five seconds total, and two percent of the local duration.
+Grace receives reduced negative evidence rather than a normal duration-match
+bonus; larger or weakly corroborated differences remain ineligible.
 
 ## rmpc
 

@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
-from threading import Event
+from threading import Event, get_ident
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -19,6 +19,11 @@ from juice_lyrics.services import (
     LibraryStateStatus,
     LibraryStatus,
     LibraryTrack,
+    IdentityBackfillResult,
+    IdentityChange,
+    IdentityRebuildPlan,
+    IdentityRebuildProgress,
+    IdentityRebuildResult,
     QueueSnapshot,
 )
 from juice_lyrics.services.library_sync import (
@@ -98,6 +103,12 @@ def _app(tmp_path: Path, snapshot_provider, preview_provider=None, **providers) 
         queue_snapshot_provider=lambda: QueueSnapshot((), 0, 0, 0, 0, 0),
         catalogue_filters_provider=lambda *args, **kwargs: CatalogueFilterMetadata((), ()),
         library_snapshot_provider=snapshot_provider,
+        library_identity_provider=providers.pop(
+            "library_identity_provider",
+            lambda settings, tracks: IdentityBackfillResult(
+                len(tracks), 0, 0, len(tracks), 0
+            ),
+        ),
         library_preview_provider=preview_provider or (lambda settings, **kwargs: _plan(settings, ())),
         **providers,
     )
@@ -353,6 +364,87 @@ def test_refresh_selection_stale_result_and_preview_invalidation(tmp_path):
         asyncio.run(scenario())
     finally:
         release_stale.set()
+
+
+def test_refresh_backfills_unknown_identity_off_event_loop_and_updates_display(tmp_path):
+    root = tmp_path / "music"
+    unknown = _track(root, "Bandit.flac", matched=False, lyric=LibraryLyricStatus.PLAIN, media_format="FLAC")
+    matched = _track(root, "Bandit.flac", matched=True, lyric=LibraryLyricStatus.PLAIN, media_format="FLAC")
+    started = Event()
+    release = Event()
+    snapshot_calls = 0
+
+    def snapshot(settings):
+        nonlocal snapshot_calls
+        snapshot_calls += 1
+        return _snapshot(root, matched if snapshot_calls >= 3 else unknown)
+
+    def identify(settings, tracks):
+        assert tracks == (unknown,)
+        started.set()
+        release.wait(timeout=5)
+        return IdentityBackfillResult(1, 0, 1, 0, 0)
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            snapshot,
+            library_identity_provider=identify,
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("r")
+            await screen._snapshot_worker.wait(); await pilot.pause()
+            await asyncio.to_thread(started.wait, 2)
+            assert "Identifying 1 catalogue entry" in _text(app, "#library-status")
+            await pilot.press("4")
+            assert app.screen.id == "screen-downloads"
+            release.set()
+            await screen._identity_worker.wait(); await pilot.pause()
+            await pilot.press("3"); await pilot.pause()
+            if screen._snapshot_worker is not None:
+                await screen._snapshot_worker.wait(); await pilot.pause()
+            assert screen.selected_track.match_status is LibraryMatchStatus.MATCHED
+            assert "Catalogue identification complete · 1 song identified" in _text(app, "#library-status")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+
+
+def test_refresh_catalogue_failure_keeps_healthy_local_coverage_visible(tmp_path):
+    root = tmp_path / "music"
+    track = _track(
+        root,
+        "Bandit.flac",
+        matched=False,
+        lyric=LibraryLyricStatus.PLAIN,
+        media_format="FLAC",
+    )
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, track),
+            library_identity_provider=lambda settings, tracks: IdentityBackfillResult(
+                1, 0, 0, 0, 1, ("offline",)
+            ),
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("r")
+            await screen._snapshot_worker.wait(); await pilot.pause()
+            identity_worker = screen._identity_worker
+            if identity_worker is not None:
+                await identity_worker.wait()
+            await pilot.pause()
+            assert "Catalogue identification unavailable" in _text(app, "#library-status")
+            assert "Fully covered 1" in _text(app, "#library-summary")
+            assert "Need attention 0" in _text(app, "#library-summary")
+            assert "Catalogue match Unknown" in _text(app, "#library-details")
+
+    asyncio.run(scenario())
 
 
 def test_sync_preview_is_explicit_nonblocking_structured_and_handles_errors(tmp_path):
@@ -771,3 +863,78 @@ def test_restore_failure_is_reported_safely_without_refreshing_library(tmp_path)
             assert screen.snapshot is not None
 
     asyncio.run(scenario())
+
+
+def test_identity_rebuild_is_cancel_first_and_executes_off_event_loop(tmp_path):
+    root = tmp_path / "music"
+    track = _track(root, "10 Feet.flac", media_format="FLAC", lyric=LibraryLyricStatus.PLAIN)
+    settings = Settings(music_dir=root)
+    state_file = tmp_path / "state.json"
+    plan = IdentityRebuildPlan(
+        settings,
+        state_file,
+        "digest",
+        {"files": {track.reference: {"song_id": 96383, "api_name": "10 Feet"}}},
+        (track,),
+        (),
+        1,
+    )
+    result = IdentityRebuildResult(
+        1,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        (IdentityChange(track.relative_path, 96383, "10 Feet", 94102, "10 Feet"),),
+        (),
+        tmp_path / "state.backup",
+    )
+    main_thread = get_ident()
+    plan_threads = []
+    execution_threads = []
+    execution_release = Event()
+
+    def prepare(settings):
+        plan_threads.append(get_ident())
+        return plan
+
+    def execute(value, *, progress):
+        execution_threads.append(get_ident())
+        execution_release.wait(timeout=2)
+        progress(IdentityRebuildProgress(1, 1, track.path, "matched"))
+        return result
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, track),
+            identity_rebuild_plan_provider=prepare,
+            identity_rebuild_execution_provider=execute,
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("i")
+            await pilot.pause(0.1)
+            assert app.screen.__class__.__name__ == "IdentityRebuildDialog"
+            assert "Audio and lyrics will not be modified" in _text(app, "#library-dialog-body")
+            await pilot.press("enter"); await pilot.pause()
+            assert app.screen is screen
+            assert not execution_threads
+            assert "cancelled" in _text(app, "#library-status")
+
+            await pilot.press("i")
+            await pilot.pause(0.1)
+            await pilot.press("y"); await pilot.pause()
+            worker = screen._identity_rebuild_worker
+            assert worker is not None
+            execution_release.set()
+            await worker.wait(); await pilot.pause()
+            if screen._snapshot_worker is not None:
+                await screen._snapshot_worker.wait(); await pilot.pause()
+            assert "Catalogue rebuild complete" in _text(app, "#library-status")
+
+    asyncio.run(scenario())
+    assert plan_threads and all(thread != main_thread for thread in plan_threads)
+    assert execution_threads and all(thread != main_thread for thread in execution_threads)

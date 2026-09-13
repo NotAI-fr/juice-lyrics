@@ -81,6 +81,20 @@ from .library_status import (
     get_library_snapshot,
     get_library_status,
 )
+from .library_identity import (
+    IdentityBackfillDependencies,
+    IdentityBackfillResult,
+    backfill_catalogue_identities,
+)
+from .identity_rebuild import (
+    IdentityChange,
+    IdentityRebuildDependencies,
+    IdentityRebuildPlan,
+    IdentityRebuildProgress,
+    IdentityRebuildResult,
+    execute_catalogue_identity_rebuild,
+    plan_catalogue_identity_rebuild,
+)
 from .library_sync import (
     LibrarySyncDependencies,
     LibrarySyncOptions,
@@ -106,6 +120,12 @@ from .settings_snapshot import (
     SettingsSource,
     get_settings_snapshot,
 )
+from .state_maintenance import (
+    StateCleanupResult,
+    StaleStatePlan,
+    execute_stale_state_cleanup,
+    plan_stale_state_cleanup,
+)
 
 __all__ = [
     "CatalogueSearchResult",
@@ -121,6 +141,8 @@ __all__ = [
     "DownloadExecutionStatus",
     "DownloadProgress",
     "LibraryStatus",
+    "IdentityBackfillDependencies",
+    "IdentityBackfillResult",
     "LibraryLrcStatus",
     "LibraryLyricStatus",
     "LibraryMatchStatus",
@@ -161,8 +183,18 @@ __all__ = [
     "SyncLyricType",
     "TrackSyncPlan",
     "TrackSyncResult",
+    "StateCleanupResult",
+    "StaleStatePlan",
+    "IdentityChange",
+    "IdentityRebuildDependencies",
+    "IdentityRebuildPlan",
+    "IdentityRebuildProgress",
+    "IdentityRebuildResult",
+    "backfill_catalogue_identities",
     "execute_library_sync",
     "execute_library_sync_preview",
+    "execute_stale_state_cleanup",
+    "execute_catalogue_identity_rebuild",
     "execute_selected_download",
     "get_library_sync_preview",
     "get_catalogue_filters",
@@ -174,6 +206,8 @@ __all__ = [
     "get_song_details",
     "get_song_details_by_id",
     "plan_library_sync",
+    "plan_stale_state_cleanup",
+    "plan_catalogue_identity_rebuild",
     "plan_download_execution",
     "plan_queue_additions",
     "plan_queue_batch_additions",

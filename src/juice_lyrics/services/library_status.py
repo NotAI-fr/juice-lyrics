@@ -19,7 +19,7 @@ from ..library.media import (
 )
 from ..lyrics.engine import parse_synced_lyrics, verify_file
 from ..lyrics.sidecar import sidecar_lrc_path
-from ..state import sha256_file
+from ..state import resolve_state_entry, sha256_file
 
 LyricsVerifier = Callable[[Path], tuple[bool, str]]
 DurationReader = Callable[[Path], float | None]
@@ -234,12 +234,19 @@ def get_library_snapshot(
 
     state, warnings = _read_state_snapshot(Path(state_file))
     state_files = state.get("files", {})
+    discovered = find_mp3s(settings)
+    relative_paths = tuple(path.relative_to(library_path) for path in discovered)
     tracks: list[LibraryTrack] = []
-    for path in find_mp3s(settings):
+    for path in discovered:
         relative_path = path.relative_to(library_path)
         reference = str(relative_path)
-        raw_entry = state_files.get(reference)
-        entry = raw_entry if isinstance(raw_entry, dict) else None
+        state_key, resolved_entry = resolve_state_entry(
+            state_files,
+            relative_path,
+            relative_paths,
+        )
+        raw_entry = state_files.get(state_key) if state_key is not None else None
+        entry = resolved_entry if isinstance(resolved_entry, dict) else None
         track_warnings: list[str] = []
         metadata: AudioMetadata | None = None
         metadata_safe_for_matching = True
@@ -374,6 +381,7 @@ def get_library_status(
         state_files = {}
 
     synced = plain = missing = new_or_changed = lrc = 0
+    relative_paths = tuple(path.relative_to(library_path) for path in files)
     for path in files:
         valid, message = verifier(path)
         if valid:
@@ -385,7 +393,7 @@ def get_library_status(
             missing += 1
 
         relative = str(path.relative_to(library_path))
-        entry = state_files.get(relative)
+        _, entry = resolve_state_entry(state_files, Path(relative), relative_paths)
         if not isinstance(entry, dict) or entry.get("sha256") != sha256_file(path):
             new_or_changed += 1
         adjacent_lrc = sidecar_lrc_path(path)

@@ -701,6 +701,14 @@ from .services.library_sync import (
     execute_library_sync,
     plan_library_sync,
 )
+from .services.state_maintenance import (
+    execute_stale_state_cleanup,
+    plan_stale_state_cleanup,
+)
+from .services.identity_rebuild import (
+    execute_catalogue_identity_rebuild,
+    plan_catalogue_identity_rebuild,
+)
 
 
 def search_api(settings: Settings, title: str, refresh: bool = False) -> list[dict[str, Any]]:
@@ -1102,6 +1110,62 @@ def command_cache(args: argparse.Namespace) -> int:
         if CACHE_DIR.exists(): shutil.rmtree(CACHE_DIR)
         print("API cache cleared."); return 0
     raise RuntimeError("Unknown cache action")
+
+
+def command_state(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
+    if args.action == "clean":
+        plan = plan_stale_state_cleanup(settings, state_file=STATE_FILE)
+        print_header("Stale State Cleanup", use_color)
+        print(f"State: {plan.state_file}")
+        if not plan.stale_keys:
+            print("No clearly stale external records found. No changes made.")
+            return 0
+        print(f"Clearly stale records: {plan.stale_count}")
+        for key in plan.stale_keys:
+            print(f"  - {key}")
+        if not args.yes:
+            print("\nPreview only. Run `999 state clean --yes` to back up state and remove these records.")
+            return 0
+        result = execute_stale_state_cleanup(plan)
+        print(f"\nRemoved: {result.removed_count}")
+        print(f"State backup: {result.backup_path}")
+        print("Audio and LRC files were not changed.")
+        return 0
+    if args.action == "rebuild-identities":
+        plan = plan_catalogue_identity_rebuild(settings, state_file=STATE_FILE)
+        print_header("Catalogue Identity Rebuild", use_color)
+        print(f"State:               {plan.state_file}")
+        print(f"Current tracks:      {plan.current_tracks}")
+        print(f"Existing identities: {plan.existing_identities}")
+        print(f"Currently unknown:   {plan.currently_unknown}")
+        print(f"Stale records ignored: {len(plan.stale_keys)}")
+        if not args.yes:
+            print("\nNo changes made. Run `999 state rebuild-identities --yes` to rebuild safely.")
+            return 0
+        result = execute_catalogue_identity_rebuild(plan, refresh=args.refresh)
+        if result.aborted:
+            print(f"\nRebuild aborted safely: {result.abort_reason}")
+            return 1
+        print("\nCatalogue rebuild complete")
+        print(f"Matched:              {result.matched}")
+        print(f"Unknown:              {result.unknown}")
+        print(f"Changed identities:   {result.changed_identities}")
+        print(f"Unchanged identities: {result.unchanged_identities}")
+        print(f"Failed, preserved:    {result.failed_preserved}")
+        print(f"Stale ignored:        {result.stale_ignored}")
+        print(f"State backup:         {result.backup_path or 'Not needed'}")
+        changes = result.changes if args.details else result.changes[:10]
+        if changes:
+            print("\nIdentity changes:")
+            for change in changes:
+                old = f"{change.old_song_id} ({change.old_api_name or 'Unknown'})" if change.old_song_id is not None else "Unknown"
+                new = f"{change.new_song_id} ({change.new_api_name or 'Unknown'})" if change.new_song_id is not None else "Unknown"
+                print(f"  {change.path}: {old} -> {new}")
+            if not args.details and len(result.changes) > len(changes):
+                print(f"  … {len(result.changes) - len(changes)} more; rerun with --details to show all")
+        print("Audio, embedded lyrics, sidecars, and rmpc configuration were not changed.")
+        return 0
+    raise RuntimeError("Unknown state action")
 
 
 def command_rmpc_setup(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
@@ -1623,6 +1687,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     cache = sub.add_parser("cache", help="Manage API cache.")
     csub = cache.add_subparsers(dest="action", required=True); csub.add_parser("clear")
+
+    state = sub.add_parser("state", help="Inspect or safely maintain application state.")
+    state_sub = state.add_subparsers(dest="action", required=True)
+    state_clean = state_sub.add_parser("clean", help="Preview clearly stale external state records.")
+    state_clean.add_argument("--yes", action="store_true", help="Back up state and remove the listed stale records.")
+    rebuild = state_sub.add_parser(
+        "rebuild-identities",
+        help="Preview re-identifying current library files with the latest matcher.",
+    )
+    rebuild.add_argument("--yes", action="store_true", help="Back up state and apply the identity rebuild.")
+    rebuild.add_argument("--refresh", action="store_true", help="Refresh catalogue search responses instead of using valid cache entries.")
+    rebuild.add_argument("--details", action="store_true", help="Show every changed identity mapping.")
     return parser
 
 
@@ -1652,6 +1728,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.action == "verify": return command_rmpc_verify(args, settings, use_color)
         if args.command == "config": return command_config(args, settings)
         if args.command == "cache": return command_cache(args)
+        if args.command == "state": return command_state(args, settings, use_color)
         parser.error("Unknown command")
     except KeyboardInterrupt:
         print("\nCancelled.", file=sys.stderr); return 130

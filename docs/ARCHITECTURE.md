@@ -66,6 +66,12 @@ track. Ordinary TUI maintenance protects fully covered unmatched tracks; an
 explicit per-track refresh may retry conservative matching without changing the
 file when no safe candidate is found.
 
+Library Refresh uses a shared catalogue-identity backfill service after the
+local snapshot is rendered. The service reuses compatible persisted identities,
+uses the normal query preparation and conservative matcher for unknown MP3,
+FLAC, and M4A files, and atomically merges only confident `song_id`/`api_name`
+results into the existing state schema. It never infers lyric-processing state.
+
 ## Lyrics layer
 
 Responsibilities:
@@ -117,11 +123,25 @@ Do not hard-code a particular user's home directory.
 
 ## State layer
 
+Catalogue identity rebuilds are explicit state-only transactions. Preview scans
+the current library without API calls or writes. Apply rematches every current
+track in memory, preserves non-identity fields, ignores stale external records,
+backs up the complete source state, and performs one atomic replacement. A
+provider-wide failure aborts; an isolated request failure preserves that
+track's prior identity.
+
 Track enough information to skip unchanged files safely.
 
 State should include a local file identity/fingerprint and enough processing information to know whether lyrics/rmpc output are current.
 
 Losing state must be recoverable: the application should be able to rescan and reconstruct it.
+
+Exact library-relative keys are authoritative. An older basename-only key may
+be read when both the local file and historical record are unambiguous; it is
+not automatically duplicated or deleted. Clearly stale nonexistent absolute
+external references are ignored by normal lookup and may be pruned only through
+the preview-first state cleanup service, which makes a safety copy and writes
+atomically.
 
 ## Acquisition layer
 

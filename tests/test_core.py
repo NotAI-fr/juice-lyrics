@@ -307,3 +307,43 @@ def test_library_setup_never_rewrites_rmpc_configuration(tmp_path, monkeypatch):
     assert result == 0
     assert calls == [([], True)]
     assert rmpc_config.read_text(encoding="utf-8") == "original rmpc configuration"
+
+
+def test_state_clean_cli_is_preview_first_then_reports_backup(tmp_path, monkeypatch, capsys):
+    import juice_lyrics.cli as cli
+    from juice_lyrics.config.settings import Settings
+
+    music = tmp_path / "Music"
+    music.mkdir()
+    state_file = tmp_path / "state.json"
+    stale = "/tmp/pytest-of-someone/pytest-8/test_case/Song.flac"
+    state_file.write_text(
+        __import__("json").dumps(
+            {
+                "files": {
+                    stale: {"song_id": 1},
+                    "24 Hours.mp3": {"song_id": 94760, "api_name": "24 Hours"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "STATE_FILE", state_file)
+
+    assert cli.command_state(
+        argparse.Namespace(action="clean", yes=False), Settings(music_dir=music), False
+    ) == 0
+    preview = capsys.readouterr().out
+    assert stale in preview
+    assert "Preview only" in preview
+    assert stale in state_file.read_text(encoding="utf-8")
+
+    assert cli.command_state(
+        argparse.Namespace(action="clean", yes=True), Settings(music_dir=music), False
+    ) == 0
+    output = capsys.readouterr().out
+    assert "Removed: 1" in output
+    assert "State backup:" in output
+    cleaned = state_file.read_text(encoding="utf-8")
+    assert stale not in cleaned
+    assert "24 Hours" in cleaned
