@@ -2,10 +2,10 @@
 
 ## Current Status
 Backend services remain stable. The `999` Textual interface supports
-explicit confirmed single- and multi-song Browse Add to queue actions and
+immediate single- and multi-song Browse Add to queue actions and
 selected or whole-queue downloads. The interface now prioritizes the streamlined
 Browse → Add → Downloads → Download queue journey. The current working-tree
-checkpoint has 382 passing tests.
+checkpoint has 386 passing tests.
 
 ## Current Branch
 v2-redesign
@@ -17,16 +17,17 @@ v2-redesign
 ## Completed and integrated
 
 - Typed read-only library-status, catalogue, acquisition-queue, and library-sync services.
-- Responsive terminal-native Textual shell with all five main sections functional; Browse supports explicit single- and batch Add to queue mutations.
+- Responsive terminal-native Textual shell with all five main sections functional; Browse adds one or marked songs without a confirmation or starting a download.
 - Canonical Category and Era selectors, filter-only searches, correct case-sensitive API cache behavior, server-side catalogue pagination, scrollable 50-result pages, and stable ID-based song details.
 - Track-oriented Downloads queue summaries, song navigation, details, structured failures, and retry eligibility; durable jobs are hidden as an internal mechanism.
 - Stable-ID Browse marks span pages within one logical search; Space toggles a song, `M` toggles the page, `u` clears marks, and search/filter changes clear hidden marks.
-- Explicit cancel-first Browse batch Add flow reports eligible and skipped songs, persists eligible songs atomically, and never starts downloading.
-- Explicit cancel-first Downloads `d` flow for one eligible queued song, delegated to the existing acquisition runner with responsive Downloading and Processing states.
+- Immediate Browse batch Add flow persists eligible songs atomically and never starts downloading.
+- Downloads `d` starts one explicitly selected eligible queued song without an extra prompt, delegated to the existing acquisition runner with responsive Downloading and Processing states.
 - Explicit cancel-first Downloads `A` flow for sequentially downloading all eligible queued songs; failed and active entries are skipped.
 - Simplified primary shortcut bars, optional Browse selection indicators,
-  plain-language confirmations, Dashboard journey prompts, and Settings folders
-  before advanced diagnostics; all secondary queue actions remain available in Help.
+  Dashboard journey prompts, and Settings folders before advanced diagnostics.
+  A scrollable global `?` guide inventories all TUI actions; common actions stay
+  visible. Bulk/destructive/config-changing operations remain cancel-first.
 - Library is the normal maintenance centre: format-aware summary, track details,
   read-only refresh/verification, non-mutating maintenance preview, confirmed
   shared-service execution, selected-song refresh, backup browsing/restore, and

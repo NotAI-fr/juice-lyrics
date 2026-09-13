@@ -208,6 +208,8 @@ def test_click_navigation_switches_and_active_indicator_follows_screen(tmp_path)
             assert not app.query_one("#nav-dashboard").has_class("-current")
             assert "[2 Browse]" in _rendered(app, "#nav-browse")
             assert "[1 Dashboard]" not in _rendered(app, "#nav-dashboard")
+            assert app.focused is None
+            await pilot.press("slash")
             assert app.focused is app.query_one("#browse-query")
 
     asyncio.run(scenario())

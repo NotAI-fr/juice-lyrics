@@ -51,22 +51,32 @@ class BrowseInput(Input):
     """Filter input that preserves the shell's global numeric navigation."""
 
     def on_key(self, event: Key) -> None:
+        if event.key == "escape":
+            self.screen.set_focus(None)
+            event.prevent_default()
+            event.stop()
+            return
+        if event.key == "question_mark":
+            self.app.action_show_help()
+            event.prevent_default()
+            event.stop()
+            return
         if event.key == "slash":
             self.screen.action_focus_search()
             event.prevent_default()
             event.stop()
             return
-        if event.key in "12345":
-            sections = ("dashboard", "browse", "library", "downloads", "settings")
-            self.app.action_show_section(sections[int(event.key) - 1])
-            event.prevent_default()
-            event.stop()
 
 
 class BrowseSelect(Select[str]):
     """Catalogue selector that preserves global section shortcuts."""
 
     def on_key(self, event: Key) -> None:
+        if event.key == "question_mark":
+            self.app.action_show_help()
+            event.prevent_default()
+            event.stop()
+            return
         if event.key == "slash":
             self.screen.action_focus_search()
             event.prevent_default()
@@ -357,10 +367,11 @@ class BrowseScreen(HubScreen):
         self._details_worker: Worker[DetailsOutcome] | None = None
         self._filters_worker: Worker[FiltersOutcome] | None = None
         self._queue_plan_worker: Worker[QueuePlanOutcome] | None = None
+        self._queue_add_worker: Worker[QueuePlanResult] | None = None
         self._applying_filters = False
         self.marked: dict[str, CatalogueSearchResult] = {}
         self._marked_pages: dict[str, int] = {}
-        self._pending_confirmation_ids: tuple[str, ...] = ()
+        self._pending_add_ids: tuple[str, ...] = ()
         self._selection_notice: str | None = None
 
     def compose_content(self) -> Iterable[Widget]:
@@ -388,13 +399,14 @@ class BrowseScreen(HubScreen):
             yield PaginationControl("p Previous", -1, id="browse-previous")
             yield Static("No catalogue page loaded", id="browse-page-position", markup=False)
             yield PaginationControl("n Next", 1, id="browse-next")
-        yield Static("a Add song · 4 Downloads · ? Help", id="browse-shortcuts", markup=False)
+        yield Static("↑↓ Move · Enter Details · Space Mark · a Add · ? Help", id="browse-shortcuts", markup=False)
 
     def action_focus_search(self) -> None:
         self.query_one("#browse-query", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.submit_search(refresh=False)
+        self.set_focus(None)
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if not self._applying_filters and not event.select.disabled:
@@ -403,8 +415,7 @@ class BrowseScreen(HubScreen):
     def on_screen_resume(self, event: ScreenResume) -> None:
         if self._filters_worker is None:
             self._filters_worker = self._load_filters()
-        if self.results:
-            self.call_after_refresh(self.set_focus, None)
+        self.call_after_refresh(self.set_focus, None)
         self._update_shortcuts()
 
     def submit_search(self, *, refresh: bool) -> None:
@@ -537,6 +548,13 @@ class BrowseScreen(HubScreen):
                 self._apply_queue_plan(event.worker.result)
             elif event.state is WorkerState.ERROR:
                 self._set_status("Unable to check the download queue.", error=True)
+        elif event.worker is self._queue_add_worker:
+            if event.state is WorkerState.SUCCESS:
+                self._queue_add_worker = None
+                self._queue_add_completed(event.worker.result)
+            elif event.state is WorkerState.ERROR:
+                self._queue_add_worker = None
+                self._set_status("Unable to add songs to Downloads.", error=True)
 
     def _apply_queue_plan(self, outcome: QueuePlanOutcome) -> None:
         if self.app.screen is not self:
@@ -556,27 +574,33 @@ class BrowseScreen(HubScreen):
         if outcome.marked and len(outcome.selections) > 1 and not isinstance(outcome.result.plan, QueueBatchAddPlan):
             self._set_status("The queue provider cannot safely add several selected songs.", error=True)
             return
-        self._pending_confirmation_ids = tuple(
+        if self._queue_add_worker is not None:
+            self._set_status("Songs are already being added to Downloads.")
+            return
+        self._pending_add_ids = tuple(
             str(selection.song_id) for selection in outcome.selections if selection.song_id is not None
         )
-        self.app.push_screen(
-            AddToQueueDialog(
-                outcome.result.plan,
-                self._queue_add_provider,
-                batch=outcome.marked and isinstance(outcome.result.plan, QueueBatchAddPlan),
-            ),
-            self._queue_dialog_closed,
-        )
+        self._set_status("Adding to Downloads…")
+        self._queue_add_worker = self._create_queue_item(outcome.result.plan)
 
-    def _queue_dialog_closed(self, result: QueuePlanResult | None) -> None:
-        if result is not None and result.status in {QueueAddStatus.ADDED, QueueBatchAddStatus.ADDED}:
-            for song_id in self._pending_confirmation_ids:
+    @work(thread=True, exclusive=True, group="queue-add", exit_on_error=False)
+    def _create_queue_item(self, plan: QueuePlan) -> QueuePlanResult:
+        return self._queue_add_provider(plan)
+
+    def _queue_add_completed(self, result: QueuePlanResult) -> None:
+        if result.status in {QueueAddStatus.ADDED, QueueBatchAddStatus.ADDED}:
+            for song_id in self._pending_add_ids:
                 self.marked.pop(song_id, None)
                 self._marked_pages.pop(song_id, None)
             self._set_status(f"{result.message} It has not started. Press 4 to view Downloads.")
+            invalidate = getattr(self.app, "invalidate_download_queue", None)
+            if callable(invalidate):
+                invalidate()
             self._render_results()
             self._update_shortcuts()
-        self._pending_confirmation_ids = ()
+        else:
+            self._set_status(result.message, error=True)
+        self._pending_add_ids = ()
 
     def _apply_search(self, outcome: SearchOutcome) -> None:
         if outcome.error:
@@ -688,6 +712,9 @@ class BrowseScreen(HubScreen):
         event.stop()
 
     def _add_selected_to_queue(self) -> None:
+        if (self._queue_plan_worker is not None and not self._queue_plan_worker.is_finished) or self._queue_add_worker is not None:
+            self._set_status("Songs are already being added to Downloads.")
+            return
         if self.marked:
             selections = tuple(self.marked.values())
             marked = True
@@ -956,14 +983,14 @@ class BrowseScreen(HubScreen):
         toggle = "Unmark" if current_key is not None and current_key in self.marked else "Mark"
         if narrow:
             text = (
-                f"a add selected · Space {toggle.lower()} · u clear · 4 downloads · ? help"
+                f"Space {toggle.lower()} · a add selected · ? help"
                 if count
-                else "a add song · 4 downloads · ? help"
+                else "↑↓ move · Enter details · a add · ? help"
             )
         elif count:
-            text = f"a Add selected · Space {toggle} · u Clear · 4 Downloads · ? Help"
+            text = f"↑↓ Move · Enter Details · Space {toggle} · a Add selected · ? Help"
         else:
-            text = "a Add song · 4 Downloads · ? Help"
+            text = "↑↓ Move · Enter Details · Space Mark · a Add · ? Help"
         shortcuts.update(Text(text, no_wrap=True, overflow="ellipsis"))
 
     @staticmethod

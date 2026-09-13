@@ -75,8 +75,13 @@ class LibraryInput(Input):
     """Local search input that preserves global section shortcuts."""
 
     def on_key(self, event: Key) -> None:
-        if event.key == "q":
-            self.app.exit()
+        if event.key == "escape":
+            self.screen.set_focus(None)
+            event.prevent_default()
+            event.stop()
+            return
+        if event.key == "question_mark":
+            self.app.action_show_help()
             event.prevent_default()
             event.stop()
             return
@@ -85,19 +90,14 @@ class LibraryInput(Input):
             event.prevent_default()
             event.stop()
             return
-        if event.key in "12345":
-            sections = ("dashboard", "browse", "library", "downloads", "settings")
-            self.app.action_show_section(sections[int(event.key) - 1])
-            event.prevent_default()
-            event.stop()
 
 
 class LibrarySelect(Select[str]):
     """Local status selector that preserves global section shortcuts."""
 
     def on_key(self, event: Key) -> None:
-        if event.key == "q":
-            self.app.exit()
+        if event.key == "question_mark":
+            self.app.action_show_help()
             event.prevent_default()
             event.stop()
             return
@@ -221,6 +221,7 @@ class MaintenanceDialog(ModalScreen[LibrarySyncPlan | None]):
         if self._confirmed:
             event.prevent_default(); event.stop(); return
         if event.key in {"escape", "n"}:
+            self._confirmed = True
             self.dismiss(None)
         elif event.key == "y" and self.plan.ready_files:
             self._choice = "confirm"; self._render_choice(); self._activate()
@@ -239,6 +240,7 @@ class MaintenanceDialog(ModalScreen[LibrarySyncPlan | None]):
 
     def _activate(self) -> None:
         if self._choice == "cancel" or not self.plan.ready_files:
+            self._confirmed = True
             self.dismiss(None)
         elif not self._confirmed:
             self._confirmed = True
@@ -294,6 +296,7 @@ class IdentityRebuildDialog(ModalScreen[IdentityRebuildPlan | None]):
         if self._confirmed:
             event.prevent_default(); event.stop(); return
         if event.key in {"escape", "n"}:
+            self._confirmed = True
             self.dismiss(None)
         elif event.key == "y":
             self._choice = "confirm"; self._render_choice(); self._activate()
@@ -312,6 +315,7 @@ class IdentityRebuildDialog(ModalScreen[IdentityRebuildPlan | None]):
 
     def _activate(self) -> None:
         if self._choice == "cancel":
+            self._confirmed = True
             self.dismiss(None)
         elif not self._confirmed:
             self._confirmed = True
@@ -385,7 +389,7 @@ class RestoreDialog(ModalScreen[BackupRecord | None]):
 
     def on_key(self, event: Key) -> None:
         if self._confirmed: event.prevent_default(); event.stop(); return
-        if event.key in {"escape", "n"}: self.dismiss(None)
+        if event.key in {"escape", "n"}: self._confirmed = True; self.dismiss(None)
         elif event.key == "y": self._choice = "confirm"; self._render_choice(); self._activate()
         elif event.key in {"left", "right", "tab", "shift+tab"}:
             self._choice = "confirm" if self._choice == "cancel" else "cancel"; self._render_choice()
@@ -396,7 +400,7 @@ class RestoreDialog(ModalScreen[BackupRecord | None]):
         event.prevent_default(); event.stop()
 
     def _activate(self) -> None:
-        if self._choice == "cancel": self.dismiss(None)
+        if self._choice == "cancel": self._confirmed = True; self.dismiss(None)
         elif not self._confirmed: self._confirmed = True; self.dismiss(self.record)
 
 
@@ -443,7 +447,7 @@ class RmpcDialog(ModalScreen[SettingsSnapshot | None]):
 
     def on_key(self, event: Key) -> None:
         if self._confirmed: event.prevent_default(); event.stop(); return
-        if event.key in {"escape", "n"}: self.dismiss(None)
+        if event.key in {"escape", "n"}: self._confirmed = True; self.dismiss(None)
         elif event.key == "y" and self.can_setup: self._choice = "confirm"; self._render_choice(); self._activate()
         elif event.key in {"left", "right", "tab", "shift+tab"} and self.can_setup:
             self._choice = "confirm" if self._choice == "cancel" else "cancel"; self._render_choice()
@@ -454,7 +458,7 @@ class RmpcDialog(ModalScreen[SettingsSnapshot | None]):
         event.prevent_default(); event.stop()
 
     def _activate(self) -> None:
-        if self._choice == "cancel": self.dismiss(None)
+        if self._choice == "cancel": self._confirmed = True; self.dismiss(None)
         elif self.can_setup and not self._confirmed: self._confirmed = True; self.dismiss(self.snapshot)
 
 
@@ -541,19 +545,18 @@ class LibraryScreen(HubScreen):
                 with VerticalScroll(id="library-details-scroll"):
                     yield Static("Select a track to inspect it.", id="library-details", markup=False)
         yield Static("Choose Maintain lyrics to preview changes safely.", id="library-preview", markup=False)
-        yield Static("r Refresh · m Maintain lyrics · v Verify · b Backups · p Player · ? Help", id="library-position", markup=False)
+        yield Static("↑↓ Move · Enter Details · r Refresh · m Maintain · v Verify · ? Help", id="library-position", markup=False)
 
     def action_focus_search(self) -> None:
         self.query_one("#library-query", Input).focus()
 
     def on_screen_resume(self, event: ScreenResume) -> None:
+        self.call_after_refresh(self.set_focus, None)
         if self._pending_snapshot is not None:
             outcome, self._pending_snapshot = self._pending_snapshot, None
             self._apply_snapshot(outcome)
         elif self.snapshot is None and self._snapshot_worker is None:
             self.refresh_snapshot(identify=False)
-        else:
-            self.call_after_refresh(self.set_focus, None)
         if self._pending_preview is not None:
             outcome, self._pending_preview = self._pending_preview, None
             self._apply_preview(outcome)
@@ -949,9 +952,9 @@ class LibraryScreen(HubScreen):
 
     def _update_position(self) -> None:
         if not self.filtered_tracks:
-            self.query_one("#library-position", Static).update("r Refresh · m Maintain lyrics · v Verify · b Backups · p Player · ? Help")
+            self.query_one("#library-position", Static).update("r Refresh · m Maintain · v Verify · b Backups · ? Help")
             return
-        suffix = "Esc track list · l Refresh lyrics · PgUp/PgDn details" if self._details_mode else "Enter details · r Refresh · m Maintain · v Verify · b Backups"
+        suffix = "Esc Back · l Refresh lyrics · ? Help" if self._details_mode else "↑↓ Move · Enter Details · r Refresh · m Maintain · ? Help"
         self.query_one("#library-position", Static).update(
             f"Track {self.selected_index + 1} of {len(self.filtered_tracks)} · {suffix}"
         )

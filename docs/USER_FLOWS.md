@@ -265,9 +265,9 @@ for future Retry or Remove actions.
 
 Marking is optional. Space toggles the highlighted song, `M` toggles downloadable songs on the
 visible API page, and `u` clears all marks. Marks may span pages of the same
-logical search, but a title, Category, or Era change clears them. `a` adds the
-marked set, or the highlighted song when nothing is marked, through a
-cancel-first confirmation. Adding never starts a download and the application
+logical search, but a title, Category, or Era change clears them. `a` immediately
+adds the marked set, or the highlighted song when nothing is marked. Adding
+never starts a download and the application
 does not bulk-fetch an unbounded catalogue merely to fill the queue.
 
 Download queue is the primary Downloads action. Download selected, Retry,

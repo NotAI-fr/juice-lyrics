@@ -12,6 +12,19 @@ This opens the terminal interface. It does not download anything or rewrite
 rmpc configuration. If the default library is missing, Settings shows the
 configured path and the next action without a traceback.
 
+Press `?` from any section for the scrollable keyboard guide. The bottom lines
+show the most common actions for the current section. Use `1`–`5` to switch
+sections when not typing, `↑`/`↓` to move, `Enter` for details, `Esc` to return,
+and `q` to quit. Digits and `q` type normally in a focused search field; Enter
+submits the search and returns focus to the results.
+Browse uses `Space` to mark songs and `a` to add the current or marked songs
+directly to Downloads; adding does not start a download. In Downloads, `d`
+downloads one selected song, `t` retries a failed song, and `A` starts the
+whole queue after confirmation. Library refresh, verification, and maintenance
+preview are read-only. Applying maintenance, restoring, rebuilding catalogue
+matches, and changing rmpc setup remain cancel-first confirmations: `y`
+confirms immediately, `n`/`Esc` cancels, and initial `Enter` cancels.
+
 Configuration is optional. `999 config init` writes a starter config only.
 `999 setup` remains a compatibility shortcut for an initial library lyric sync;
 it does not configure rmpc. Only the explicit `999 rmpc setup` command changes

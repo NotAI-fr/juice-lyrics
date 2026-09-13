@@ -53,7 +53,7 @@ Milestone reached:
 
 The current development branch is `v2-redesign` in
 `/home/nobloat/Downloads/juice-lyrics-codex`. The complete automated suite has
-382 passing tests.
+386 passing tests.
 
 Completed and integrated:
 
@@ -83,8 +83,8 @@ functional Dashboard and Browse screens, canonical Category and Era
 selectors, correct case-sensitive API cache behavior, server-side catalogue
 pagination with scrollable 50-result pages, stable ID-based song details, and a
 Downloads screen with a flat track queue, song navigation, details, failure
-stages, retry eligibility, an explicit Browse Add to queue flow that never
-starts a download, and an explicitly confirmed Download selected action for one
+stages, retry eligibility, an immediate Browse Add to queue flow that never
+starts a download, and Download selected for one
 eligible queued song, a Library maintenance centre with local track browsing,
 filters, details, read-only refresh/verification, confirmed lyric maintenance,
 backup/restore, and rmpc checks, and a read-only
@@ -92,10 +92,14 @@ Settings screen with effective configuration, paths, provenance, and rmpc state.
 Library Help also exposes a cancel-first, state-only catalogue identity rebuild
 for rerunning the latest matcher across current MP3, FLAC, and M4A files.
 
-All five primary TUI sections are functional. Browse supports confirmed single
-and batch queue additions. Downloads supports confirmed Download selected,
+All five primary TUI sections are functional. Browse supports immediate single
+and batch queue additions. Downloads supports immediate Download selected,
 sequential Download queue, Retry, Remove, Clear queue, and Clear completed history.
 Active-download cancellation and general configuration editing are not implemented.
+The global `?` key opens a scrollable guide to the implemented keymap. Common
+movement, details, Add, maintenance, and Help actions remain visible in screen
+shortcut lines. Harmless queue actions no longer prompt; bulk downloading,
+maintenance apply, restore, catalogue rebuild, and rmpc setup remain confirmed.
 Durable jobs remain an internal backend detail and completed entries are hidden
 from the active track queue. The CLI remains available for automation,
 diagnostics, and internal job recovery. Existing local FLAC and M4A files are first-class library
@@ -162,7 +166,8 @@ docs/
 
 
 The project is in incremental v2 implementation. The backend remains stable.
-Mutating TUI actions are explicit and cancel-first. Library uses shared services
+High-impact TUI mutations are explicit and cancel-first; harmless queue actions
+are immediate. Library uses shared services
 for maintenance and restore; Settings remains read-only.
 Library lyric health is independent of catalogue identity: format-appropriate
 embedded lyrics plus a parsed timestamped sidecar can be fully covered even
@@ -319,7 +324,7 @@ Available
 
 
 The current Browse implementation supports result selection, details, lyrics
-previews, canonical filters, pagination, and confirmed single or marked Add to
+previews, canonical filters, pagination, and immediate single or marked Add to
 queue actions. Adding never starts a download.
 
 ---
@@ -372,7 +377,7 @@ Complete
 
 The Downloads implementation is a flat track queue. It shows queue totals,
 individual songs, structured failures, and retry eligibility; internal jobs are
-hidden except for optional troubleshooting references. Browse can add confirmed
+hidden except for optional troubleshooting references. Browse can add
 single or marked songs without starting downloads. Downloads can run the selected
 song or eligible queue sequentially, retry failures, and perform record-only
 cleanup. Active-download cancellation remains unavailable.

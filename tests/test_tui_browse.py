@@ -34,6 +34,7 @@ from juice_lyrics.services.download_queue import (
 )
 from juice_lyrics.acquisition.models import AcquisitionItem
 from juice_lyrics.tui import JuiceLyricsApp
+from juice_lyrics.tui.help import guide_text
 
 
 def _result(
@@ -163,6 +164,13 @@ async def _open_browse(app: JuiceLyricsApp, pilot):
     await pilot.press("2")
     await pilot.pause()
     return app.screen
+
+
+async def _wait_queue_add(browse, pilot):
+    worker = browse._queue_add_worker
+    if worker is not None:
+        await worker.wait()
+    await pilot.pause(0.2)
 
 
 async def _submit(app: JuiceLyricsApp, pilot, query: str):
@@ -759,7 +767,7 @@ def test_loaded_page_scrolls_all_fifty_results_and_supports_list_navigation(tmp_
             assert not app.query_one("#browse-previous").available
             assert "[p Previous]" in _text(app, "#browse-previous")
             assert "[n Next]" in _text(app, "#browse-next")
-            assert "a add song" in _text(app, "#browse-shortcuts").lower()
+            assert "a add" in _text(app, "#browse-shortcuts").lower()
 
             for _ in range(34):
                 await pilot.press("down")
@@ -811,22 +819,78 @@ def test_loaded_page_scrolls_all_fifty_results_and_supports_list_navigation(tmp_
 
 
 def test_browse_help_distinguishes_loaded_result_scrolling_from_api_pages(tmp_path):
-    messages = []
-
     async def scenario():
         app = _app(tmp_path, search=lambda *args, **kwargs: ())
-        app.notify = lambda message, **kwargs: messages.append(message)
         async with app.run_test(size=(80, 24)) as pilot:
             await _open_browse(app, pilot)
-            app.action_show_help()
-            assert messages
-            help_text = messages[-1]
-            assert "n next catalogue page" in help_text
-            assert "p previous catalogue page" in help_text
-            assert "PageDown/PageUp scroll the loaded results" in help_text
-            assert "Home/End first/last loaded result" in help_text
+            await pilot.press("question_mark")
+            assert app.screen.__class__.__name__ == "HelpScreen"
+            help_text = _text(app, "#help-content")
+            assert "Next / previous catalogue page" in help_text
+            assert "Scroll loaded results" in help_text
+            assert "First / last result" in help_text
+            await pilot.press("escape")
+            assert app.screen.id == "screen-browse"
 
     asyncio.run(scenario())
+
+
+def test_global_help_covers_sections_scrolls_and_traps_navigation(tmp_path):
+    async def scenario():
+        app = _app(tmp_path, search=lambda *args, **kwargs: ())
+        async with app.run_test(size=(70, 22)) as pilot:
+            for section in ("dashboard", "browse", "library", "downloads", "settings"):
+                if app.focused is not None and isinstance(app.focused, Input):
+                    await pilot.press("escape")
+                await pilot.press(str(("dashboard", "browse", "library", "downloads", "settings").index(section) + 1))
+                await pilot.press("question_mark")
+                assert app.screen.__class__.__name__ == "HelpScreen"
+                guide = _text(app, "#help-content")
+                for heading in ("Global", "Browse", "Library", "Downloads", "Settings", "Confirmations"):
+                    assert heading in guide
+                scroll = app.query_one("#help-scroll", VerticalScroll)
+                assert scroll.max_scroll_y > 0
+                await pilot.press("pagedown")
+                assert scroll.scroll_y > 0
+                await pilot.press("2")
+                assert app.screen.__class__.__name__ == "HelpScreen"
+                await pilot.press("escape")
+                assert app.screen.id == f"screen-{section}"
+
+    asyncio.run(scenario())
+
+
+def test_search_input_accepts_q_and_help_can_open_while_focused(tmp_path):
+    async def scenario():
+        app = _app(tmp_path, search=lambda *args, **kwargs: ())
+        async with app.run_test() as pilot:
+            await _open_browse(app, pilot)
+            field = app.query_one("#browse-query", Input)
+            field.focus()
+            await pilot.press("q", "1", "0")
+            assert field.value == "q10"
+            assert app.screen.id == "screen-browse"
+            await pilot.press("question_mark")
+            assert app.screen.__class__.__name__ == "HelpScreen"
+            await pilot.press("escape")
+            assert app.screen.id == "screen-browse"
+            await pilot.press("escape", "3")
+            assert app.screen.id == "screen-library"
+
+    asyncio.run(scenario())
+
+
+def test_help_inventories_app_bindings_and_focus_palette():
+    guide = guide_text()
+    for label in ("Switch sections", "Refresh current section", "Open Help", "Quit",
+                  "Mark or unmark", "Download entire queue", "Preview and maintain",
+                  "Inspect setting", "Confirm immediately"):
+        assert label in guide
+    assert "#browse-controls Input:focus" in JuiceLyricsApp.CSS
+    assert "#library-controls Input:focus" in JuiceLyricsApp.CSS
+    assert "SelectOverlay:focus" in JuiceLyricsApp.CSS
+    assert "background-tint: transparent" in JuiceLyricsApp.CSS
+    assert "#browse-controls Input > .input--cursor" in JuiceLyricsApp.CSS
 
 
 def test_fifty_result_page_remains_scrollable_at_realistic_terminal_sizes(tmp_path):
@@ -964,7 +1028,7 @@ def test_filter_metadata_failure_disables_selectors_but_title_search_survives(tm
     asyncio.run(scenario())
 
 
-def test_add_to_queue_confirmation_is_cancel_first_and_uses_queue_wording(tmp_path):
+def test_add_to_queue_is_immediate_and_does_not_download(tmp_path):
     calls = []
     song = _result(1, "Rental")
 
@@ -980,25 +1044,10 @@ def test_add_to_queue_confirmation_is_cancel_first_and_uses_queue_wording(tmp_pa
             browse = app.screen
             await pilot.press("a")
             await browse._queue_plan_worker.wait()
-            await pilot.pause()
-            assert app.screen.__class__.__name__ == "AddToQueueDialog"
-            body = _text(app, "#queue-confirm-body")
-            assert "Add this song to Downloads?" in body
-            assert "Rental" in body
-            assert "This does not start downloading." in body
-            assert "job" not in body.lower()
-            assert "[Cancel]" in _text(app, "#queue-confirm-cancel")
-            await pilot.press("enter")
-            await pilot.pause()
+            await _wait_queue_add(browse, pilot)
             assert app.screen.id == "screen-browse"
             assert len(calls) == 1
-            await pilot.press("a")
-            await browse._queue_plan_worker.wait()
-            await pilot.pause()
-            await pilot.press("escape")
-            await pilot.pause()
-            assert app.screen.id == "screen-browse"
-            assert len(calls) == 2
+            assert "not configured" in _text(app, "#browse-status")
 
     asyncio.run(scenario())
 
@@ -1034,15 +1083,10 @@ def test_confirm_adds_once_preserves_browse_and_can_open_refreshed_downloads(tmp
             browse = app.screen
             await pilot.press("a")
             await browse._queue_plan_worker.wait()
-            await pilot.pause()
-            await pilot.press("y")
-            await app.screen._worker.wait()
-            await pilot.pause()
+            await _wait_queue_add(browse, pilot)
             assert len(created) == 1
-            assert "Nothing has started" in _text(app, "#queue-confirm-status")
-            await pilot.press("y")
-            assert len(created) == 1
-            await pilot.press("v")
+            assert "not started" in _text(app, "#browse-status")
+            await pilot.press("4")
             await pilot.pause()
             if app.screen._refresh_worker is not None:
                 await app.screen._refresh_worker.wait()
@@ -1134,12 +1178,9 @@ def test_add_to_queue_store_failure_is_safe_and_slow_planning_does_not_block_nav
             browse = app.screen
             await pilot.press("a")
             await browse._queue_plan_worker.wait()
-            await pilot.pause()
-            await pilot.press("y")
-            await app.screen._worker.wait()
-            await pilot.pause()
-            assert "permission denied" in _text(app, "#queue-confirm-status")
-            assert app.screen.__class__.__name__ == "AddToQueueDialog"
+            await _wait_queue_add(browse, pilot)
+            assert "permission denied" in _text(app, "#browse-status")
+            assert app.screen.id == "screen-browse"
 
     try:
         asyncio.run(navigation_scenario())
@@ -1157,7 +1198,7 @@ def test_browse_marks_cursor_and_page_selection_are_independent(tmp_path):
             browse = await _open_browse(app, pilot)
             await _submit(app, pilot, "songs")
             assert "[ ]" not in _text(app, "#browse-results")
-            assert "a Add song" in _text(app, "#browse-shortcuts")
+            assert "a Add" in _text(app, "#browse-shortcuts")
             await pilot.press("space")
             assert set(browse.marked) == {"1"}
             assert "First" in _text(app, "#browse-results") and "[x]" in _text(app, "#browse-results")
@@ -1176,7 +1217,7 @@ def test_browse_marks_cursor_and_page_selection_are_independent(tmp_path):
             assert browse.marked == {}
             assert "Selection cleared" in _text(app, "#browse-status")
             assert "[ ]" not in _text(app, "#browse-results")
-            assert "a Add song" in _text(app, "#browse-shortcuts")
+            assert "a Add" in _text(app, "#browse-shortcuts")
 
     asyncio.run(scenario())
 
@@ -1235,7 +1276,7 @@ def test_marks_span_pages_but_search_and_filter_changes_clear_them(tmp_path):
     asyncio.run(scenario())
 
 
-def test_batch_add_confirmation_is_cancel_first_and_captures_stable_targets(tmp_path):
+def test_batch_add_is_immediate_and_captures_stable_targets(tmp_path):
     songs = (_result(1, "First"), _result(2, "Second"), _result(9, "Already there"))
     created = []
 
@@ -1262,69 +1303,41 @@ def test_batch_add_confirmation_is_cancel_first_and_captures_stable_targets(tmp_
             await _submit(app, pilot, "songs")
             await pilot.press("M", "a")
             await browse._queue_plan_worker.wait()
-            await pilot.pause()
-            assert app.screen.__class__.__name__ == "AddToQueueDialog"
-            body = _text(app, "#queue-confirm-body")
-            assert "Add 2 songs to Downloads?" in body
-            assert "1 selected song will be skipped." in body
-            assert "This does not start downloading." in body
-            assert "[Cancel]" in _text(app, "#queue-confirm-cancel")
-            dialog = app.screen
-            assert dialog.query_one("#queue-confirm-dialog").region.y >= 0
-            assert dialog.query_one("#queue-confirm-dialog").region.bottom <= 24
-            await pilot.press("enter")
-            await pilot.pause()
+            await _wait_queue_add(browse, pilot)
             assert app.screen is browse
-            assert set(browse.marked) == {"1", "2", "9"}
-            assert created == []
-
-            await pilot.press("a")
-            await browse._queue_plan_worker.wait()
-            await pilot.pause()
-            browse.selected_index = 1
-            await pilot.press("tab", "enter")
-            await app.screen._worker.wait()
-            await pilot.pause()
             assert len(created) == 1
             assert [item.song_id for item in created[0].eligible] == ["1", "2"]
-            assert "Added 2 songs" in _text(app, "#queue-confirm-status")
-            await pilot.press("y")
-            assert len(created) == 1
-            await pilot.press("enter")
-            await pilot.pause()
-            assert browse.marked == {}
+            assert "Added 2 songs" in _text(app, "#browse-status")
+            assert "1" not in browse.marked and "2" not in browse.marked
 
     asyncio.run(scenario())
 
 
 def test_browse_batch_help_shortcuts_and_unavailable_mark_guard(tmp_path):
-    messages = []
     songs = (_result(1, "Available"), _result(2, "Unavailable", downloadable=False))
 
     async def scenario():
         app = _app(tmp_path, search=lambda *args, **kwargs: songs)
-        app.notify = lambda message, **kwargs: messages.append(str(message))
         async with app.run_test(size=(80, 24)) as pilot:
             browse = await _open_browse(app, pilot)
             await _submit(app, pilot, "songs")
             shortcuts = app.query_one("#browse-shortcuts")
             assert shortcuts.region.height == 1
             shortcuts_text = _text(app, "#browse-shortcuts")
-            assert "a add song" in shortcuts_text.lower()
-            assert "4 downloads" in shortcuts_text.lower()
+            assert "a add" in shortcuts_text.lower()
+            assert "enter details" in shortcuts_text.lower()
             assert "M" not in shortcuts_text and "u clear" not in shortcuts_text.lower()
             results_scroll = app.query_one("#browse-results-scroll", VerticalScroll)
             assert results_scroll.region.height >= 5
             await pilot.press("down", "space")
             assert browse.marked == {}
             assert "cannot be marked" in _text(app, "#browse-status")
-            app.action_show_help()
-            help_text = messages[-1]
-            assert "Space mark current" in help_text
-            assert "M toggle this page" in help_text
-            assert "changing search or filters clears them" in help_text
-            assert "Adding does not start downloading" in help_text
-            assert "4 Open Downloads" in help_text
+            await pilot.press("question_mark")
+            help_text = _text(app, "#help-content")
+            assert "Mark or unmark song" in help_text
+            assert "Toggle marks on this page" in help_text
+            assert "Add current or marked songs" in help_text
+            assert "Switch sections" in help_text
 
     asyncio.run(scenario())
 

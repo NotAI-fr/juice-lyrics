@@ -57,6 +57,7 @@ from .screens.dashboard import DashboardScreen
 from .screens.downloads import DownloadsScreen
 from .screens.library import LibraryScreen
 from .screens.settings import SettingsScreen
+from .help import HelpScreen
 
 LibraryStatusProvider = Callable[[Any], LibraryStatus]
 QueueSnapshotProvider = Callable[[], QueueSnapshot]
@@ -84,14 +85,14 @@ class JuiceLyricsApp(App[None]):
     SUB_TITLE = "Juice WRLD Music Hub"
 
     BINDINGS = [
-        Binding("1", "show_section('dashboard')", "Dashboard", show=False, priority=True),
-        Binding("2", "show_section('browse')", "Browse", show=False, priority=True),
-        Binding("3", "show_section('library')", "Library", show=False, priority=True),
-        Binding("4", "show_section('downloads')", "Downloads", show=False, priority=True),
-        Binding("5", "show_section('settings')", "Settings", show=False, priority=True),
+        Binding("1", "show_section('dashboard')", "Dashboard", show=False),
+        Binding("2", "show_section('browse')", "Browse", show=False),
+        Binding("3", "show_section('library')", "Library", show=False),
+        Binding("4", "show_section('downloads')", "Downloads", show=False),
+        Binding("5", "show_section('settings')", "Settings", show=False),
         Binding("r", "refresh_active", "Refresh", show=False),
-        Binding("question_mark", "show_help", "Help", show=False),
-        Binding("q", "quit", "Quit", show=False, priority=True),
+        Binding("question_mark", "show_help", "Help", show=False, priority=True),
+        Binding("q", "quit", "Quit", show=False),
     ]
 
     def _get_dom_base(self):
@@ -102,6 +103,43 @@ class JuiceLyricsApp(App[None]):
     CSS = """
     Screen {
         background: transparent;
+    }
+
+    HelpScreen {
+        align: center middle;
+        background: transparent;
+    }
+
+    #help-dialog {
+        width: 86;
+        max-width: 96%;
+        height: 88%;
+        border: round ansi_cyan;
+        background: transparent;
+        padding: 0 2;
+    }
+
+    #help-title {
+        height: 2;
+        text-style: bold;
+        color: ansi_blue;
+    }
+
+    #help-scroll {
+        height: 1fr;
+        background: transparent;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+    }
+
+    #help-content {
+        height: auto;
+        background: transparent;
+    }
+
+    #help-footer {
+        height: 1;
+        text-style: dim;
     }
 
     #brand {
@@ -188,7 +226,9 @@ class JuiceLyricsApp(App[None]):
     }
 
     #browse-controls Input,
-    #browse-controls SelectCurrent {
+    #browse-controls SelectCurrent,
+    #library-controls Input,
+    #library-controls SelectCurrent {
         background: transparent;
         color: ansi_default;
         border: tall ansi_default;
@@ -197,7 +237,9 @@ class JuiceLyricsApp(App[None]):
     }
 
     #browse-controls Input:focus,
-    #browse-controls Select:focus > SelectCurrent {
+    #browse-controls Select:focus > SelectCurrent,
+    #library-controls Input:focus,
+    #library-controls Select:focus > SelectCurrent {
         background: transparent;
         border: tall ansi_blue;
         background-tint: transparent;
@@ -211,6 +253,45 @@ class JuiceLyricsApp(App[None]):
 
     #browse-controls SelectOverlay {
         border: tall ansi_blue;
+    }
+
+    #browse-controls Input > .input--cursor,
+    #library-controls Input > .input--cursor {
+        background: ansi_blue;
+        color: ansi_default;
+        text-style: bold;
+    }
+
+    #browse-controls Input > .input--selection,
+    #library-controls Input > .input--selection {
+        background: ansi_blue;
+        color: ansi_default;
+    }
+
+    #browse-controls SelectOverlay,
+    #library-controls SelectOverlay,
+    #browse-controls SelectOverlay OptionList,
+    #library-controls SelectOverlay OptionList {
+        background: transparent;
+        background-tint: transparent;
+        color: ansi_default;
+    }
+
+    #browse-controls SelectOverlay:focus,
+    #library-controls SelectOverlay:focus,
+    #browse-controls Select:focus > SelectCurrent,
+    #library-controls Select:focus > SelectCurrent {
+        background: transparent;
+        background-tint: transparent;
+        border: tall ansi_blue;
+    }
+
+    #browse-controls SelectCurrent Static#label,
+    #library-controls SelectCurrent Static#label,
+    #browse-controls SelectCurrent .arrow,
+    #library-controls SelectCurrent .arrow {
+        background: transparent;
+        color: ansi_default;
     }
 
     #browse-controls .option-list--option-highlighted {
@@ -536,22 +617,6 @@ class JuiceLyricsApp(App[None]):
 
     .library-filter {
         height: 4;
-    }
-
-    #library-controls Input,
-    #library-controls SelectCurrent {
-        background: transparent;
-        color: ansi_default;
-        border: tall ansi_default;
-        background-tint: transparent;
-        padding: 0 1;
-    }
-
-    #library-controls Input:focus,
-    #library-controls Select:focus > SelectCurrent {
-        background: transparent;
-        border: tall ansi_blue;
-        background-tint: transparent;
     }
 
     #library-controls Select,
@@ -931,6 +996,10 @@ class JuiceLyricsApp(App[None]):
             return
         self.switch_screen(section)
 
+    def action_quit(self) -> None:
+        if not isinstance(self.screen, ModalScreen):
+            self.exit()
+
     def invalidate_download_queue(self) -> None:
         downloads = self.get_screen("downloads")
         invalidate = getattr(downloads, "invalidate_snapshot", None)
@@ -952,39 +1021,8 @@ class JuiceLyricsApp(App[None]):
             self.notify(f"{self.screen.title or 'This section'} has no data to refresh yet.")
 
     def action_show_help(self) -> None:
-        section = getattr(self.screen, "section", None)
-        if section == "browse":
-            message = (
-                "Main: a Add to Downloads · 4 Open Downloads\n"
-                "Selection actions: Space mark current · M toggle this page · u clear marks. "
-                "Marks may span pages; changing search or filters clears them.\n"
-                "Navigation: ↑/↓ or j/k move · n next catalogue page · p previous catalogue page · "
-                "PageDown/PageUp scroll the loaded results · Home/End first/last loaded result · Enter details. "
-                "Adding does not start downloading; Downloads handles the actual download."
-            )
-        elif section == "downloads":
-            message = (
-                "Main: A Download queue · d Download selected\n"
-                "Queue actions: x Remove selected · c Clear waiting songs · H Clear completed history · r Refresh\n"
-                "Troubleshooting: t Try failed song again\n"
-                "Navigation: ↑/↓ or j/k select · PageUp/PageDown scroll · Home/End first/last · Enter details · Escape return/cancel. "
-                "Complete songs are hidden; cleanup never deletes downloaded music or lyrics."
-            )
-        elif section == "library":
-            message = (
-                "Main: r Refresh · m Maintain lyrics · v Verify · b Backups · p Player integration\n"
-                "Advanced: i Rebuild catalogue matches\n"
-                "Tracks: ↑/↓ or j/k select · / search · Enter details · l refresh selected lyrics. "
-                "Maintenance, identity rebuild, restore, and player setup always show a cancel-first confirmation."
-            )
-        elif section == "settings":
-            message = (
-                "↑/↓ or j/k inspect settings  •  Home/End first/last  •  "
-                "PgUp/PgDn scroll  •  r refresh  •  read-only; configuration changes remain CLI-only"
-            )
-        else:
-            message = "1–5 switch sections  •  r refreshes Dashboard  •  q quits"
-        self.notify(message, timeout=5)
+        if not isinstance(self.screen, ModalScreen):
+            self.push_screen(HelpScreen())
 
     def on_navigation_item_activated(self, event: NavigationItem.Activated) -> None:
         self.action_show_section(event.item.section)

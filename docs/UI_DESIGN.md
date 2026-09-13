@@ -306,14 +306,15 @@ but are hidden from the active queue, while failed songs remain visible.
 
 Browse uses Space to mark stable song IDs, `M` to toggle downloadable songs on
 the visible page, and `u` to clear marks. Marks may span pages of one logical
-search; search or filter changes clear them. `a` opens an explicit confirmation
-for the marked set, or the current song when nothing is marked. The dialog shows
-eligible/skipped counts and destination information and states that adding will
-not start a download.
+search; search or filter changes clear them. `a` immediately adds the marked
+set, or the current song when nothing is marked. The status line reports the
+result and reminds the user that adding does not start a download.
 
-The persistent Browse shortcut line is deliberately small: `a Add song · 4
-Downloads · ? Help`, or `a Add selected · Space Mark · u Clear · 4 Downloads ·
-? Help` while marks exist.
+The persistent Browse shortcut line shows movement, details, marking, adding,
+and Help. `?` opens a scrollable keyboard guide from any section, including all
+secondary actions and the shared confirmation keys. Harmless actions execute
+immediately; high-impact actions use a cancel-first dialog. In those dialogs,
+`y` confirms immediately, `n`/`Esc` cancels, and initial `Enter` cancels.
 
 Example:
 
@@ -374,43 +375,21 @@ rmpc detected ✓
 
 # Keybindings
 
-## Global
+The running app's `?` Help screen is the complete key guide and is derived
+from the maintained TUI action inventory. The visible shortcut lines prioritize
+movement, details, and the main action for each section. Core bindings:
 
+| Section | Common keys |
+| --- | --- |
+| Global | `1`–`5` sections, `?` Help, `q` Quit, `Esc` back/close, `r` refresh |
+| Browse | `↑`/`↓` move, `Enter` details, `/` search, `Space` mark, `a` add, `M` mark page, `u` clear marks |
+| Library | `↑`/`↓` move, `Enter` details, `r` refresh, `m` maintain, `v` verify, `b` backups, `p` player |
+| Downloads | `↑`/`↓` move, `Enter` details, `d` selected download, `t` retry, `A` whole queue |
+| Settings | `↑`/`↓` inspect, `PgUp`/`PgDn` scroll, `r` refresh |
 
-q Quit
-esc Back
-? Help
-/ Search
-
-
-## Lists
-
-
-↑ ↓ Navigate
-enter Select
-
-
-## Browse
-
-
-d Download
-l Lyrics
-
-
-## Library
-
-
-r Refresh
-m Maintain lyrics
-v Verify
-b Backups
-
-
-## Downloads
-
-
-r Retry
-d Remove
+`y` immediately accepts a high-impact confirmation. `n`/`Esc` cancels.
+`Enter` chooses the focused action, which is Cancel initially. `Tab`,
+`Shift+Tab`, and left/right move between actions.
 
 
 ---

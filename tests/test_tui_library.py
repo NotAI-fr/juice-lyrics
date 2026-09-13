@@ -207,7 +207,8 @@ def test_loading_empty_missing_and_provider_error_states(tmp_path):
         async with app.run_test() as pilot:
             await pilot.press("3")
             await asyncio.to_thread(quit_started.wait, 2)
-            await pilot.press("q")
+            # Search input keeps normal typing keys; leave it before quitting.
+            await pilot.press("escape", "q")
             assert not app.is_running
             quit_release.set()
 

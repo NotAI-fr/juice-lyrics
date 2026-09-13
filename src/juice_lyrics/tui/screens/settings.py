@@ -73,7 +73,7 @@ class SettingsScreen(HubScreen):
                     yield Static("Capabilities and limitations", classes="panel-title")
                     yield Static("Loading…", id="settings-capabilities", markup=False)
             yield Static("Selected setting details will appear here.", id="settings-detail", markup=False)
-        yield Static("r refresh · ↑/↓ or j/k inspect · PgUp/PgDn scroll", id="settings-position", markup=False)
+        yield Static("↑↓ Inspect · PgUp/PgDn Scroll · r Refresh · ? Help", id="settings-position", markup=False)
 
     def on_screen_resume(self, event: ScreenResume) -> None:
         if self._pending_outcome is not None:
@@ -190,7 +190,7 @@ class SettingsScreen(HubScreen):
                 f"{row.label}\n{row.detail}"
             )
             self.query_one("#settings-position", Static).update(
-                f"Setting {self.selected_index + 1} of {len(self.rows)} · r refresh · PgUp/PgDn scroll"
+                f"Setting {self.selected_index + 1} of {len(self.rows)} · ↑↓ Inspect · r Refresh · ? Help"
             )
 
     def on_key(self, event: Key) -> None:
