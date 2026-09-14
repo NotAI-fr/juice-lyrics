@@ -19,7 +19,7 @@ from ..library.media import (
 )
 from ..lyrics.engine import parse_synced_lyrics, verify_file
 from ..lyrics.sidecar import sidecar_lrc_path
-from ..state import resolve_state_entry, sha256_file
+from ..state import file_fingerprint, resolve_state_entry, sha256_file
 
 LyricsVerifier = Callable[[Path], tuple[bool, str]]
 DurationReader = Callable[[Path], float | None]
@@ -71,6 +71,8 @@ class LibraryTrack:
     album: str | None = None
     media_format: str = "MP3"
     synchronized_source: bool = False
+    content_sha256: str | None = None
+    content_fingerprint: tuple[int, int, int, int, int] | None = None
 
     @property
     def needs_attention(self) -> bool:
@@ -247,6 +249,8 @@ def get_library_snapshot(
         )
         raw_entry = state_files.get(state_key) if state_key is not None else None
         entry = resolved_entry if isinstance(resolved_entry, dict) else None
+        content_sha256 = None
+        content_fingerprint = None
         track_warnings: list[str] = []
         metadata: AudioMetadata | None = None
         metadata_safe_for_matching = True
@@ -288,11 +292,20 @@ def get_library_snapshot(
             track_warnings.append("Stored library state is malformed.")
         else:
             try:
-                state_status = (
-                    LibraryStateStatus.CURRENT
-                    if entry.get("sha256") == hasher(path)
-                    else LibraryStateStatus.CHANGED
-                )
+                before = file_fingerprint(path)
+                content_sha256 = hasher(path)
+                after = file_fingerprint(path)
+                if before != after:
+                    state_status = LibraryStateStatus.INVALID
+                    content_sha256 = None
+                    track_warnings.append("Audio changed while being scanned; refresh again.")
+                else:
+                    content_fingerprint = after
+                    state_status = (
+                        LibraryStateStatus.CURRENT
+                        if entry.get("sha256") == content_sha256
+                        else LibraryStateStatus.CHANGED
+                    )
             except OSError as exc:
                 state_status = LibraryStateStatus.INVALID
                 track_warnings.append(f"Could not hash file: {exc}")
@@ -364,6 +377,8 @@ def get_library_snapshot(
                 media_format=media_format(path),
                 synchronized_source=expected_synced,
                 warning=" ".join(track_warnings) or None,
+                content_sha256=content_sha256,
+                content_fingerprint=content_fingerprint,
             )
         )
     return LibrarySnapshot(library_path, True, tuple(tracks), warnings)

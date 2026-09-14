@@ -9,7 +9,7 @@ from ..api.client import search_song_names
 from ..backup.manager import now_iso
 from ..config.settings import STATE_FILE, Settings
 from ..library.matching import choose_candidate, search_title_for
-from ..state import read_state_file, resolve_state_entry, sha256_file, write_state_file
+from ..state import file_fingerprint, read_state_file, resolve_state_entry, sha256_file, write_state_file
 from .library_status import LibraryTrack
 
 
@@ -78,7 +78,14 @@ def backfill_catalogue_identities(
     for track in tracks:
         _, existing = resolve_state_entry(files, track.relative_path, relative_paths)
         try:
-            audio_hash = dependencies.hasher(track.path)
+            if (
+                track.content_sha256 is not None
+                and track.content_fingerprint is not None
+                and file_fingerprint(track.path) == track.content_fingerprint
+            ):
+                audio_hash = track.content_sha256
+            else:
+                audio_hash = dependencies.hasher(track.path)
             if _has_identity(existing) and existing.get("sha256") == audio_hash:
                 reused += 1
                 continue

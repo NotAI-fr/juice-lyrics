@@ -110,3 +110,10 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def file_fingerprint(path: Path) -> tuple[int, int, int, int, int]:
+    """Cheap in-process guard for reusing a hash, including replacement/in-place edits."""
+
+    info = Path(path).stat()
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)

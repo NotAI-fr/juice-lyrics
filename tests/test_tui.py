@@ -3,6 +3,7 @@ from pathlib import Path
 import re
 import sys
 from threading import Event
+from time import perf_counter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -76,6 +77,38 @@ def test_app_starts_renders_injected_snapshots_and_exits(tmp_path):
             assert "jobs" not in queue.lower()
 
     asyncio.run(scenario())
+
+
+def test_slow_dashboard_library_does_not_delay_queue_summary(tmp_path):
+    library_started = Event()
+    release_library = Event()
+    queue_called = Event()
+
+    def slow_library(settings):
+        library_started.set()
+        assert release_library.wait(timeout=5)
+        return _library_status(tmp_path)
+
+    def quick_queue():
+        queue_called.set()
+        return _queue_snapshot()
+
+    async def scenario():
+        app = _app(tmp_path, library=slow_library, queue=quick_queue)
+        async with app.run_test() as pilot:
+            assert await asyncio.to_thread(library_started.wait, 2)
+            start = perf_counter()
+            ready = await asyncio.to_thread(queue_called.wait, 0.3)
+            print(f"dashboard queue-ready={perf_counter() - start:.4f}s ready={ready}")
+            assert ready
+            await pilot.pause()
+            assert "1 song ready to download" in _rendered(app, "#queue-data")
+            assert "Loading library status" in _rendered(app, "#library-data")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release_library.set()
 
 
 def test_dashboard_renders_empty_library_and_queue(tmp_path):
