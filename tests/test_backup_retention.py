@@ -226,6 +226,31 @@ def test_retained_backup_can_still_be_restored(tmp_path):
     assert (target / "Track.mp3").read_bytes() == b"original audio"
 
 
+@pytest.mark.parametrize("batch", [False, True])
+def test_interrupted_restore_preserves_existing_audio(tmp_path, monkeypatch, batch):
+    backup = tmp_path / "backup"
+    backup.mkdir()
+    source = backup / "Track.mp3"
+    source.write_bytes(b"backup audio")
+    target = tmp_path / "music" / "Track.mp3"
+    target.parent.mkdir()
+    target.write_bytes(b"current audio")
+
+    def interrupted_copy(source_path, destination_path):
+        Path(destination_path).write_bytes(b"partial")
+        raise OSError("copy interrupted")
+
+    monkeypatch.setattr(manager.shutil, "copy2", interrupted_copy)
+    with pytest.raises(OSError, match="copy interrupted"):
+        if batch:
+            manager.restore_backup(backup, target.parent)
+        else:
+            manager.restore_file(source, target)
+
+    assert target.read_bytes() == b"current audio"
+    assert list(target.parent.iterdir()) == [target]
+
+
 def test_completed_flac_backup_is_valid_for_retention_and_restore(tmp_path):
     backup_dir = tmp_path / "backups"
     roots = _backup_set(backup_dir, 10)

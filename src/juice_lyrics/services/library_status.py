@@ -298,12 +298,17 @@ def get_library_snapshot(
                 track_warnings.append(f"Could not hash file: {exc}")
 
         matched_title = None
-        if entry is not None:
+        if entry is not None and state_status is LibraryStateStatus.CURRENT:
             candidate_title = entry.get("api_name")
             if candidate_title is not None and str(candidate_title).strip():
                 matched_title = str(candidate_title).strip()
         matched = metadata_safe_for_matching and bool(
-            matched_title or (entry is not None and entry.get("song_id") is not None)
+            matched_title
+            or (
+                entry is not None
+                and state_status is LibraryStateStatus.CURRENT
+                and entry.get("song_id") is not None
+            )
         )
 
         expected_synced = bool(

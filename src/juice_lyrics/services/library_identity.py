@@ -44,6 +44,13 @@ def _has_identity(entry: Mapping[str, Any] | None) -> bool:
     return entry.get("song_id") is not None and bool(name)
 
 
+def _state_bytes(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
 def backfill_catalogue_identities(
     settings: Settings,
     tracks: Sequence[LibraryTrack],
@@ -55,7 +62,10 @@ def backfill_catalogue_identities(
 
     dependencies = dependencies or IdentityBackfillDependencies()
     state_path = Path(state_file)
+    original_state = _state_bytes(state_path)
     state = dependencies.state_reader(state_path)
+    if _state_bytes(state_path) != original_state:
+        raise RuntimeError("Library state changed during catalogue identification; refresh again.")
     files = state.setdefault("files", {})
     if not isinstance(files, dict):
         files = {}
@@ -67,10 +77,11 @@ def backfill_catalogue_identities(
 
     for track in tracks:
         _, existing = resolve_state_entry(files, track.relative_path, relative_paths)
-        if _has_identity(existing):
-            reused += 1
-            continue
         try:
+            audio_hash = dependencies.hasher(track.path)
+            if _has_identity(existing) and existing.get("sha256") == audio_hash:
+                reused += 1
+                continue
             query = dependencies.search_title(track.path)
             results = dependencies.searcher(settings, query, refresh=False)
             candidate, _, _, _ = dependencies.matcher(settings, track.path, results, query)
@@ -83,12 +94,15 @@ def backfill_catalogue_identities(
                 unknown += 1
                 continue
 
+            if dependencies.hasher(track.path) != audio_hash:
+                raise RuntimeError("Audio changed during catalogue identification; refresh again.")
+
             reference = str(track.relative_path)
             current = files.get(reference)
             entry = dict(current) if isinstance(current, Mapping) else {}
             entry.update(
                 {
-                    "sha256": dependencies.hasher(track.path),
+                    "sha256": audio_hash,
                     "song_id": song_id,
                     "api_name": api_name,
                     "updated": now_iso(),
@@ -101,6 +115,8 @@ def backfill_catalogue_identities(
             errors.append(f"{track.filename}: {str(exc) or type(exc).__name__}")
 
     if identified:
+        if _state_bytes(state_path) != original_state:
+            raise RuntimeError("Library state changed during catalogue identification; refresh again.")
         dependencies.state_writer(state_path, state)
     return IdentityBackfillResult(
         inspected=len(tracks),

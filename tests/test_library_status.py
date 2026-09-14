@@ -192,8 +192,8 @@ def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypa
         "A Synced.mp3", "B Plain.mp3", "C Missing.mp3"
     ]
     assert snapshot.total_track_count == 3
-    assert snapshot.matched_count == 2
-    assert snapshot.unmatched_count == 1
+    assert snapshot.matched_count == 1
+    assert snapshot.unmatched_count == 2
     assert snapshot.synced_count == 1
     assert snapshot.plain_count == 1
     assert snapshot.no_lyrics_count == 1
@@ -204,6 +204,8 @@ def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypa
     assert snapshot.tracks[0].lrc_status is LibraryLrcStatus.PRESENT
     assert snapshot.tracks[0].state_status is LibraryStateStatus.CURRENT
     assert snapshot.tracks[1].state_status is LibraryStateStatus.CHANGED
+    assert snapshot.tracks[1].match_status is LibraryMatchStatus.UNMATCHED
+    assert snapshot.tracks[1].matched_title is None
     assert snapshot.tracks[2].match_status is LibraryMatchStatus.UNMATCHED
     assert snapshot.tracks[2].lyric_status is LibraryLyricStatus.NONE
     assert snapshot.tracks[2].needs_attention is True

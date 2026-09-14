@@ -157,6 +157,60 @@ def test_persisted_identity_is_reused_without_search(tmp_path):
     assert second.identified == 0
 
 
+def test_changed_audio_does_not_reuse_old_catalogue_identity(tmp_path):
+    track = _track(tmp_path / "music", "Album/Song.flac")
+    state_file = tmp_path / "state.json"
+    state_file.write_text(json.dumps({"files": {"Album/Song.flac": {
+        "sha256": "old-audio-hash", "song_id": 7, "api_name": "Wrong Song",
+        "lyric_type": "FLAC_LYRICS_PLAIN",
+    }}}), encoding="utf-8")
+    searches = []
+    dependencies = IdentityBackfillDependencies(
+        searcher=lambda *args, **kwargs: searches.append(1) or [_candidate("Song", song_id=8)],
+        search_title=lambda path: "Song",
+        matcher=lambda *args: (_candidate("Song", song_id=8), 100.0, [], []),
+    )
+
+    result = backfill_catalogue_identities(
+        Settings(music_dir=tmp_path / "music"), (track,),
+        state_file=state_file, dependencies=dependencies,
+    )
+
+    entry = json.loads(state_file.read_text(encoding="utf-8"))["files"]["Album/Song.flac"]
+    assert searches == [1]
+    assert result.reused == 0
+    assert result.identified == 1
+    assert entry["song_id"] == 8
+    assert entry["lyric_type"] == "FLAC_LYRICS_PLAIN"
+
+
+def test_backfill_does_not_overwrite_state_changed_during_search(tmp_path):
+    track = _track(tmp_path / "music", "Song.mp3")
+    state_file = tmp_path / "state.json"
+    state_file.write_text(json.dumps({"files": {"Other.mp3": {"lyric_type": "USLT"}}}), encoding="utf-8")
+
+    def searcher(*args, **kwargs):
+        state_file.write_text(json.dumps({"files": {
+            "Other.mp3": {"lyric_type": "SYLT", "lrc": "Other.lrc"},
+        }}), encoding="utf-8")
+        return [_candidate("Song")]
+
+    dependencies = IdentityBackfillDependencies(
+        searcher=searcher,
+        search_title=lambda path: "Song",
+        matcher=lambda *args: (_candidate("Song"), 100.0, [], []),
+    )
+
+    with pytest.raises(RuntimeError, match="changed during catalogue identification"):
+        backfill_catalogue_identities(
+            Settings(music_dir=tmp_path / "music"), (track,),
+            state_file=state_file, dependencies=dependencies,
+        )
+    saved = json.loads(state_file.read_text(encoding="utf-8"))["files"]
+    assert saved["Other.mp3"] == {"lyric_type": "SYLT", "lrc": "Other.lrc"}
+    assert "Song.mp3" not in saved
+
+
 @pytest.mark.parametrize("ambiguous", [True, False])
 def test_ambiguous_or_duration_incompatible_candidate_remains_unknown(
     tmp_path, monkeypatch, ambiguous

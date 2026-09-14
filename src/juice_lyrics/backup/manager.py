@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -75,7 +77,16 @@ def backup_file(path: Path, root: Path, base: Path) -> Path:
 
 def restore_file(backup: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(backup, destination)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".restore", dir=destination.parent
+    )
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    try:
+        shutil.copy2(backup, temporary)
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _manifest_created_at(root: Path) -> datetime | None:
@@ -178,7 +189,6 @@ def restore_backup(root: Path, base: Path) -> int:
     restored = 0
     for source in _backup_audio_files(root):
         destination = base / source.relative_to(root)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
+        restore_file(source, destination)
         restored += 1
     return restored
