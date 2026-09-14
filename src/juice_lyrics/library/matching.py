@@ -27,6 +27,7 @@ MAX_DURATION_GRACE_RATIO = 0.02
 _NAMED_VARIANTS = {
     "acoustic": r"\bacoustic\b",
     "demo": r"\bdemo\b",
+    "extended outro": r"\bextended\s+outro\b",
     "instrumental": r"\binstrumental\b",
     "live": r"\blive\b",
     "radio edit": r"\bradio\s+edit\b",
@@ -40,7 +41,7 @@ _ALBUM_EDITION_GROUP = re.compile(
     r"\s*[\[(]\s*(?:"
     r"bonus\s+track\s+version|"
     r"deluxe(?:\s+edition)?|"
-    r"anniversary(?:\s+edition)?|"
+    r"(?:[1-9]\d*(?:[\s-]+year|(?:st|nd|rd|th))\s+)?anniversary(?:\s+edition)?|"
     r"expanded(?:\s+edition)?|"
     r"special\s+edition"
     r")\s*[\])]\s*",

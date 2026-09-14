@@ -200,6 +200,56 @@ def test_album_edition_compatibility_is_recognized_but_arbitrary_parentheticals_
     assert matching.album_match_kind(path, candidate) is None
 
 
+@pytest.mark.parametrize("edition", ["5 Year Anniversary Edition", "5th Anniversary Edition"])
+def test_numbered_anniversary_album_beats_same_recording_in_singles(monkeypatch, edition):
+    path = _local(
+        monkeypatch,
+        title="Lucid Dreams",
+        duration=239.842,
+        album=f"Goodbye & Good Riddance ({edition})",
+    )
+    candidates = [
+        {
+            "id": 1, "name": "Lucid Dreams", "category": "released", "length": "3:59",
+            "path": "Compilation/1. Released Discography/24. Singles & Features/Lucid Dreams.mp3",
+        },
+        {
+            "id": 2, "name": "Lucid Dreams", "category": "released", "length": "3:59",
+            "album": "Goodbye & Good Riddance",
+            "path": "Compilation/1. Released Discography/7. Goodbye & Good Riddance/Lucid Dreams.mp3",
+        },
+    ]
+
+    chosen, _, reasons, _ = matching.choose_candidate(Settings(), path, candidates, "Lucid Dreams")
+
+    assert chosen is candidates[1]
+    assert "album edition/path match (+30)" in reasons
+
+
+def test_extended_outro_does_not_ambiguous_normal_album_track(monkeypatch):
+    path = _local(
+        monkeypatch, title="Can't Die", duration=182.9285,
+        album="Legends Never Die (5 Year Anniversary Edition)",
+    )
+    candidates = [
+        {
+            "id": 1, "name": "Can't Die", "category": "released", "length": "3:02",
+            "path": "Compilation/1. Released Discography/12. Legends Never Die/Can't Die.mp3",
+        },
+        {
+            "id": 2, "name": "Can't Die (Extended Outro)", "category": "released", "length": "3:05",
+            "album": "Legends Never Die (Extended Outro)",
+            "path": "Compilation/3. Misc. Discography/Can't Die (Extended Outro).mp3",
+        },
+    ]
+
+    chosen, _, _, _ = matching.choose_candidate(Settings(), path, candidates, "Can't Die")
+    diagnostics = matching.diagnose_candidates(Settings(), path, candidates, "Can't Die")
+
+    assert chosen is candidates[0]
+    assert any("candidate-only variant extended outro" in reason for reason in diagnostics[1].reasons)
+
+
 def test_unknown_duration_can_win_with_overwhelming_unopposed_evidence(monkeypatch):
     path = _local(monkeypatch, title="Rental", duration=180.0, album=None)
     candidate = {
