@@ -1,104 +1,207 @@
-# 999 Project State
+# 999 project state
 
-## Current Status
-Backend services remain stable. The `999` Textual interface supports
-immediate single- and multi-song Browse Add to queue actions and
-selected or whole-queue downloads. The interface now prioritizes the streamlined
-Browse → Add → Downloads → Download queue journey. The current working-tree
-checkpoint has 386 passing tests.
+This is the canonical detailed handoff for the current application. It records
+the repository state after `31ebaf2 Add one-button Library Sync`. Read the code
+and tests if a later working tree disagrees with this document.
 
-## Current Branch
-v2-redesign
+## Repository checkpoint
 
-## Repository
+- Repository: `/home/nobloat/Downloads/juice-lyrics-codex`
+- Active development branch: `v2-redesign`
+- Stable pre-redesign branch/tag: `main` / `v1.4.0-backend-complete`
+- Product/primary executable: `999`
+- Compatibility executable: `juice-lyrics`
+- Python package: `juice_lyrics`
+- Distribution: `juice-wrld-lyrics`
+- XDG storage namespace: `juice-lyrics`
+- Last verified product commit: `31ebaf2`
+- Verification at that commit: 410 tests passed; 14 isolated recovery smoke
+  tests passed; compileall and `git diff --check` passed.
 
-`/home/nobloat/Downloads/juice-lyrics-codex`
+Test totals are checkpoint evidence, not a permanent promise. Run the current
+suite before reporting a later code milestone.
 
-## Completed and integrated
+## Product experience
 
-- Typed read-only library-status, catalogue, acquisition-queue, and library-sync services.
-- Responsive terminal-native Textual shell with all five main sections functional; Browse adds one or marked songs without a confirmation or starting a download.
-- Canonical Category and Era selectors, filter-only searches, correct case-sensitive API cache behavior, server-side catalogue pagination, scrollable 50-result pages, and stable ID-based song details.
-- Track-oriented Downloads queue summaries, song navigation, details, structured failures, and retry eligibility; durable jobs are hidden as an internal mechanism.
-- Stable-ID Browse marks span pages within one logical search; Space toggles a song, `M` toggles the page, `u` clears marks, and search/filter changes clear hidden marks.
-- Immediate Browse batch Add flow persists eligible songs atomically and never starts downloading.
-- Downloads `d` starts one explicitly selected eligible queued song without an extra prompt, delegated to the existing acquisition runner with responsive Downloading and Processing states.
-- Explicit cancel-first Downloads `A` flow for sequentially downloading all eligible queued songs; failed and active entries are skipped.
-- Simplified primary shortcut bars, optional Browse selection indicators,
-  Dashboard journey prompts, and Settings folders before advanced diagnostics.
-  A scrollable global `?` guide inventories all TUI actions; common actions stay
-  visible. Bulk/destructive/config-changing operations remain cancel-first.
-- Library is the normal maintenance centre: format-aware summary, track details,
-  read-only refresh/verification, non-mutating maintenance preview, confirmed
-  shared-service execution, selected-song refresh, backup browsing/restore, and
-  rmpc verification/setup.
-- Library lyric health is independent of catalogue identity: valid local
-  embedded lyrics plus a genuinely timestamped adjacent sidecar can be fully
-  covered even when the catalogue match is unknown. Catalogue-unmatched totals
-  remain visible separately and do not inflate lyric-attention totals.
-- Library Refresh now backfills confident catalogue identities for newly
-  discovered MP3, FLAC, and M4A files through the shared conservative matcher,
-  without modifying audio or lyrics; offline failure leaves local health usable.
-- `999 state clean` previews clearly stale external records, while explicit
-  `--yes` creates a timestamped state safety copy and atomically prunes only the
-  reviewed records. Valid relative history and ambiguous duplicates are kept.
-- Catalogue identities can be rebuilt for all current tracks through an
-  explicit cancel-first Library action or `999 state rebuild-identities`.
-  Rebuilds preserve lyric state, audit changed IDs, back up state, and commit
-  atomically without touching media.
-- Settings configuration provenance, XDG/application paths, sidecar external-lyrics behavior, rmpc integration status, and current capability limitations.
-- Existing MP3 lyric embedding, verification, backup/restore, synchronized LRC generation, and rmpc integration remain supported.
-- Local FLAC files are recursively discovered and matched using native title,
-  artist, album, and duration metadata. FLAC lyric writes use standard Vorbis
-  `LYRICS`, preserve unrelated metadata, and are backed up before mutation.
-- FLAC synchronized timing uses the adjacent `.lrc`; there is no proprietary
-  embedded timing format and no audio conversion.
-- Local M4A files are recursively discovered and matched using native MP4 title,
-  artist, album, and duration metadata. Plain lyrics use standard `©lyr` metadata.
-- M4A synchronized timing uses the adjacent `.lrc`; unrelated atoms and the
-  audio stream are preserved and no conversion occurs.
-- External synchronized LRC files live beside each audio file with the same
-  basename; the finalized audio path is authoritative.
-- The legacy `lyrics_dir` setting remains readable but deprecated. Historical
-  state paths and rmpc configuration cannot redirect new LRC output, and
-  read-only operations create no sidecars or directories.
+The main download journey remains:
 
-## Available through the CLI
+```text
+Browse → Add → Downloads → Download queue → Done
+```
 
-The advanced CLI remains supported for scripting, whole acquisition records,
-low-level recovery, diagnostics, and durable acquisition-record operations.
+Browse supports catalogue filters, pagination, details, stable-ID multi-select,
+and immediate queue addition. Adding never starts a download. Downloads exposes
+individual download/retry plus a confirmed whole-queue action while keeping
+durable acquisition-job IDs out of the normal UI.
 
-## Current limitations
+Library is the maintenance centre. The primary routine action is:
 
-- Configuration editing remains CLI-only.
-- Active-download Cancel remains unimplemented; `x` removes
-  a waiting/failed song, `c` clears waiting/failed records, and `H` clears
-  completed history without deleting downloaded files.
-- Acquisition post-processing remains MP3-only; native FLAC and M4A support
-  targets existing local-library files.
-- `999` is the primary product and executable name. `juice-lyrics` remains a
-  legacy compatibility command. The Python namespace remains `juice_lyrics`,
-  the distribution remains `juice-wrld-lyrics`, and existing XDG data remains
-  under `juice-lyrics` without migration.
+```text
+s → Sync Library
+```
 
-## Important Decisions
-- Keep embedded lyrics
-- Keep LRC generation for rmpc
-- Use terminal-native colours
-- Use Textual
-- Keep backend separate from UI
+`?` opens the complete scrollable key guide globally. Common actions remain in
+screen shortcut lines. Harmless actions are immediate; high-impact operations
+use a cancel-first confirmation where `y` executes immediately, `n`/Escape
+cancels, and initial Enter cancels.
 
-## Recommended next milestones
+## One-button Library Sync
 
-1. Final beta polish and release testing
-2. Active-download cancellation, if still desired
-3. Post-beta enhancements only after real-user feedback
+Sync Library runs in a background worker and cannot be started twice
+concurrently. It uses persisted filesystem fingerprints and the current scan to
+classify library-relative MP3, FLAC, and M4A paths as:
 
-## Resume development
+- **unchanged** — same path, size, and nanosecond mtime; reuse safe snapshot and
+  identity information and avoid redundant hashes, metadata reads, and writes;
+- **new** — newly discovered current-library audio;
+- **changed** — filesystem evidence changed; reread metadata and do not trust a
+  stale identity merely because the relative path is the same;
+- **removed** — previously active path no longer exists in the current scan.
+
+New, changed, and currently Unknown tracks are offered to the shared
+conservative catalogue matcher. Confident identities are persisted; ambiguous
+or empty-result tracks remain Unknown. Normal cache expiry governs retries, so
+Sync does not force every catalogue request on every run. One failed lookup does
+not prevent other confident matches from being saved. A broad/offline failure
+leaves local health useful and does not wipe established identities.
+
+Removed tracks are retired with current-library bookkeeping rather than having
+their historical/custom state records destructively deleted. Clearly stale
+external records remain the responsibility of explicit state cleanup.
+
+Sync refreshes displayed local lyric health but does **not** edit audio,
+embedded lyrics, sidecars, audio backups, queue/history, or rmpc configuration.
+It does not download music. Optional rmpc absence/failure is not a Library Sync
+failure.
+
+## Library health and maintenance
+
+Catalogue identity and local lyric health are separate axes. A healthy track
+may be catalogue Unknown without needing lyric attention. An adjacent `.lrc`
+counts as synchronized only when it contains genuine timestamped lyric lines.
+
+- MP3 full coverage uses the existing format-aware ID3 requirements plus its
+  synchronized sidecar behavior.
+- FLAC full coverage requires supported embedded plain lyrics and a valid timed
+  adjacent `.lrc`; MP3 SYLT is not required.
+- M4A full coverage requires supported embedded plain lyrics and a valid timed
+  adjacent `.lrc`; MP3 SYLT is not required.
+
+`m` previews lyric maintenance without mutation, then requires explicit
+confirmation before applying the shared sync/backup/verification pipeline.
+`v` verifies read-only. Track details, selected lyric refresh, backup browsing
+and confirmed restore, rmpc verify/explicit setup, identity rebuild, and stale
+state cleanup remain available as contextual or advanced operations.
+
+## Catalogue identity and matcher
+
+Normal discovery does not depend on historical state: unknown MP3, FLAC, and
+M4A tracks can be identified through the shared backfill/matcher path. Only a
+confident `song_id` and `api_name` are merged; lyric state is never fabricated.
+Known compatible persisted identities are reused until file-change evidence
+invalidates them.
+
+Matching remains conservative and uses normalized titles/collaboration credits,
+artist evidence, meaningful version/named-variant penalties, category evidence,
+album/API-path evidence, duration tolerance, a narrow released-album duration
+grace, a confidence threshold, and an ambiguity margin. Key live-shaped
+regressions are:
+
+```text
+Bandit  → song_id 94107
+10 Feet → song_id 94102
+```
+
+A wrong confident result is worse than Unknown. Do not weaken safeguards merely
+to reduce the Unknown count.
+
+Full identity rebuild is an explicit recovery transaction. Preview is
+non-mutating; apply rematches current files in memory, preserves non-identity
+state, creates a complete state backup, audits changed IDs, and atomically
+replaces state. A provider-wide outage aborts rather than erasing identities.
+
+Explicit stale-state cleanup previews first, makes a state backup, and
+atomically removes only clearly stale nonexistent external records. Historical
+relative paths and uncertain legacy duplicates are deliberately preserved.
+
+## Media, lyrics, backups, and rmpc
+
+- MP3, FLAC, and M4A are recursively discovered case-insensitively.
+- MP3 retains ID3 USLT/SYLT behavior.
+- FLAC stores plain lyrics in standard Vorbis `LYRICS`.
+- M4A stores plain lyrics in standard MP4 `©lyr`.
+- Synchronized external lyrics always use the exact adjacent same-basename
+  `.lrc`; no format conversion or centralized lyrics output occurs.
+- Media metadata mutation is preceded by backup and followed by verification;
+  failure restores the original. Backup retention keeps the newest 10 valid
+  backups, and historical manifests remain readable.
+- rmpc receives the actual adjacent sidecar path. Normal startup, status,
+  refresh, and Sync never rewrite rmpc configuration; setup is explicit.
+
+## State and filesystem safety
+
+State/LRC writes are atomic. State updates retain conflict protection so an
+operation does not silently overwrite a concurrently changed state file.
+Restore uses safe replacement/rollback semantics. Tests install isolated HOME
+and XDG paths before application imports and guard against the real home.
+
+Never run automated library work against `/home/nobloat/Music` or the user's
+real config, state, backups, queue, sidecars, or rmpc configuration.
+
+## Known limitations and risks
+
+- The conservative matcher intentionally leaves ambiguous/no-result songs
+  Unknown; manual match and identity locking are not implemented yet.
+- Library has attention/details but not a consolidated Issues experience.
+- Active download cancellation is not implemented.
+- Acquisition/post-processing remains MP3-focused; FLAC/M4A support is for
+  existing local-library files.
+- Configuration editing remains primarily CLI-based.
+- `cli.py` still contains a second equivalent `load_settings()` plus later
+  service-adapter definitions that shadow older local `search_api`,
+  `search_api_advanced`, and `get_song` implementations. This
+  compatibility-era layering is maintenance debt; consolidate only with
+  focused CLI/API tests.
+- `tui/screens/placeholder.py` is still exported but no current screen uses it.
+  Remove it only as a small tested code-cleanup change.
+- The old `lyrics_dir` configuration is compatibility-only and does not migrate
+  historical centralized files.
+- Packaging/install acceptance and public GitHub presentation still need a
+  final release pass.
+
+## Roadmap
+
+Product principle:
+
+```text
+common safe routine work → automatic/simple
+ambiguous/destructive work → explicit user decision
+```
+
+Keep normal Library UX centered on **Sync Library** and future **Issues**;
+advanced repair/recovery must not overwhelm normal use.
+
+1. Manual catalogue match and identity locking
+2. Library Issues / Health experience
+3. Duplicate detector
+4. Metadata repair
+5. Missing Library
+6. `999 doctor` / diagnostics
+7. Shell completion
+8. Final performance/reliability acceptance
+9. Packaging and clean installation
+10. GitHub presentation/distribution
+11. Beta release
+
+## Resume safely
 
 ```bash
 cd /home/nobloat/Downloads/juice-lyrics-codex
 git switch v2-redesign
-.venv/bin/pytest -q
+git status --short
+pytest -q
 .venv/bin/999
 ```
+
+Read `AGENTS.md` first, then this file, then the relevant architecture/user
+document. Update this file after substantial milestones.

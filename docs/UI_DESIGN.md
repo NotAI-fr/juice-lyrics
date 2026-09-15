@@ -160,11 +160,9 @@ Example:
 └──────────────────────────────────────┘
 
 
-Questions:
-
-- Should dashboard open by default?
-- Should recent songs/downloads appear?
-- Should it show rmpc status?
+The Dashboard opens by default and summarizes the current local snapshot and
+download state without waiting for network work. It links users toward Browse,
+Library Sync, and Downloads rather than becoming a second control panel.
 
 ---
 
@@ -281,6 +279,7 @@ Synced LRC       ✓
 Actions:
 
 
+s Sync Library
 r Refresh
 m Maintain lyrics
 v Verify
@@ -383,7 +382,7 @@ movement, details, and the main action for each section. Core bindings:
 | --- | --- |
 | Global | `1`–`5` sections, `?` Help, `q` Quit, `Esc` back/close, `r` refresh |
 | Browse | `↑`/`↓` move, `Enter` details, `/` search, `Space` mark, `a` add, `M` mark page, `u` clear marks |
-| Library | `↑`/`↓` move, `Enter` details, `r` refresh, `m` maintain, `v` verify, `b` backups, `p` player |
+| Library | `↑`/`↓` move, `Enter` details, `s` Sync Library, `m` maintain; `r` local refresh, `v`, `b`, `p` are secondary |
 | Downloads | `↑`/`↓` move, `Enter` details, `d` selected download, `t` retry, `A` whole queue |
 | Settings | `↑`/`↓` inspect, `PgUp`/`PgDn` scroll, `r` refresh |
 
@@ -394,28 +393,8 @@ movement, details, and the main action for each section. Core bindings:
 
 ---
 
-# Future Screens
+# Current scope
 
-Possible later additions:
-
-- lyrics viewer
-- playlist manager
-- statistics
-- album/era explorer
-- advanced metadata editor
-
-These are not required for the first release.
-
----
-
-# First Release Priority
-
-The first usable TUI version should contain:
-
-1. Dashboard
-2. Browse/Search
-3. Song Details
-4. Download Queue
-5. Library View
-
-Settings and advanced tools can follow.
+Dashboard, Browse, Library, Downloads, Settings, song details, and global Help
+are implemented. Forward product work is tracked in `PROJECT_STATE.md` rather
+than as speculative screens here.

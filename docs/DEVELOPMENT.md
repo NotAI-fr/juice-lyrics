@@ -16,9 +16,9 @@ The baseline test suite includes core parsing and rmpc configuration/LRC checks.
 
 Read:
 
-1. `PROJECT_CONTEXT.md`
-2. `docs/ROADMAP.md`
-3. `docs/ARCHITECTURE.md`
+1. `AGENTS.md`
+2. `docs/PROJECT_STATE.md`
+3. the relevant architecture, decision, or user document
 
 Then inspect the current implementation and tests.
 
@@ -94,9 +94,9 @@ visible. Enter loads full details and a lyric preview, while `r` refreshes the
 current API page. Space marks or unmarks the highlighted result, `M` toggles all
 downloadable songs on the current page, and `u` clears the marks. Marks may span
 pages of the same search; changing the title, Category, or Era clears them.
-Press `a` to review and add the marked songs, or the highlighted song when none
-are marked. The cancel-first dialog reports eligible and skipped songs and
-states that adding does not start a download. Global keys remain `1`–`5` for
+Press `a` to add the marked songs, or the highlighted song when none are
+marked. Addition is immediate, reports eligible/skipped songs, and does not
+start a download. Global keys remain `1`–`5` for
 sections, `?` for help, and `q` to quit. Browse does not run downloads, sync
 lyrics, edit settings, or modify the local library.
 It uses Textual's ANSI-color mode and ANSI palette names rather than a bundled
@@ -108,10 +108,10 @@ Use arrows or `j`/`k` to select an individual queued song,
 Home/End for the first or last song, and PageUp/PageDown for longer queues.
 Enter opens track details and Escape returns to the queue. Press `r` to refresh.
 Completed backend records are counted but hidden from the active queue; failed
-songs remain visible. Press `d` to review a cancel-first confirmation for the
-selected queued song. Confirming runs the existing download, validation, lyric,
-LRC, state, backup, and rmpc pipeline; no download starts before confirmation.
-Press `t` on a failed song for a cancel-first Retry confirmation. A verified
+songs remain visible. Press `d` to start the explicitly selected queued song;
+the whole-queue `A` action remains cancel-first. The runner uses the existing
+download, validation, lyric, LRC, state, backup, and rmpc pipeline. Press `t`
+on a failed song to retry it immediately. A verified
 finalized file may reuse the existing media safely; otherwise the downloader
 resume/redownload path is used. Active-download cancellation remains unavailable.
 Use `x` to remove a waiting/failed song, `c` to clear waiting and failed songs,

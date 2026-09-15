@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — One-button Library Sync and safety hardening
+
+* Made Library `s` the normal background **Sync Library** action.
+* Added incremental unchanged/new/changed/removed file classification, safe
+  catalogue backfill for Unknown tracks, changed-file identity invalidation,
+  removed-path retirement, cache-aware retries, and duplicate-run protection.
+* Preserved conservative Bandit (`94107`) and 10 Feet (`94102`) matcher
+  regressions, state-conflict safety, atomic restore, and local lyric-health
+  classification independent of catalogue identity.
+* Kept normal Sync state-only: it does not rewrite audio, sidecars, backups,
+  downloads, or rmpc configuration.
+* Verified 410 automated tests and 14 isolated recovery smoke tests at commit
+  `31ebaf2`.
+
 ## Unreleased — 999 beta identity and packaging
 
 * Made `999` the primary product name and console entry point while retaining

@@ -153,9 +153,10 @@ queue. Failed entries remain visible and actionable until a future retry or
 remove action resolves them. Internal references may appear only in an advanced
 troubleshooting detail.
 
-Download selected, sequential Download all, Retry, Remove, Clear queue, and
-Clear completed history each use an explicit cancel-first workflow. Active
-download cancellation remains planned.
+Adding to the queue, Download selected, Retry, Remove, and completed-history
+cleanup are immediate because they are explicit or record-only actions.
+Sequential Download queue and bulk waiting/failed cleanup retain cancel-first
+confirmation. Active download cancellation remains unimplemented.
 
 Browse selection is an in-memory set keyed by stable catalogue song ID. Marks
 may span pages only within one logical search and are cleared when the search or
@@ -169,11 +170,18 @@ The backend can remain technical while the user interface becomes friendly.
 ## Catalogue identity and state cleanup
 
 Catalogue identity is stored in the existing state file but is not a prerequisite
-for recognizing healthy local lyrics. Library Refresh may backfill a confident
-identity through the normal matcher; it must not manufacture lyric state or
-change media. Clearly stale external state records are ignored during normal
-lookup and deleted only by an explicit preview-first cleanup that makes a state
-backup. Legitimate historical relative keys are not speculatively deduplicated.
+for recognizing healthy local lyrics. One-button Library Sync may backfill a
+confident identity through the normal matcher; it must not manufacture lyric
+state or change media. Clearly stale external state records are ignored during
+normal lookup and deleted only by an explicit preview-first cleanup that makes a
+state backup. Legitimate historical relative keys are not speculatively
+deduplicated.
+
+Normal Sync is safe routine work and therefore starts immediately. It detects
+unchanged, new, changed, and removed current-library paths, avoids expensive
+work for unchanged files, retires removed paths without deleting historical
+records, and cannot run twice concurrently. It never rewrites audio, lyrics,
+backups, downloads, or rmpc configuration.
 
 A full catalogue-identity rebuild is an explicit recovery operation, not a
 library reset. It removes/replaces only `song_id` and `api_name` for current

@@ -49,9 +49,8 @@ downloads and high-impact changes to audio, backups, catalogue identities, or pl
 Library lyric coverage is determined from the local audio and a genuinely
 timestamped adjacent `.lrc`; catalogue matching is shown separately because it
 is needed for automatic refresh, not for recognizing already healthy lyrics.
-Library **Refresh** shows local health first, then identifies newly discovered
-tracks in the background and saves only confident catalogue identities. It
-does not rewrite audio, lyrics, backups, or rmpc configuration.
+The separate Library **Refresh** action remains a read-only local rescan.
+Routine discovery and safe identity backfill belong to **Sync Library**.
 
 The CLI remains available for scripting and automation. `999 sync` remembers
 files it has already processed, so unchanged verified files are skipped.
@@ -103,14 +102,17 @@ The project avoids untargeted catalogue scraping; media acquisition is explicit,
 
 The repository keeps its development and continuity context in version-controlled documentation so work can safely continue across chats or coding agents:
 
-- `PROJECT_CONTEXT.md` — user/project context and major decisions
-- `docs/ROADMAP.md` — current and planned work
+- `AGENTS.md` — concise first-stop instructions for coding agents
+- `docs/PROJECT_STATE.md` — canonical current checkpoint and roadmap
+- `PROJECT_CONTEXT.md` — durable user and product context
+- `docs/ROADMAP.md` — concise forward roadmap
 - `docs/ARCHITECTURE.md` — component responsibilities and dependency direction
 - `docs/USER_GUIDE.md` — straightforward user workflows
 - `docs/DEVELOPMENT.md` — development and testing guidance
 - `docs/CHANGELOG.md` — release and milestone history
 
-Before major changes, read `PROJECT_CONTEXT.md`, `docs/ROADMAP.md`, and `docs/ARCHITECTURE.md`.
+Before major changes, read `AGENTS.md`, `docs/PROJECT_STATE.md`, and the
+relevant architecture or user document.
 
 ## Commands
 

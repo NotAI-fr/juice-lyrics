@@ -66,11 +66,18 @@ track. Ordinary TUI maintenance protects fully covered unmatched tracks; an
 explicit per-track refresh may retry conservative matching without changing the
 file when no safe candidate is found.
 
-Library Refresh uses a shared catalogue-identity backfill service after the
-local snapshot is rendered. The service reuses compatible persisted identities,
-uses the normal query preparation and conservative matcher for unknown MP3,
-FLAC, and M4A files, and atomically merges only confident `song_id`/`api_name`
-results into the existing state schema. It never infers lyric-processing state.
+One-button Library Sync uses `services/library_index_sync.py` as the shared
+incremental orchestration boundary. It compares cheap filesystem fingerprints
+to classify unchanged, new, changed, and removed current-library paths; reuses
+safe snapshot/identity information for unchanged files; invalidates identity
+trust when file evidence changes; and offers new, changed, and Unknown MP3,
+FLAC, and M4A tracks to the normal conservative matcher. Confident identities
+are atomically merged without inferring lyric-processing state. Removed paths
+are retired rather than destructively deleting historical/custom state.
+
+The TUI runs Sync in a worker and prevents concurrent duplicate runs. Ordinary
+Sync does not mutate audio, lyrics, backups, downloads, or rmpc configuration.
+The older Refresh action remains a direct read-only local rescan.
 
 ## Lyrics layer
 

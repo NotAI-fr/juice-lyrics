@@ -50,13 +50,8 @@ Maintain
 
 A new user opens 999 for the first time.
 
-Current problem:
-
-The old CLI requires understanding setup, configuration, directories, and integrations.
-
-v2 goal:
-
-The application should guide the user.
+The application must open safely even when configuration or the default library
+is missing.
 
 ---
 
@@ -68,53 +63,11 @@ User runs:
 999
 
 
-Application checks:
-
-- configuration exists
-- music directory exists
-- rmpc availability
-- existing library
-
----
-
-Example:
-
-
-Welcome to 999
-
-First-time setup detected.
-
-Music folder:
-~/Music/Juice WRLD
-
-rmpc:
-Detected ✓
-
-Existing tracks:
-39
-
-Would you like to continue?
-
-[Enter] Setup
-[Esc] Exit
-
-
----
-
-After setup:
-
-
-Setup complete.
-
-Library:
-39 tracks
-
-Lyrics:
-39 processed
-
-Ready.
-
-Press Enter to continue.
+The Dashboard opens without downloading, modifying media, creating a
+centralized lyrics folder, or rewriting rmpc. Missing paths are shown in plain
+language. Settings exposes the configured locations; `999 config init` is the
+optional CLI path for writing starter configuration, and rmpc setup remains an
+explicit action.
 
 
 ---
@@ -406,6 +359,8 @@ Missing Lyrics
 Actions:
 
 
+s Sync Library
+
 r Refresh
 
 m Maintain lyrics
@@ -423,29 +378,15 @@ enter Details; l refresh selected lyrics
 
 ## Goal
 
-Preview and update new or changed files without memorizing a CLI command.
+Bring 999's view of the current library up to date without understanding scan,
+backfill, verification, or state internals.
 
 ---
 
 User:
 
 
-Press m
-
-
----
-
-Confirmation:
-
-
-Library maintenance
-
-12 songs can be updated
-2 songs need attention
-
-No changes have been made.
-
-[Update 12 songs] [Cancel]
+Press s
 
 
 ---
@@ -453,16 +394,7 @@ No changes have been made.
 Progress:
 
 
-Maintaining library...
-
-Rental.mp3
-Matching...
-
-Lyrics found ✓
-
-Embedding...
-
-Complete
+Syncing library...
 
 
 ---
@@ -470,19 +402,26 @@ Complete
 Summary:
 
 
-Library updated
+Library synced
 
-Updated:
-12
+181 tracks
+4 new
+1 changed
+2 removed
+37 newly matched
+15 need attention
 
-Synced Lyrics:
-8
 
-Plain Lyrics:
-4
+---
 
-Failed:
-0
+Sync runs in the background without confirmation. It avoids expensive work for
+unchanged files, identifies only confident Unknowns, retires removed paths in
+state, and refreshes local health. It never edits audio, embedded lyrics,
+sidecars, backups, downloads, or rmpc configuration. Offline or ambiguous
+catalogue results remain Unknown without making the local Library unusable.
+
+To change lyrics, the separate `m` action first presents a non-mutating
+maintenance preview and uses cancel-first confirmation before applying changes.
 
 
 ---
@@ -630,15 +569,9 @@ Ask only before:
 
 ---
 
-# Future User Flows
+# Forward flows
 
-Possible later additions:
-
-- playlists
-- favourites
-- statistics
-- automatic library monitoring
-- album/era exploration
-- lyrics-only mode
-
-These are not required for the first v2 release.
+The next planned normal-user addition is an Issues/Health experience backed by
+manual catalogue matching and identity locking. The ordered roadmap lives in
+`PROJECT_STATE.md`; speculative screen lists are intentionally not duplicated
+here.

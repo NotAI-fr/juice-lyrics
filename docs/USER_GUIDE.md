@@ -20,8 +20,9 @@ submits the search and returns focus to the results.
 Browse uses `Space` to mark songs and `a` to add the current or marked songs
 directly to Downloads; adding does not start a download. In Downloads, `d`
 downloads one selected song, `t` retries a failed song, and `A` starts the
-whole queue after confirmation. Library refresh, verification, and maintenance
-preview are read-only. Applying maintenance, restoring, rebuilding catalogue
+whole queue after confirmation. Library Sync, local refresh, verification, and
+maintenance preview do not change audio or lyrics. Applying maintenance,
+restoring, rebuilding catalogue
 matches, and changing rmpc setup remain cancel-first confirmations: `y`
 confirms immediately, `n`/`Esc` cancels, and initial `Enter` cancels.
 
@@ -76,7 +77,9 @@ changed. If the catalogue is unavailable, local health remains usable and the
 track stays **Unknown**.
 
 Select a song and press `l` to refresh lyrics for only that song. The CLI
-equivalent, `999 sync`, remains useful for scripting and automation.
+`999 sync` command is the separate scriptable lyric-maintenance workflow; it
+may modify lyrics and should not be confused with the TUI's state-only Sync
+Library action.
 
 **Fully covered** describes local lyric health, not catalogue identity. A FLAC
 or M4A file is fully covered when it has embedded plain lyrics and its adjacent
