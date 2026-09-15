@@ -86,6 +86,13 @@ from .library_identity import (
     IdentityBackfillResult,
     backfill_catalogue_identities,
 )
+from .manual_identity import (
+    ManualIdentityDependencies,
+    ManualIdentityResult,
+    is_identity_locked,
+    set_manual_identity,
+    unlock_manual_identity,
+)
 from .identity_rebuild import (
     IdentityChange,
     IdentityRebuildDependencies,
@@ -143,6 +150,8 @@ __all__ = [
     "LibraryStatus",
     "IdentityBackfillDependencies",
     "IdentityBackfillResult",
+    "ManualIdentityDependencies",
+    "ManualIdentityResult",
     "LibraryLrcStatus",
     "LibraryLyricStatus",
     "LibraryMatchStatus",
@@ -191,6 +200,9 @@ __all__ = [
     "IdentityRebuildProgress",
     "IdentityRebuildResult",
     "backfill_catalogue_identities",
+    "is_identity_locked",
+    "set_manual_identity",
+    "unlock_manual_identity",
     "execute_library_sync",
     "execute_library_sync_preview",
     "execute_stale_state_cleanup",

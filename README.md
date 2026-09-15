@@ -51,6 +51,10 @@ timestamped adjacent `.lrc`; catalogue matching is shown separately because it
 is needed for automatic refresh, not for recognizing already healthy lyrics.
 The separate Library **Refresh** action remains a read-only local rescan.
 Routine discovery and safe identity backfill belong to **Sync Library**.
+When a track remains Unknown or has a wrong automatic identity, select it in
+Library and press `c` to search, choose, and lock the correct catalogue
+record. Press `u` to unlock and clear a manual choice so a later Sync can
+reconsider it.
 
 The CLI remains available for scripting and automation. `999 sync` remembers
 files it has already processed, so unchanged verified files are skipped.

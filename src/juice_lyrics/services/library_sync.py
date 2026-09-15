@@ -19,6 +19,11 @@ from ..lyrics.sidecar import sidecar_lrc_path
 from ..rmpc.integration import notify_rmpc_index, patch_rmpc_config
 from ..state import load_state, resolve_state_entry, save_state, sha256_file
 from ..backup.manager import now_iso
+from .manual_identity import (
+    IDENTITY_LOCK_FIELD,
+    IDENTITY_SOURCE_FIELD,
+    is_identity_locked,
+)
 
 
 class SyncLyricType(str, Enum):
@@ -118,6 +123,7 @@ class TrackSyncPlan:
     plain_lyrics: str = ""
     error: str | None = None
     lrc_path: Path | None = None
+    identity_locked: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +274,31 @@ def _state_is_current(
     return True
 
 
+def _locked_song_id(
+    state: Mapping[str, Any],
+    path: Path,
+    options: LibrarySyncOptions,
+    dependencies: LibrarySyncDependencies,
+    library_relative_paths: tuple[Path, ...],
+) -> Any | None:
+    state_files = state.get("files", {})
+    if not isinstance(state_files, Mapping):
+        return None
+    _, entry = resolve_state_entry(
+        state_files,
+        path.relative_to(options.music_dir),
+        library_relative_paths,
+    )
+    if not is_identity_locked(entry):
+        return None
+    try:
+        if entry.get("sha256") != dependencies.hasher(path):
+            return None
+    except OSError:
+        return None
+    return entry.get("song_id")
+
+
 def plan_library_sync(
     options: LibrarySyncOptions,
     *,
@@ -317,10 +348,39 @@ def plan_library_sync(
         try:
             title = dependencies.search_title(path)
             results = dependencies.searcher(options.settings, title, refresh=options.refresh)
-            candidate, _, _, _ = dependencies.matcher(options.settings, path, results, title)
+            locked_song_id = _locked_song_id(
+                state, path, options, dependencies, relative_paths
+            )
+            if locked_song_id is not None:
+                candidate = next(
+                    (
+                        result
+                        for result in results
+                        if isinstance(result, Mapping)
+                        and str(result.get("id")) == str(locked_song_id)
+                    ),
+                    None,
+                )
+            else:
+                candidate, _, _, _ = dependencies.matcher(
+                    options.settings, path, results, title
+                )
             if candidate is None:
-                tracks.append(TrackSyncPlan(path, MatchOutcome.UNRESOLVED, SyncLyricType.NONE))
-                _emit(progress, SyncEventKind.UNRESOLVED, path=path)
+                error = (
+                    "The manually selected catalogue recording is unavailable."
+                    if locked_song_id is not None
+                    else None
+                )
+                tracks.append(
+                    TrackSyncPlan(
+                        path,
+                        MatchOutcome.UNRESOLVED,
+                        SyncLyricType.NONE,
+                        error=error,
+                        identity_locked=locked_song_id is not None,
+                    )
+                )
+                _emit(progress, SyncEventKind.UNRESOLVED, path=path, message=error)
                 continue
             synced = tuple(dependencies.lyric_parser(str(candidate.get("synced_lyrics") or "")))
             plain = str(candidate.get("lyrics") or "")
@@ -344,6 +404,7 @@ def plan_library_sync(
                         if options.rmpc_enabled and lyric_type is SyncLyricType.SYNCED
                         else None
                     ),
+                    identity_locked=locked_song_id is not None,
                 )
             )
             _emit(progress, SyncEventKind.MATCH_FOUND, path=path, message=lyric_type.value)
@@ -432,14 +493,24 @@ def _state_entry(
             if track.lyric_type is SyncLyricType.SYNCED
             else "M4A_LYRICS_PLAIN"
         )
-    state.setdefault("files", {})[str(track.path.relative_to(options.music_dir))] = {
-        "sha256": dependencies.hasher(track.path),
-        "song_id": candidate.get("id"),
-        "api_name": candidate.get("name"),
-        "lyric_type": lyric_type,
-        "lrc": str(lrc_path) if lrc_path else None,
-        "updated": now_iso(),
-    }
+    reference = str(track.path.relative_to(options.music_dir))
+    files = state.setdefault("files", {})
+    previous = files.get(reference) if isinstance(files, dict) else None
+    entry = dict(previous) if isinstance(previous, Mapping) else {}
+    if not track.identity_locked:
+        entry.pop(IDENTITY_SOURCE_FIELD, None)
+        entry.pop(IDENTITY_LOCK_FIELD, None)
+    entry.update(
+        {
+            "sha256": dependencies.hasher(track.path),
+            "song_id": candidate.get("id"),
+            "api_name": candidate.get("name"),
+            "lyric_type": lyric_type,
+            "lrc": str(lrc_path) if lrc_path else None,
+            "updated": now_iso(),
+        }
+    )
+    files[reference] = entry
 
 
 def execute_library_sync(

@@ -29,6 +29,8 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Wrong confident catalogue matches are worse than `Unknown`. Do not weaken
   matcher thresholds, version/variant safeguards, duration rules, or ambiguity
   handling without a reproduced generic bug and regression tests.
+- Automatic Sync, backfill, refresh, cache changes, and ordinary identity
+  rebuilds must not overwrite a valid file-bound manual identity lock.
 - Preserve downloader destination checks, `.part` handling, response/content
   validation, checksums, resume safety, and atomic finalization.
 - Do not make normal Sync modify audio, lyrics, backups, downloads, or rmpc

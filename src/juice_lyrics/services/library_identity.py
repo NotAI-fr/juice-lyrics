@@ -11,6 +11,7 @@ from ..config.settings import STATE_FILE, Settings
 from ..library.matching import choose_candidate, search_title_for
 from ..state import file_fingerprint, read_state_file, resolve_state_entry, sha256_file, write_state_file
 from .library_status import LibraryTrack
+from .manual_identity import IDENTITY_LOCK_FIELD, IDENTITY_SOURCE_FIELD
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +110,10 @@ def backfill_catalogue_identities(
             reference = str(track.relative_path)
             current = files.get(reference)
             entry = dict(current) if isinstance(current, Mapping) else {}
+            # A match recalculated for different audio must not inherit a
+            # user lock that belonged to the previous file at this path.
+            entry.pop(IDENTITY_SOURCE_FIELD, None)
+            entry.pop(IDENTITY_LOCK_FIELD, None)
             entry.update(
                 {
                     "sha256": audio_hash,

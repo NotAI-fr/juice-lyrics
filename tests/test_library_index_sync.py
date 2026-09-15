@@ -101,7 +101,12 @@ def test_changed_audio_replaces_stale_identity_and_ambiguous_stays_unknown(tmp_p
     settings = Settings(music_dir=music)
     first = sync_library_index(settings, state_file=state_file, dependencies=deps)
     old_state = json.loads(state_file.read_text(encoding="utf-8"))
-    old_state["files"]["Song.mp3"].update({"lyric_type": "USLT", "lrc": "old.lrc"})
+    old_state["files"]["Song.mp3"].update({
+        "lyric_type": "USLT",
+        "lrc": "old.lrc",
+        "identity_source": "manual",
+        "identity_locked": True,
+    })
     state_file.write_text(json.dumps(old_state), encoding="utf-8")
     path.write_bytes(b"new audio")
     candidates[:] = [{"id": 2, "name": "New"}]
@@ -111,6 +116,8 @@ def test_changed_audio_replaces_stale_identity_and_ambiguous_stays_unknown(tmp_p
     changed_entry = json.loads(state_file.read_text(encoding="utf-8"))["files"]["Song.mp3"]
     assert changed_entry["song_id"] == 2
     assert "lyric_type" not in changed_entry and "lrc" not in changed_entry
+    assert "identity_source" not in changed_entry
+    assert "identity_locked" not in changed_entry
     path.write_bytes(b"third audio")
     candidates[:] = [{"id": 3, "name": "A"}, {"id": 4, "name": "B"}]
 
@@ -210,6 +217,54 @@ def test_empty_search_stays_unknown_and_is_not_repeated_within_cache_ttl(tmp_pat
     assert second.unknown == 1 and second.summary == "Library is up to date"
     assert counts == before
     assert path.read_bytes() == b"audio"
+
+
+def test_normal_sync_preserves_valid_manual_lock_without_search(tmp_path):
+    music = tmp_path / "music"
+    music.mkdir()
+    path = music / "Manual.flac"
+    path.write_bytes(b"audio")
+    digest = sha256_file(path)
+    state_file = tmp_path / "state.json"
+    locked = {
+        "sha256": digest,
+        "song_id": 77,
+        "api_name": "User Choice",
+        "identity_source": "manual",
+        "identity_locked": True,
+        "lyric_type": "FLAC_LYRICS_PLAIN",
+    }
+    state_file.write_text(
+        json.dumps(
+            {
+                "files": {"Manual.flac": locked},
+                "library_sync_paths": ["Manual.flac"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    counts = _counts()
+    deps = _dependencies(
+        state_file,
+        searcher=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("locked identity searched")
+        ),
+        counts=counts,
+    )
+
+    result = sync_library_index(
+        Settings(music_dir=music),
+        state_file=state_file,
+        dependencies=deps,
+    )
+
+    entry = json.loads(state_file.read_text(encoding="utf-8"))["files"][
+        "Manual.flac"
+    ]
+    assert result.snapshot.tracks[0].identity_locked is True
+    assert result.snapshot.tracks[0].matched_title == "User Choice"
+    assert entry == locked
+    assert counts["searches"] == 0
 
 
 def test_existing_unknown_is_backfilled_without_changing_audio_or_sidecar(tmp_path):

@@ -190,6 +190,13 @@ builds the result in memory, preserves isolated-failure identities, creates a
 complete state backup, and performs one atomic state write. Stale and
 non-current historical records are not deleted by the rebuild.
 
+An explicit manual catalogue choice is stored with `identity_source =
+"manual"` and `identity_locked = true`, tied to the current file hash.
+Automatic operations preserve a valid lock. Changed/replaced audio invalidates
+it; ordinary rebuild preserves it; only the advanced `--include-locked`
+rebuild option may override it. Unlocking clears identity/provenance fields so a
+later Sync can reconsider the track, while lyric and custom state survive.
+
 Duration remains a primary matching safeguard. The configured tolerance is the
 normal trusted range. A small catalogue-duration discrepancy is eligible only
 for a normal released candidate with exact base title, no extra version or

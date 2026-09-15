@@ -371,6 +371,8 @@ b Backups
 
 enter Details; l refresh selected lyrics
 
+c Match manually; u unlock manual match
+
 
 ---
 
@@ -422,6 +424,12 @@ catalogue results remain Unknown without making the local Library unusable.
 
 To change lyrics, the separate `m` action first presents a non-mutating
 maintenance preview and uses cancel-first confirmation before applying changes.
+
+When automatic identity remains Unknown or is wrong, `c` opens a catalogue
+chooser. The user may refine the query with `/`, choose with arrows, and save
+with Enter. That explicit choice becomes a file-bound manual lock; normal Sync
+and rebuild preserve it. `u` clears the identity lock without touching lyrics
+and leaves automatic reconsideration for a later Sync.
 
 
 ---

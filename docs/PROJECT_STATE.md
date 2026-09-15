@@ -1,8 +1,9 @@
 # 999 project state
 
-This is the canonical detailed handoff for the current application. It records
-the repository state after `31ebaf2 Add one-button Library Sync`. Read the code
-and tests if a later working tree disagrees with this document.
+This is the canonical detailed handoff for the current application. The
+one-button Sync baseline is `31ebaf2`; manual catalogue matching and
+file-bound identity locking are now integrated on top of it. Read the code and
+tests if a later working tree disagrees with this document.
 
 ## Repository checkpoint
 
@@ -14,9 +15,11 @@ and tests if a later working tree disagrees with this document.
 - Python package: `juice_lyrics`
 - Distribution: `juice-wrld-lyrics`
 - XDG storage namespace: `juice-lyrics`
-- Last verified product commit: `31ebaf2`
-- Verification at that commit: 410 tests passed; 14 isolated recovery smoke
-  tests passed; compileall and `git diff --check` passed.
+- One-button Sync baseline: `31ebaf2` (410 tests plus 14 isolated recovery
+  smoke tests, compileall, and `git diff --check`).
+- Manual identity-lock milestone verification: 424 full-suite tests and 34
+  explicit temporary-HOME/XDG identity/state smoke tests passed; compileall and
+  `git diff --check` passed.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -115,6 +118,33 @@ Bandit  → song_id 94107
 A wrong confident result is worse than Unknown. Do not weaken safeguards merely
 to reduce the Unknown count.
 
+## Manual catalogue identity
+
+Select any Library track and press `c` to open **Match manually**. The
+background catalogue search starts with the local title; `/` focuses a small
+refinement field, arrows choose a candidate, Enter saves it, and Escape
+cancels. Candidate rows show title, category, era, duration, and catalogue ID
+so released/session/version variants remain distinguishable.
+
+A saved choice adds `identity_source = "manual"` and `identity_locked =
+true` alongside the existing `song_id`, `api_name`, and current audio
+SHA-256. Missing fields in historical state continue to mean
+automatic/unlocked. The lock is visible only in track details and survives
+restart, normal Sync, backfill, cache refresh, local refresh, and ordinary
+identity rebuild. Lyric maintenance also uses the exact locked catalogue ID and
+refuses to substitute a different candidate.
+
+Locks are bound to the scanned audio fingerprint/hash. Changed or replaced
+audio does not inherit the old lock. Press `u` to unlock: because the existing
+automatic pipeline reuses any valid identity, unlock deliberately clears only
+the catalogue identity/provenance fields and leaves lyrics, history, and custom
+state untouched. It does not immediately search; a later Sync may identify the
+track automatically.
+
+Ordinary full identity rebuild preserves valid manual locks. The technical CLI
+`999 state rebuild-identities --include-locked --yes` explicitly opts into
+reconsidering them.
+
 Full identity rebuild is an explicit recovery transaction. Preview is
 non-mutating; apply rematches current files in memory, preserves non-identity
 state, creates a complete state backup, audits changed IDs, and atomically
@@ -150,8 +180,6 @@ real config, state, backups, queue, sidecars, or rmpc configuration.
 
 ## Known limitations and risks
 
-- The conservative matcher intentionally leaves ambiguous/no-result songs
-  Unknown; manual match and identity locking are not implemented yet.
 - Library has attention/details but not a consolidated Issues experience.
 - Active download cancellation is not implemented.
 - Acquisition/post-processing remains MP3-focused; FLAC/M4A support is for
@@ -181,17 +209,16 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and future **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Manual catalogue match and identity locking
-2. Library Issues / Health experience
-3. Duplicate detector
-4. Metadata repair
-5. Missing Library
-6. `999 doctor` / diagnostics
-7. Shell completion
-8. Final performance/reliability acceptance
-9. Packaging and clean installation
-10. GitHub presentation/distribution
-11. Beta release
+1. Library Issues / Health experience
+2. Duplicate detector
+3. Metadata repair
+4. Missing Library
+5. `999 doctor` / diagnostics
+6. Shell completion
+7. Final performance/reliability acceptance
+8. Packaging and clean installation
+9. GitHub presentation/distribution
+10. Beta release
 
 ## Resume safely
 

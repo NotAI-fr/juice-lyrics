@@ -13,10 +13,25 @@ from ..config.settings import STATE_FILE, Settings
 from ..library.matching import choose_candidate, search_title_for
 from ..state import read_state_file, resolve_state_entry, write_state_file
 from .library_status import LibrarySnapshot, LibraryTrack, get_library_snapshot
+from .library_status import LibraryStateStatus
+from .manual_identity import (
+    IDENTITY_LOCK_FIELD,
+    IDENTITY_SOURCE_FIELD,
+    is_identity_locked,
+)
 from .state_maintenance import plan_stale_state_cleanup
 
 
-IDENTITY_FIELDS = ("song_id", "api_name")
+IDENTITY_FIELDS = ("song_id", "api_name", IDENTITY_SOURCE_FIELD, IDENTITY_LOCK_FIELD)
+
+
+def _valid_track_lock(entry: Mapping[str, Any] | None, track: LibraryTrack) -> bool:
+    return bool(
+        is_identity_locked(entry)
+        and track.state_status is LibraryStateStatus.CURRENT
+        and track.content_sha256
+        and entry.get("sha256") == track.content_sha256
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +51,19 @@ class IdentityRebuildPlan:
     @property
     def currently_unknown(self) -> int:
         return self.current_tracks - self.existing_identities
+
+    @property
+    def locked_identities(self) -> int:
+        files = self.state.get("files", {})
+        state_files = files if isinstance(files, Mapping) else {}
+        relative_paths = tuple(track.relative_path for track in self.tracks)
+        return sum(
+            _valid_track_lock(
+                resolve_state_entry(state_files, track.relative_path, relative_paths)[1],
+                track,
+            )
+            for track in self.tracks
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +179,7 @@ def execute_catalogue_identity_rebuild(
     refresh: bool = False,
     dependencies: IdentityRebuildDependencies | None = None,
     progress: Callable[[IdentityRebuildProgress], None] | None = None,
+    include_locked: bool = False,
 ) -> IdentityRebuildResult:
     """Re-match current tracks and atomically replace identity fields only."""
 
@@ -174,6 +203,14 @@ def execute_catalogue_identity_rebuild(
         exact = source_files.get(reference)
         had_entry = isinstance(exact, Mapping) or isinstance(resolved, Mapping)
         base = dict(exact) if isinstance(exact, Mapping) else dict(resolved or {})
+        if _valid_track_lock(resolved, track) and not include_locked:
+            if progress is not None:
+                progress(
+                    IdentityRebuildProgress(
+                        completed, len(plan.tracks), track.path, "manual match preserved"
+                    )
+                )
+            continue
         try:
             query = dependencies.search_title(track.path)
             results = dependencies.searcher(plan.settings, query, refresh=refresh)

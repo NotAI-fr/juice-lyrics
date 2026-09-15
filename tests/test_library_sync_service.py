@@ -264,6 +264,74 @@ def test_frontend_preview_can_scope_one_track_and_force_refresh(tmp_path):
     assert calls == [("Selected", True)]
 
 
+def test_lyric_maintenance_uses_and_preserves_valid_manual_identity_lock(tmp_path):
+    path = tmp_path / "Track.mp3"
+    path.write_bytes(b"original")
+    deps, state, saved, _ = _dependencies(tmp_path)
+    locked = {
+        "sha256": deps.hasher(path),
+        "song_id": 77,
+        "api_name": "User Choice",
+        "identity_source": "manual",
+        "identity_locked": True,
+        "custom": "keep",
+    }
+    state["files"]["Track.mp3"] = locked
+    wrong = {**_candidate("plain"), "id": 88, "name": "Automatic Choice"}
+    chosen = {**_candidate("plain"), "id": 77, "name": "User Choice"}
+    deps.searcher = lambda *args, **kwargs: [wrong, chosen]
+    deps.matcher = lambda *args: (wrong, 100.0, [], [])
+    deps.embedder = lambda target, *_: target.write_bytes(b"updated") or "USLT"
+    deps.verifier = lambda target: (True, "USLT")
+
+    plan = plan_library_sync(
+        _options(tmp_path, refresh=True),
+        dependencies=deps,
+    )
+    assert plan.tracks[0].candidate["id"] == 77
+    assert plan.tracks[0].identity_locked is True
+
+    execute_library_sync(plan, dependencies=deps)
+    entry = saved[0]["files"]["Track.mp3"]
+    assert entry["song_id"] == 77
+    assert entry["api_name"] == "User Choice"
+    assert entry["identity_source"] == "manual"
+    assert entry["identity_locked"] is True
+    assert entry["custom"] == "keep"
+
+
+def test_missing_locked_catalogue_candidate_does_not_fall_back_or_change_state(
+    tmp_path,
+):
+    path = tmp_path / "Track.mp3"
+    path.write_bytes(b"original")
+    deps, state, saved, backup_root = _dependencies(tmp_path)
+    locked = {
+        "sha256": deps.hasher(path),
+        "song_id": 77,
+        "api_name": "User Choice",
+        "identity_source": "manual",
+        "identity_locked": True,
+    }
+    state["files"]["Track.mp3"] = locked
+    wrong = {**_candidate("plain"), "id": 88, "name": "Automatic Choice"}
+    deps.searcher = lambda *args, **kwargs: [wrong]
+    deps.matcher = lambda *args: (wrong, 100.0, [], [])
+
+    plan = plan_library_sync(
+        _options(tmp_path, refresh=True),
+        dependencies=deps,
+    )
+    result = execute_library_sync(plan, dependencies=deps)
+
+    assert plan.tracks[0].outcome is MatchOutcome.UNRESOLVED
+    assert "manually selected" in (plan.tracks[0].error or "")
+    assert result.updated_files == 0
+    assert saved[0]["files"]["Track.mp3"] == locked
+    assert path.read_bytes() == b"original"
+    assert not backup_root.exists()
+
+
 def test_frontend_preview_protects_locally_covered_unmatched_track(tmp_path):
     path = tmp_path / "Bandit.mp3"
     path.write_bytes(b"covered audio")

@@ -285,6 +285,8 @@ m Maintain lyrics
 v Verify
 b Backups
 p Player integration
+c Match manually
+u Unlock manual match
 enter Details; l refresh selected lyrics
 
 
@@ -382,7 +384,7 @@ movement, details, and the main action for each section. Core bindings:
 | --- | --- |
 | Global | `1`–`5` sections, `?` Help, `q` Quit, `Esc` back/close, `r` refresh |
 | Browse | `↑`/`↓` move, `Enter` details, `/` search, `Space` mark, `a` add, `M` mark page, `u` clear marks |
-| Library | `↑`/`↓` move, `Enter` details, `s` Sync Library, `m` maintain; `r` local refresh, `v`, `b`, `p` are secondary |
+| Library | `↑`/`↓` move, `Enter` details, `s` Sync Library, `c` manual match; `u` unlock, `m`, `r`, `v`, `b`, `p` are secondary |
 | Downloads | `↑`/`↓` move, `Enter` details, `d` selected download, `t` retry, `A` whole queue |
 | Settings | `↑`/`↓` inspect, `PgUp`/`PgDn` scroll, `r` refresh |
 

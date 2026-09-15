@@ -27,6 +27,7 @@ from juice_lyrics.services.library_status import (
     LibraryStateStatus,
     LibraryTrack,
 )
+from juice_lyrics.state import file_fingerprint, sha256_file
 
 
 def _track(root: Path, relative: str, *, title: str | None = None, album: str = "Album") -> LibraryTrack:
@@ -54,6 +55,8 @@ def _track(root: Path, relative: str, *, title: str | None = None, album: str = 
         artist="Juice WRLD",
         album=album,
         media_format=path.suffix[1:].upper(),
+        content_sha256=sha256_file(path),
+        content_fingerprint=file_fingerprint(path),
     )
 
 
@@ -107,6 +110,93 @@ def test_rebuild_preview_is_read_only_and_reports_current_identity_and_stale_cou
     assert plan.stale_keys == (stale,)
     assert state_file.read_bytes() == original
     assert not tuple(tmp_path.glob("state.json.pre-identity-rebuild-*.bak"))
+
+
+def test_rebuild_preserves_manual_locks_unless_advanced_override_is_explicit(
+    tmp_path,
+):
+    music = tmp_path / "music"
+    track = _track(music, "Album/Manual.flac")
+    state_file = tmp_path / "state.json"
+    original = {
+        "sha256": track.content_sha256,
+        "song_id": 11,
+        "api_name": "User Choice",
+        "identity_source": "manual",
+        "identity_locked": True,
+        "lyric_type": "FLAC_LYRICS_PLAIN",
+    }
+    _write_state(state_file, {track.reference: original})
+    plan = _plan(Settings(music_dir=music), state_file, (track,))
+    searches: list[str] = []
+    candidate = {"id": 22, "name": "New Automatic Choice"}
+    deps = IdentityRebuildDependencies(
+        searcher=lambda *args, **kwargs: searches.append("search") or [candidate],
+        search_title=lambda path: path.stem,
+        matcher=lambda *args: (candidate, 100.0, [], []),
+    )
+
+    kept = execute_catalogue_identity_rebuild(plan, dependencies=deps)
+
+    assert searches == []
+    assert kept.changed_identities == 0
+    assert json.loads(state_file.read_text(encoding="utf-8"))["files"][
+        track.reference
+    ] == original
+
+    override_plan = _plan(Settings(music_dir=music), state_file, (track,))
+    replaced = execute_catalogue_identity_rebuild(
+        override_plan,
+        dependencies=deps,
+        include_locked=True,
+    )
+    entry = json.loads(state_file.read_text(encoding="utf-8"))["files"][
+        track.reference
+    ]
+    assert searches == ["search"]
+    assert replaced.changed_identities == 1
+    assert entry["song_id"] == 22
+    assert entry["lyric_type"] == "FLAC_LYRICS_PLAIN"
+    assert "identity_source" not in entry
+    assert "identity_locked" not in entry
+
+
+def test_rebuild_does_not_preserve_lock_from_replaced_audio(tmp_path):
+    music = tmp_path / "music"
+    track = _track(music, "Changed.mp3")
+    state_file = tmp_path / "state.json"
+    _write_state(
+        state_file,
+        {
+            track.reference: {
+                "sha256": "previous audio",
+                "song_id": 1,
+                "api_name": "Old Manual Choice",
+                "identity_source": "manual",
+                "identity_locked": True,
+            }
+        },
+    )
+    plan = _plan(Settings(music_dir=music), state_file, (track,))
+    candidate = {"id": 2, "name": "Replacement"}
+    searches: list[str] = []
+
+    execute_catalogue_identity_rebuild(
+        plan,
+        dependencies=IdentityRebuildDependencies(
+            searcher=lambda *args, **kwargs: searches.append("search") or [candidate],
+            search_title=lambda path: path.stem,
+            matcher=lambda *args: (candidate, 100.0, [], []),
+        ),
+    )
+
+    entry = json.loads(state_file.read_text(encoding="utf-8"))["files"][
+        track.reference
+    ]
+    assert searches == ["search"]
+    assert entry["song_id"] == 2
+    assert "identity_source" not in entry
+    assert "identity_locked" not in entry
 
 
 def test_rebuild_corrects_live_bandit_and_ten_feet_and_preserves_everything_else(tmp_path, monkeypatch):
@@ -384,6 +474,15 @@ def test_cli_rebuild_preview_requires_yes_and_apply_reports_audit(tmp_path, monk
     )
     assert cli.command_state(apply_args, plan.settings, False) == 0
     output = capsys.readouterr().out
-    assert executions == [(plan, {"refresh": True})]
+    assert executions == [(plan, {"refresh": True, "include_locked": False})]
     assert "96383 (10 Feet) -> 94102 (10 Feet)" in output
     assert "Audio, embedded lyrics, sidecars, and rmpc configuration were not changed" in output
+
+    override_args = cli.build_parser().parse_args(
+        ["state", "rebuild-identities", "--yes", "--include-locked"]
+    )
+    assert cli.command_state(override_args, plan.settings, False) == 0
+    assert executions[-1] == (
+        plan,
+        {"refresh": False, "include_locked": True},
+    )

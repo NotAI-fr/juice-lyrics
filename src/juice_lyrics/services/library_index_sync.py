@@ -17,6 +17,7 @@ from .library_identity import (
     IdentityBackfillDependencies,
     backfill_catalogue_identities,
 )
+from .manual_identity import IDENTITY_LOCK_FIELD, IDENTITY_SOURCE_FIELD
 from .library_status import (
     LibraryMatchStatus,
     LibrarySnapshot,
@@ -224,6 +225,8 @@ def sync_library_index(
         if updated.get("sha256") != audio_hash:
             updated.pop("song_id", None)
             updated.pop("api_name", None)
+            updated.pop(IDENTITY_SOURCE_FIELD, None)
+            updated.pop(IDENTITY_LOCK_FIELD, None)
             updated.pop("lyric_type", None)
             updated.pop("lrc", None)
             updated.pop("catalogue_checked_at", None)

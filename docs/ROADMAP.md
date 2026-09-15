@@ -15,17 +15,16 @@ Advanced repair and recovery remain available without crowding routine use.
 
 ## Remaining sequence
 
-1. Manual catalogue match and identity locking
-2. Library Issues / Health experience
-3. Duplicate detector
-4. Metadata repair
-5. Missing Library
-6. `999 doctor` / diagnostics
-7. Shell completion
-8. Final performance/reliability acceptance
-9. Packaging and clean installation
-10. GitHub presentation/distribution
-11. Beta release
+1. Library Issues / Health experience
+2. Duplicate detector
+3. Metadata repair
+4. Missing Library
+5. `999 doctor` / diagnostics
+6. Shell completion
+7. Final performance/reliability acceptance
+8. Packaging and clean installation
+9. GitHub presentation/distribution
+10. Beta release
 
 Do not force ambiguous tracks into identities. Do not combine these milestones
 into a broad rewrite. Each milestone should preserve the safety invariants in

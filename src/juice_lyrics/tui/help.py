@@ -24,6 +24,8 @@ KEY_GUIDE: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
                  ("m", "Preview and maintain lyrics"), ("r", "Refresh library"),
                  ("v", "Verify library"), ("b", "Browse backups"),
                  ("p", "Check player integration"), ("l", "Preview selected lyric refresh"),
+                 ("c", "Choose and lock a catalogue match"),
+                 ("u", "Unlock and clear a manual match"),
                  ("i", "Preview catalogue identity rebuild"),
                  ("PgUp/PgDn", "Scroll tracks or details"), ("Home/End", "First / last track"))),
     ("Downloads", (("↑/↓ or j/k", "Select queue item"), ("Enter", "Item details"),

@@ -21,6 +21,7 @@ from ..library.media import (
 from ..lyrics.engine import parse_synced_lyrics, verify_file
 from ..lyrics.sidecar import sidecar_lrc_path
 from ..state import file_fingerprint, resolve_state_entry, sha256_file
+from .manual_identity import is_identity_locked
 
 LyricsVerifier = Callable[[Path], tuple[bool, str]]
 DurationReader = Callable[[Path], float | None]
@@ -75,6 +76,8 @@ class LibraryTrack:
     content_sha256: str | None = None
     content_fingerprint: tuple[int, int, int, int, int] | None = None
     sidecar_fingerprint: tuple[int, int, int, int, int] | None = None
+    identity_source: str | None = None
+    identity_locked: bool = False
 
     @property
     def needs_attention(self) -> bool:
@@ -421,6 +424,17 @@ def get_library_snapshot(
                 content_sha256=content_sha256,
                 content_fingerprint=content_fingerprint,
                 sidecar_fingerprint=sidecar_fingerprint,
+                identity_source=(
+                    str(entry.get("identity_source"))
+                    if entry is not None
+                    and state_status is LibraryStateStatus.CURRENT
+                    and entry.get("identity_source")
+                    else None
+                ),
+                identity_locked=(
+                    state_status is LibraryStateStatus.CURRENT
+                    and is_identity_locked(entry)
+                ),
             )
         )
     return LibrarySnapshot(library_path, True, tuple(tracks), warnings, state_signature)

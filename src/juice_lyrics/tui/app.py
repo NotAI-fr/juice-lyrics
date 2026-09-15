@@ -39,6 +39,11 @@ from ..services.download_queue import (
 from ..services.library_status import LibrarySnapshot, LibraryStatus, get_library_snapshot, get_library_status
 from ..services.library_identity import IdentityBackfillResult, backfill_catalogue_identities
 from ..services.library_index_sync import LibraryIndexSyncResult, sync_library_index
+from ..services.manual_identity import (
+    ManualIdentityResult,
+    set_manual_identity,
+    unlock_manual_identity,
+)
 from ..services.identity_rebuild import (
     IdentityRebuildPlan,
     IdentityRebuildResult,
@@ -56,7 +61,7 @@ from .screens.base import NavigationItem
 from .screens.browse import BrowseScreen
 from .screens.dashboard import DashboardScreen
 from .screens.downloads import DownloadsScreen
-from .screens.library import LibraryScreen
+from .screens.library import LibraryScreen, ManualMatchDialog
 from .screens.settings import SettingsScreen
 from .help import HelpScreen
 
@@ -73,6 +78,7 @@ CatalogueFiltersProvider = Callable[..., CatalogueFilterMetadata]
 LibrarySnapshotProvider = Callable[[Any], LibrarySnapshot]
 LibraryIdentityProvider = Callable[..., IdentityBackfillResult]
 LibraryIndexSyncProvider = Callable[..., LibraryIndexSyncResult]
+ManualIdentityProvider = Callable[..., ManualIdentityResult]
 IdentityRebuildPlanProvider = Callable[..., IdentityRebuildPlan]
 IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
 LibraryPreviewProvider = Callable[[Any], LibrarySyncPlan]
@@ -459,7 +465,8 @@ class JuiceLyricsApp(App[None]):
     MaintenanceDialog,
     BackupBrowser,
     RestoreDialog,
-    RmpcDialog {
+    RmpcDialog,
+    ManualMatchDialog {
         align: center middle;
         background: transparent;
     }
@@ -471,6 +478,41 @@ class JuiceLyricsApp(App[None]):
         height: auto;
         padding: 1 2;
         border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #manual-match-dialog {
+        width: 82;
+        max-width: 94%;
+        height: 80%;
+        padding: 1 2;
+        border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #manual-match-context {
+        height: 3;
+    }
+
+    #manual-match-query {
+        height: 3;
+        background: transparent;
+        border: tall ansi_cyan;
+    }
+
+    #manual-match-query:focus {
+        border: tall ansi_blue;
+    }
+
+    #manual-match-scroll {
+        height: 1fr;
+        background: transparent;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+    }
+
+    #manual-match-results {
+        height: auto;
         background: transparent;
     }
 
@@ -886,6 +928,8 @@ class JuiceLyricsApp(App[None]):
         library_identity_provider: LibraryIdentityProvider = backfill_catalogue_identities,
         identity_rebuild_plan_provider: IdentityRebuildPlanProvider = plan_catalogue_identity_rebuild,
         identity_rebuild_execution_provider: IdentityRebuildExecutionProvider = execute_catalogue_identity_rebuild,
+        manual_identity_provider: ManualIdentityProvider = set_manual_identity,
+        manual_unlock_provider: ManualIdentityProvider = unlock_manual_identity,
         library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
         library_execution_provider: LibraryExecutionProvider = execute_library_sync_preview,
         backup_provider: Callable[[], tuple[BackupRecord, ...]] = list_backups,
@@ -925,6 +969,8 @@ class JuiceLyricsApp(App[None]):
         self.library_identity_provider = library_identity_provider
         self.identity_rebuild_plan_provider = identity_rebuild_plan_provider
         self.identity_rebuild_execution_provider = identity_rebuild_execution_provider
+        self.manual_identity_provider = manual_identity_provider
+        self.manual_unlock_provider = manual_unlock_provider
         self.library_preview_provider = library_preview_provider
         self.library_execution_provider = library_execution_provider
         self.backup_provider = backup_provider
@@ -966,6 +1012,9 @@ class JuiceLyricsApp(App[None]):
                 restore_provider=self.restore_provider,
                 rmpc_status_provider=self.settings_snapshot_provider,
                 rmpc_setup_provider=self.rmpc_setup_provider,
+                manual_search_provider=self.catalogue_search_provider,
+                manual_identity_provider=self.manual_identity_provider,
+                manual_unlock_provider=self.manual_unlock_provider,
             ),
             "library",
         )

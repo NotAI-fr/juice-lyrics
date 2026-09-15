@@ -1138,11 +1138,16 @@ def command_state(args: argparse.Namespace, settings: Settings, use_color: bool)
         print(f"Current tracks:      {plan.current_tracks}")
         print(f"Existing identities: {plan.existing_identities}")
         print(f"Currently unknown:   {plan.currently_unknown}")
+        print(f"Manual locks kept:   {plan.locked_identities}")
         print(f"Stale records ignored: {len(plan.stale_keys)}")
         if not args.yes:
             print("\nNo changes made. Run `999 state rebuild-identities --yes` to rebuild safely.")
             return 0
-        result = execute_catalogue_identity_rebuild(plan, refresh=args.refresh)
+        result = execute_catalogue_identity_rebuild(
+            plan,
+            refresh=args.refresh,
+            include_locked=args.include_locked,
+        )
         if result.aborted:
             print(f"\nRebuild aborted safely: {result.abort_reason}")
             return 1
@@ -1699,6 +1704,11 @@ def build_parser() -> argparse.ArgumentParser:
     rebuild.add_argument("--yes", action="store_true", help="Back up state and apply the identity rebuild.")
     rebuild.add_argument("--refresh", action="store_true", help="Refresh catalogue search responses instead of using valid cache entries.")
     rebuild.add_argument("--details", action="store_true", help="Show every changed identity mapping.")
+    rebuild.add_argument(
+        "--include-locked",
+        action="store_true",
+        help="Advanced: reconsider manual locked identities too.",
+    )
     return parser
 
 

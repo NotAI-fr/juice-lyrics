@@ -28,10 +28,16 @@ from ...services.library_status import (
 )
 from ...services.library_identity import IdentityBackfillResult
 from ...services.library_index_sync import LibraryIndexSyncResult
+from ...services.catalogue import CataloguePage, CatalogueSearchResult
 from ...services.identity_rebuild import (
     IdentityRebuildPlan,
     IdentityRebuildProgress,
     IdentityRebuildResult,
+)
+from ...services.manual_identity import (
+    ManualIdentityResult,
+    set_manual_identity,
+    unlock_manual_identity,
 )
 from ...services.library_sync import LibrarySyncPlan, MatchOutcome, SyncLyricType
 from ...services.library_sync import LibrarySyncResult, SyncEvent, SyncEventKind
@@ -44,6 +50,8 @@ IdentityProvider = Callable[..., IdentityBackfillResult]
 IndexSyncProvider = Callable[..., LibraryIndexSyncResult]
 IdentityRebuildPlanProvider = Callable[..., IdentityRebuildPlan]
 IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
+ManualSearchProvider = Callable[..., CataloguePage]
+ManualIdentityProvider = Callable[..., ManualIdentityResult]
 PreviewProvider = Callable[[Any], LibrarySyncPlan]
 ExecutionProvider = Callable[..., LibrarySyncResult]
 BackupProvider = Callable[[], tuple[BackupRecord, ...]]
@@ -157,6 +165,19 @@ class IdentityRebuildOutcome:
     error: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ManualMatchChoice:
+    song_id: Any
+    api_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class ManualIdentityOutcome:
+    result: ManualIdentityResult | None = None
+    error: str | None = None
+    action: str = "match"
+
+
 class LibraryDialogAction(Static):
     can_focus = True
 
@@ -171,6 +192,160 @@ class LibraryDialogAction(Static):
 
     def on_click(self, event: Click) -> None:
         self.post_message(self.Activated(self.action))
+
+
+class ManualMatchInput(Input):
+    """Search field for the state-only manual catalogue chooser."""
+
+    def on_key(self, event: Key) -> None:
+        if event.key == "question_mark":
+            self.app.action_show_help()
+            event.prevent_default()
+            event.stop()
+
+
+class ManualMatchDialog(ModalScreen[ManualMatchChoice | None]):
+    """Search and choose one catalogue identity without touching media."""
+
+    def __init__(
+        self,
+        settings: Any,
+        track: LibraryTrack,
+        search_provider: ManualSearchProvider,
+    ) -> None:
+        super().__init__()
+        self.settings = settings
+        self.track = track
+        self._search_provider = search_provider
+        self.results: tuple[CatalogueSearchResult, ...] = ()
+        self.index = 0
+        self._search_worker: Worker[tuple[CataloguePage | None, str | None]] | None = None
+
+    def compose(self) -> Iterable[Widget]:
+        with Container(id="manual-match-dialog"):
+            yield Static("Match manually", id="library-dialog-title")
+            yield Static(
+                f"{self.track.title}\nChoose the catalogue recording for this local file.",
+                id="manual-match-context",
+                markup=False,
+            )
+            yield ManualMatchInput(
+                value=self.track.title,
+                placeholder="Catalogue search",
+                id="manual-match-query",
+            )
+            with VerticalScroll(id="manual-match-scroll"):
+                yield Static("Searching catalogue…", id="manual-match-results", markup=False)
+            yield Static(
+                "↑/↓ Choose · Enter Save locked match · / Refine search · Esc Cancel",
+                id="library-dialog-help",
+                markup=False,
+            )
+
+    def on_mount(self) -> None:
+        self.query_one("#manual-match-query", Input).focus()
+        self._start_search(self.track.title)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        query = event.value.strip()
+        if query:
+            self._start_search(query)
+
+    def _start_search(self, query: str) -> None:
+        self.results = ()
+        self.index = 0
+        self.query_one("#manual-match-results", Static).update("Searching catalogue…")
+        self._search_worker = self._search(query)
+
+    @work(thread=True, exclusive=True, group="manual-match-search", exit_on_error=False)
+    def _search(self, query: str) -> tuple[CataloguePage | None, str | None]:
+        try:
+            return self._search_provider(
+                self.settings,
+                query,
+                page=1,
+                page_size=50,
+                refresh=False,
+            ), None
+        except Exception as exc:
+            return None, str(exc) or type(exc).__name__
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        if event.worker is not self._search_worker:
+            return
+        if event.state is WorkerState.SUCCESS:
+            page, error = event.worker.result
+            self._search_worker = None
+            if error or page is None:
+                self.query_one("#manual-match-results", Static).update(
+                    f"Catalogue search unavailable: {error or 'Unknown error'}\nNo changes were made."
+                )
+                return
+            self.results = tuple(
+                result
+                for result in page.results
+                if result.song_id is not None and result.title
+            )
+            self.index = 0
+            self.set_focus(None)
+            self._render_results()
+        elif event.state is WorkerState.ERROR:
+            self._search_worker = None
+            self.query_one("#manual-match-results", Static).update(
+                "Catalogue search stopped safely. No changes were made."
+            )
+
+    def _render_results(self) -> None:
+        if not self.results:
+            self.query_one("#manual-match-results", Static).update(
+                "No usable catalogue candidates found. Press / to refine the search."
+            )
+            return
+        lines: list[str] = []
+        for index, result in enumerate(self.results):
+            marker = ">" if index == self.index else " "
+            category = result.category or "category unknown"
+            era = result.era or "era unknown"
+            length = result.length or "duration unknown"
+            lines.append(
+                f"{marker} {result.title}\n"
+                f"    {category} · {era} · {length} · ID {result.song_id}"
+            )
+        self.query_one("#manual-match-results", Static).update(
+            Text("\n".join(lines), no_wrap=False, overflow="ellipsis")
+        )
+        self.call_after_refresh(self._scroll_selection_into_view)
+
+    def _scroll_selection_into_view(self) -> None:
+        if not self.results:
+            return
+        scroll = self.query_one("#manual-match-scroll", VerticalScroll)
+        scroll.scroll_to(y=self.index * 2, animate=False, immediate=True)
+
+    def on_key(self, event: Key) -> None:
+        if event.key == "escape":
+            self.dismiss(None)
+        elif event.key == "question_mark":
+            self.app.action_show_help()
+        elif event.key == "slash":
+            self.query_one("#manual-match-query", Input).focus()
+        elif isinstance(self.app.focused, Input):
+            return
+        elif event.key in {"down", "j"} and self.results:
+            self.index = min(len(self.results) - 1, self.index + 1)
+            self._render_results()
+        elif event.key in {"up", "k"} and self.results:
+            self.index = max(0, self.index - 1)
+            self._render_results()
+        elif event.key == "enter" and self.results:
+            selected = self.results[self.index]
+            self.dismiss(ManualMatchChoice(selected.song_id, selected.title or ""))
+        elif event.key in {"1", "2", "3", "4", "5"}:
+            pass
+        else:
+            return
+        event.prevent_default()
+        event.stop()
 
 
 class MaintenanceDialog(ModalScreen[LibrarySyncPlan | None]):
@@ -264,6 +439,7 @@ class IdentityRebuildDialog(ModalScreen[IdentityRebuildPlan | None]):
             "Audio and lyrics will not be modified.\n\n"
             f"Current tracks       {self.plan.current_tracks}\n"
             f"Existing identities {self.plan.existing_identities}\n"
+            f"Manual locks kept   {self.plan.locked_identities}\n"
             f"Currently unknown   {self.plan.currently_unknown}\n"
             f"Stale records ignored {len(self.plan.stale_keys)}"
         )
@@ -484,6 +660,9 @@ class LibraryScreen(HubScreen):
         restore_provider: RestoreProvider,
         rmpc_status_provider: RmpcStatusProvider,
         rmpc_setup_provider: RmpcSetupProvider,
+        manual_search_provider: ManualSearchProvider,
+        manual_identity_provider: ManualIdentityProvider = set_manual_identity,
+        manual_unlock_provider: ManualIdentityProvider = unlock_manual_identity,
     ) -> None:
         super().__init__("library", "Library")
         self.settings = settings
@@ -498,6 +677,9 @@ class LibraryScreen(HubScreen):
         self._restore_provider = restore_provider
         self._rmpc_status_provider = rmpc_status_provider
         self._rmpc_setup_provider = rmpc_setup_provider
+        self._manual_search_provider = manual_search_provider
+        self._manual_identity_provider = manual_identity_provider
+        self._manual_unlock_provider = manual_unlock_provider
         self.snapshot: LibrarySnapshot | None = None
         self.filtered_tracks: tuple[LibraryTrack, ...] = ()
         self.selected_index = 0
@@ -525,6 +707,8 @@ class LibraryScreen(HubScreen):
         self._completion_message: tuple[str, bool] | None = None
         self._identify_requested = False
         self._identity_rebuild_completed = 0
+        self._manual_identity_worker: Worker[ManualIdentityOutcome] | None = None
+        self._manual_track: LibraryTrack | None = None
 
     def compose_content(self) -> Iterable[Widget]:
         yield Static(
@@ -593,6 +777,8 @@ class LibraryScreen(HubScreen):
         self._identity_worker = None
         self._identity_rebuild_plan_worker = None
         self._identity_rebuild_worker = None
+        self._manual_identity_worker = None
+        self._manual_track = None
         self._preview_worker = None
         self._pending_snapshot = None
         self._pending_identity = None
@@ -690,6 +876,12 @@ class LibraryScreen(HubScreen):
                     self._apply_identity(outcome)
                 else:
                     self._pending_identity = outcome
+            elif event.state is WorkerState.ERROR:
+                outcome = IdentityOutcome(error="Catalogue identification stopped unexpectedly")
+                if self._can_render():
+                    self._apply_identity(outcome)
+                else:
+                    self._pending_identity = outcome
         elif event.worker is self._identity_rebuild_plan_worker:
             if event.state is WorkerState.SUCCESS:
                 self._apply_identity_rebuild_plan(event.worker.result)
@@ -704,12 +896,13 @@ class LibraryScreen(HubScreen):
                 self._apply_identity_rebuild(
                     IdentityRebuildOutcome(error="Catalogue rebuild stopped unexpectedly")
                 )
+        elif event.worker is self._manual_identity_worker:
+            if event.state is WorkerState.SUCCESS:
+                self._apply_manual_identity(event.worker.result)
             elif event.state is WorkerState.ERROR:
-                outcome = IdentityOutcome(error="Catalogue identification stopped unexpectedly")
-                if self._can_render():
-                    self._apply_identity(outcome)
-                else:
-                    self._pending_identity = outcome
+                self._apply_manual_identity(
+                    ManualIdentityOutcome(error="Catalogue match update stopped safely.")
+                )
         elif event.worker is self._preview_worker:
             if event.state is WorkerState.SUCCESS:
                 outcome = event.worker.result
@@ -975,6 +1168,7 @@ class LibraryScreen(HubScreen):
             f"Relative path  {track.relative_path}",
             f"Full path      {track.path}",
             f"Catalogue match {track.matched_title or _match_label(track)}",
+            f"Match source    {'Manual (locked)' if track.identity_locked else 'Automatic' if track.match_status is LibraryMatchStatus.MATCHED else 'Not identified'}",
             f"Duration       {_duration(track.duration_seconds)}",
             f"Lyrics         {_lyric_label(track.lyric_status)}",
             f"External LRC   {_lrc_label(track.lrc_status)}",
@@ -994,7 +1188,7 @@ class LibraryScreen(HubScreen):
         if not self.filtered_tracks:
             self.query_one("#library-position", Static).update("s Sync Library · m Maintain lyrics · b Backups · ? Help")
             return
-        suffix = "Esc Back · l Refresh lyrics · ? Help" if self._details_mode else "s Sync Library · ↑↓ Move · Enter Details · ? Help"
+        suffix = "Esc Back · c Match manually · u Unlock · l Refresh lyrics · ? Help" if self._details_mode else "s Sync Library · ↑↓ Move · Enter Details · c Match · ? Help"
         self.query_one("#library-position", Static).update(
             f"Track {self.selected_index + 1} of {len(self.filtered_tracks)} · {suffix}"
         )
@@ -1017,6 +1211,10 @@ class LibraryScreen(HubScreen):
             self._check_rmpc()
         elif event.key == "i":
             self._preview_identity_rebuild()
+        elif event.key == "c" and self.selected_track is not None:
+            self._open_manual_match()
+        elif event.key == "u" and self.selected_track is not None:
+            self._unlock_manual_match()
         elif event.key == "l" and self.selected_track is not None:
             self.generate_preview(action="selected", selected_path=self.selected_track.path)
         elif event.key == "escape" and self._details_mode:
@@ -1047,6 +1245,86 @@ class LibraryScreen(HubScreen):
             return
         event.prevent_default()
         event.stop()
+
+    def _open_manual_match(self) -> None:
+        track = self.selected_track
+        if track is None or (
+            self._manual_identity_worker is not None
+            and not self._manual_identity_worker.is_finished
+        ):
+            return
+        self._manual_track = track
+        self.app.push_screen(
+            ManualMatchDialog(self.settings, track, self._manual_search_provider),
+            self._manual_match_closed,
+        )
+
+    def _manual_match_closed(self, choice: ManualMatchChoice | None) -> None:
+        track, self._manual_track = self._manual_track, None
+        if choice is None:
+            self._set_status("Manual catalogue matching cancelled. No changes were made.")
+            return
+        if track is None:
+            self._set_status("The selected track is no longer available.", error=True)
+            return
+        self._set_status("Saving manual catalogue match…")
+        self._manual_identity_worker = self._save_manual_identity(track, choice)
+
+    def _unlock_manual_match(self) -> None:
+        track = self.selected_track
+        if track is None:
+            return
+        if not track.identity_locked:
+            self._set_status("This track does not have a manual catalogue lock.")
+            return
+        if self._manual_identity_worker is not None and not self._manual_identity_worker.is_finished:
+            return
+        self._set_status("Unlocking catalogue match…")
+        self._manual_identity_worker = self._unlock_identity(track)
+
+    @work(thread=True, exclusive=True, group="manual-identity-write", exit_on_error=False)
+    def _save_manual_identity(
+        self,
+        track: LibraryTrack,
+        choice: ManualMatchChoice,
+    ) -> ManualIdentityOutcome:
+        try:
+            return ManualIdentityOutcome(
+                self._manual_identity_provider(
+                    self.settings,
+                    track,
+                    song_id=choice.song_id,
+                    api_name=choice.api_name,
+                ),
+                action="match",
+            )
+        except Exception as exc:
+            return ManualIdentityOutcome(error=str(exc) or type(exc).__name__, action="match")
+
+    @work(thread=True, exclusive=True, group="manual-identity-write", exit_on_error=False)
+    def _unlock_identity(self, track: LibraryTrack) -> ManualIdentityOutcome:
+        try:
+            return ManualIdentityOutcome(
+                self._manual_unlock_provider(self.settings, track),
+                action="unlock",
+            )
+        except Exception as exc:
+            return ManualIdentityOutcome(error=str(exc) or type(exc).__name__, action="unlock")
+
+    def _apply_manual_identity(self, outcome: ManualIdentityOutcome) -> None:
+        self._manual_identity_worker = None
+        if outcome.error or outcome.result is None:
+            self._set_status(
+                f"Catalogue match was not changed: {outcome.error or 'Unknown error'}",
+                error=True,
+            )
+            return
+        if outcome.action == "unlock":
+            message = "Manual catalogue match unlocked and cleared · Sync Library may identify it again"
+        else:
+            message = f"Manual catalogue match saved and locked · {outcome.result.api_name}"
+        self._completion_message = (message, False)
+        self.refresh_snapshot(identify=False)
 
     def _select_track(self, index: int) -> None:
         if not self.filtered_tracks:

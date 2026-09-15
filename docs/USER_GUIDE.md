@@ -76,6 +76,19 @@ Audio, embedded lyrics, sidecars, audio backups, and rmpc configuration are not
 changed. If the catalogue is unavailable, local health remains usable and the
 track stays **Unknown**.
 
+To resolve an Unknown track—or correct a wrong automatic match—select it and
+press `c`. The **Match manually** chooser searches using the local title; press
+`/` to refine the search, use the arrow keys to choose a clearly identified
+candidate, and press Enter to save it. This saves only catalogue identity state
+and marks the choice as manual and locked. It does not modify the audio,
+lyrics, sidecar, backups, downloads, or rmpc configuration.
+
+A valid manual lock survives normal Sync, automatic backfill, restart, and an
+ordinary identity rebuild. It is tied to the current audio content, so a
+changed or replaced file does not inherit it. Press `u` on a manually matched
+track to unlock and clear its catalogue identity; lyric and custom state remain
+untouched, and a later Sync may match it automatically again.
+
 Select a song and press `l` to refresh lyrics for only that song. The CLI
 `999 sync` command is the separate scriptable lyric-maintenance workflow; it
 may modify lyrics and should not be confused with the TUI's state-only Sync
@@ -137,8 +150,10 @@ Apply it only after reviewing the counts:
 
 Use `--refresh` as well when cached catalogue search responses must be fetched
 again. The rebuild reconsiders MP3, FLAC, and M4A files, preserves all lyric and
-other state fields, ignores stale external records, makes a complete state
-backup, and commits the result atomically. Ambiguous tracks become Unknown.
+other state fields, preserves valid manual locks, ignores stale external
+records, makes a complete state backup, and commits the result atomically.
+Ambiguous tracks become Unknown. The advanced `--include-locked` option is the
+explicit way to reconsider manual choices too.
 An individual API failure preserves that track's old identity; a catalogue-wide
 failure aborts without changing state.
 

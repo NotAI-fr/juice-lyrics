@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
@@ -12,6 +13,8 @@ from textual.widgets import Input, Select
 from juice_lyrics.config.settings import Settings
 from juice_lyrics.services import (
     CatalogueFilterMetadata,
+    CataloguePage,
+    CatalogueSearchResult,
     LibraryLrcStatus,
     LibraryLyricStatus,
     LibraryMatchStatus,
@@ -24,6 +27,8 @@ from juice_lyrics.services import (
     IdentityRebuildPlan,
     IdentityRebuildProgress,
     IdentityRebuildResult,
+    LyricAvailability,
+    ManualIdentityResult,
     QueueSnapshot,
 )
 from juice_lyrics.services.library_sync import (
@@ -99,6 +104,8 @@ def _track(
     warning: str | None = None,
     media_format: str = "MP3",
     synchronized_source: bool = False,
+    identity_locked: bool = False,
+    identity_source: str | None = None,
 ) -> LibraryTrack:
     path = root / name
     lrc_path = path.with_suffix(".lrc") if lrc is not LibraryLrcStatus.NONE else None
@@ -118,6 +125,8 @@ def _track(
         warning=warning,
         media_format=media_format,
         synchronized_source=synchronized_source,
+        identity_locked=identity_locked,
+        identity_source=identity_source,
     )
 
 
@@ -168,6 +177,162 @@ async def _open_library(app: JuiceLyricsApp, pilot):
         await worker.wait()
         await pilot.pause()
     return app.screen
+
+
+def test_manual_match_search_navigation_lock_and_unlock_are_state_only(tmp_path):
+    root = tmp_path / "music"
+    base = _track(root, "Unknown.flac", matched=False, media_format="FLAC")
+    selected: list[tuple[object, str]] = []
+    searches: list[str] = []
+    unlocked: list[str] = []
+    current = {"locked": False, "song_id": None, "name": None}
+
+    def snapshot(settings):
+        return _snapshot(
+            root,
+            replace(
+                base,
+                match_status=(
+                    LibraryMatchStatus.MATCHED
+                    if current["song_id"] is not None
+                    else LibraryMatchStatus.UNMATCHED
+                ),
+                matched_title=current["name"],
+                identity_locked=bool(current["locked"]),
+                identity_source="manual" if current["locked"] else None,
+            ),
+        )
+
+    candidates = (
+        CatalogueSearchResult(
+            1, 10, "Unknown (v1)", "unreleased", "DRFL", "3:20",
+            ("Juice WRLD",), (), None, LyricAvailability.NONE, False,
+        ),
+        CatalogueSearchResult(
+            2, 20, "Unknown", "released", "DRFL", "3:00",
+            ("Juice WRLD",), (), "Released/Album/Unknown.mp3",
+            LyricAvailability.SYNCED, True,
+        ),
+    )
+
+    def search(settings, query, **kwargs):
+        searches.append(query)
+        return CataloguePage(candidates, 1, 50, 2, None, None)
+
+    def save(settings, track, *, song_id, api_name):
+        selected.append((song_id, api_name))
+        current.update(locked=True, song_id=song_id, name=api_name)
+        return ManualIdentityResult(track.reference, song_id, api_name, True, True)
+
+    def unlock(settings, track):
+        unlocked.append(track.reference)
+        current.update(locked=False, song_id=None, name=None)
+        return ManualIdentityResult(track.reference, None, None, False, True)
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            snapshot,
+            catalogue_search_provider=search,
+            manual_identity_provider=save,
+            manual_unlock_provider=unlock,
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("c")
+            await pilot.pause()
+            dialog = app.screen
+            worker = dialog._search_worker
+            if worker is not None:
+                await worker.wait()
+                await pilot.pause()
+            assert "recording for this local file" in _text(app, "#manual-match-context")
+            assert "Unknown (v1)" in _text(app, "#manual-match-results")
+            assert "released" in _text(app, "#manual-match-results")
+
+            await pilot.press("slash")
+            query = app.query_one("#manual-match-query", Input)
+            query.value = "Refined Unknown"
+            await pilot.press("enter")
+            await pilot.pause()
+            worker = dialog._search_worker
+            if worker is not None:
+                await worker.wait()
+                await pilot.pause()
+            assert searches[-1] == "Refined Unknown"
+
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            worker = screen._manual_identity_worker
+            if worker is not None:
+                await worker.wait()
+                await pilot.pause()
+            if screen._snapshot_worker is not None:
+                await screen._snapshot_worker.wait()
+                await pilot.pause()
+            assert selected == [(20, "Unknown")]
+            assert "Manual (locked)" in _text(app, "#library-details")
+            assert "saved and locked" in _text(app, "#library-status")
+
+            await pilot.press("u")
+            await pilot.pause()
+            worker = screen._manual_identity_worker
+            if worker is not None:
+                await worker.wait()
+                await pilot.pause()
+            if screen._snapshot_worker is not None:
+                await screen._snapshot_worker.wait()
+                await pilot.pause()
+            assert unlocked == ["Unknown.flac"]
+            assert "Not identified" in _text(app, "#library-details")
+            assert "unlocked and cleared" in _text(app, "#library-status")
+
+            await pilot.press("c")
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen is screen
+            assert selected == [(20, "Unknown")]
+
+    asyncio.run(scenario())
+
+
+def test_manual_match_empty_or_offline_search_leaves_identity_unchanged(tmp_path):
+    root = tmp_path / "music"
+    track = _track(root, "Unknown.m4a", matched=False, media_format="M4A")
+    saves: list[object] = []
+
+    async def run_case(search):
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, track),
+            catalogue_search_provider=search,
+            manual_identity_provider=lambda *args, **kwargs: saves.append(kwargs),
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("c")
+            await pilot.pause()
+            dialog = app.screen
+            worker = dialog._search_worker
+            if worker is not None:
+                await worker.wait()
+                await pilot.pause()
+            text = _text(app, "#manual-match-results")
+            assert "No usable catalogue candidates" in text or "unavailable" in text
+            await pilot.press("enter", "escape")
+            await pilot.pause()
+            assert app.screen is screen
+
+    asyncio.run(
+        run_case(lambda *args, **kwargs: CataloguePage((), 1, 50, 0, None, None))
+    )
+    asyncio.run(
+        run_case(
+            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("offline"))
+        )
+    )
+    assert saves == []
 
 
 def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp_path):
