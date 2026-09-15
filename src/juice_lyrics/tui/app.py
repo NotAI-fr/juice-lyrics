@@ -38,6 +38,7 @@ from ..services.download_queue import (
 )
 from ..services.library_status import LibrarySnapshot, LibraryStatus, get_library_snapshot, get_library_status
 from ..services.library_identity import IdentityBackfillResult, backfill_catalogue_identities
+from ..services.library_index_sync import LibraryIndexSyncResult, sync_library_index
 from ..services.identity_rebuild import (
     IdentityRebuildPlan,
     IdentityRebuildResult,
@@ -71,6 +72,7 @@ CatalogueDetailsProvider = Callable[..., SongDetails | None]
 CatalogueFiltersProvider = Callable[..., CatalogueFilterMetadata]
 LibrarySnapshotProvider = Callable[[Any], LibrarySnapshot]
 LibraryIdentityProvider = Callable[..., IdentityBackfillResult]
+LibraryIndexSyncProvider = Callable[..., LibraryIndexSyncResult]
 IdentityRebuildPlanProvider = Callable[..., IdentityRebuildPlan]
 IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
 LibraryPreviewProvider = Callable[[Any], LibrarySyncPlan]
@@ -880,6 +882,7 @@ class JuiceLyricsApp(App[None]):
         download_all_plan_provider: Callable[..., Any] = plan_download_all,
         download_all_execution_provider: Callable[..., Any] = execute_download_all,
         library_snapshot_provider: LibrarySnapshotProvider = get_library_snapshot,
+        library_index_sync_provider: LibraryIndexSyncProvider = sync_library_index,
         library_identity_provider: LibraryIdentityProvider = backfill_catalogue_identities,
         identity_rebuild_plan_provider: IdentityRebuildPlanProvider = plan_catalogue_identity_rebuild,
         identity_rebuild_execution_provider: IdentityRebuildExecutionProvider = execute_catalogue_identity_rebuild,
@@ -918,6 +921,7 @@ class JuiceLyricsApp(App[None]):
         self.download_all_plan_provider = download_all_plan_provider
         self.download_all_execution_provider = download_all_execution_provider
         self.library_snapshot_provider = library_snapshot_provider
+        self.library_index_sync_provider = library_index_sync_provider
         self.library_identity_provider = library_identity_provider
         self.identity_rebuild_plan_provider = identity_rebuild_plan_provider
         self.identity_rebuild_execution_provider = identity_rebuild_execution_provider
@@ -952,6 +956,7 @@ class JuiceLyricsApp(App[None]):
             LibraryScreen(
                 self.settings,
                 snapshot_provider=self.library_snapshot_provider,
+                index_sync_provider=self.library_index_sync_provider,
                 identity_provider=self.library_identity_provider,
                 identity_rebuild_plan_provider=self.identity_rebuild_plan_provider,
                 identity_rebuild_execution_provider=self.identity_rebuild_execution_provider,

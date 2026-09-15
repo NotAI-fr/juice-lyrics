@@ -56,7 +56,7 @@ adjacent `.lrc`.
 
 Open `999`, choose **Library**, and use:
 
-* **Refresh** to rescan MP3, FLAC, and M4A files without changing them;
+* **Sync Library** (`s`) for the normal update: discover MP3, FLAC, and M4A changes, retire known removed entries, and identify safe catalogue matches without changing audio or lyrics;
 * **Maintain lyrics** to preview needed changes, then explicitly approve them;
 * **Verify** for a read-only health check and attention list;
 * **Backups** to inspect valid backups and restore one with confirmation;
@@ -67,8 +67,10 @@ It previews current tracks and existing identities, then uses a cancel-first
 confirmation. The rebuild changes application identity state only; it does not
 modify audio or lyrics.
 
-Refresh displays local lyric health immediately, then checks unknown tracks
-against the catalogue in the background. Only confident identities are saved.
+Sync Library keeps unchanged tracks fast and checks unknown tracks against the
+catalogue in the background. Only confident identities are saved. A recent
+empty or ambiguous search is retried after the normal catalogue cache window.
+The separate **Refresh** key remains available for a direct local rescan.
 Audio, embedded lyrics, sidecars, audio backups, and rmpc configuration are not
 changed. If the catalogue is unavailable, local health remains usable and the
 track stays **Unknown**.

@@ -21,6 +21,7 @@ class IdentityBackfillResult:
     unknown: int
     failed: int
     errors: tuple[str, ...] = ()
+    failed_paths: tuple[str, ...] = ()
 
     @property
     def changed(self) -> bool:
@@ -74,6 +75,7 @@ def backfill_catalogue_identities(
     relative_paths = tuple(track.relative_path for track in tracks)
     reused = identified = unknown = failed = 0
     errors: list[str] = []
+    failed_paths: list[str] = []
 
     for track in tracks:
         _, existing = resolve_state_entry(files, track.relative_path, relative_paths)
@@ -120,6 +122,7 @@ def backfill_catalogue_identities(
         except Exception as exc:
             failed += 1
             errors.append(f"{track.filename}: {str(exc) or type(exc).__name__}")
+            failed_paths.append(str(track.relative_path))
 
     if identified:
         if _state_bytes(state_path) != original_state:
@@ -132,4 +135,5 @@ def backfill_catalogue_identities(
         unknown=unknown,
         failed=failed,
         errors=tuple(errors),
+        failed_paths=tuple(failed_paths),
     )

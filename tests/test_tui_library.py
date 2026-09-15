@@ -38,12 +38,54 @@ from juice_lyrics.services.library_sync import (
     SyncEventKind,
 )
 from juice_lyrics.backup.manager import BackupRecord
+from juice_lyrics.services.library_index_sync import LibraryIndexSyncResult
 from juice_lyrics.services.settings_snapshot import (
     IntegrationSnapshot,
     IntegrationStatus,
     SettingsSnapshot,
 )
 from juice_lyrics.tui import JuiceLyricsApp
+
+
+def test_sync_library_is_immediate_single_worker_and_navigation_stays_live(tmp_path):
+    root = tmp_path / "music"
+    track = _track(root, "Song.mp3", matched=False)
+    started = Event()
+    release = Event()
+    calls = []
+    ui_thread = get_ident()
+
+    def sync(settings, *, previous_snapshot=None):
+        calls.append((previous_snapshot, get_ident()))
+        started.set()
+        assert release.wait(timeout=5)
+        return LibraryIndexSyncResult(_snapshot(root, track), new=1, identified=1)
+
+    async def scenario():
+        app = _app(
+            tmp_path, lambda settings: _snapshot(root, track),
+            library_index_sync_provider=sync,
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            assert "s Sync Library" in _text(app, "#library-position")
+            await pilot.press("s", "s")
+            assert await asyncio.to_thread(started.wait, 2)
+            assert len(calls) == 1 and calls[0][1] != ui_thread
+            assert app.screen.id == "screen-library"
+            await pilot.press("question_mark")
+            assert app.screen is not screen
+            await pilot.press("escape", "4", "3")
+            assert app.screen.id == "screen-library"
+            release.set()
+            await screen._index_sync_worker.wait()
+            await pilot.pause()
+            assert "1 newly matched" in _text(app, "#library-status")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
 
 
 def _track(
@@ -351,7 +393,7 @@ def test_refresh_selection_stale_result_and_preview_invalidation(tmp_path):
             await current.wait()
             await pilot.pause()
             assert screen.selected_track.reference == keep.reference
-            assert "Maintain lyrics" in _text(app, "#library-preview")
+            assert "Sync Library" in _text(app, "#library-preview")
             release_stale.set()
             await pilot.pause()
             assert "First.mp3" not in _text(app, "#library-tracks")
@@ -477,7 +519,7 @@ def test_sync_preview_is_explicit_nonblocking_structured_and_handles_errors(tmp_
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
             assert calls == 0
-            await pilot.press("s")
+            screen.generate_preview()
             await asyncio.to_thread(started.wait, 2)
             assert "Checking library needs" in _text(app, "#library-preview")
             await pilot.press("4")
@@ -501,7 +543,7 @@ def test_sync_preview_is_explicit_nonblocking_structured_and_handles_errors(tmp_
         )
         async with broken.run_test() as pilot:
             await _open_library(broken, pilot)
-            await pilot.press("s")
+            broken.screen.generate_preview()
             await broken.screen._preview_worker.wait()
             await pilot.pause()
             assert "Preview failed: API unavailable" in _text(broken, "#library-preview")
@@ -533,7 +575,7 @@ def test_newer_preview_supersedes_stale_and_empty_preview_is_clear(tmp_path):
         app = _app(tmp_path, lambda settings: _snapshot(root, track), provider)
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            await pilot.press("s")
+            screen.generate_preview()
             await asyncio.to_thread(stale_started.wait, 2)
             screen.generate_preview()
             current = screen._preview_worker
@@ -578,7 +620,8 @@ def test_library_screen_never_calls_mutating_systems(tmp_path, monkeypatch):
         )
         async with app.run_test() as pilot:
             await _open_library(app, pilot)
-            await pilot.press("/", "enter", "down", "up", "s")
+            await pilot.press("/", "enter", "down", "up")
+            app.screen.generate_preview()
             await app.screen._preview_worker.wait()
             await pilot.pause()
             await pilot.press("r")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -73,6 +74,7 @@ class LibraryTrack:
     synchronized_source: bool = False
     content_sha256: str | None = None
     content_fingerprint: tuple[int, int, int, int, int] | None = None
+    sidecar_fingerprint: tuple[int, int, int, int, int] | None = None
 
     @property
     def needs_attention(self) -> bool:
@@ -110,6 +112,7 @@ class LibrarySnapshot:
     directory_exists: bool
     tracks: tuple[LibraryTrack, ...]
     warnings: tuple[str, ...] = ()
+    state_signature: str | None = None
 
     @property
     def total_track_count(self) -> int:
@@ -222,6 +225,7 @@ def get_library_snapshot(
     duration_reader: DurationReader = local_duration,
     hasher: Callable[[Path], str] = sha256_file,
     metadata_reader: Callable[[Path], AudioMetadata] = read_tagged_metadata,
+    previous_snapshot: LibrarySnapshot | None = None,
 ) -> LibrarySnapshot:
     """Inspect local MP3, FLAC, and M4A files without APIs or writes."""
 
@@ -235,12 +239,39 @@ def get_library_snapshot(
         )
 
     state, warnings = _read_state_snapshot(Path(state_file))
+    try:
+        state_signature = hashlib.sha256(Path(state_file).read_bytes()).hexdigest()
+    except FileNotFoundError:
+        state_signature = None
+    except OSError:
+        state_signature = None
     state_files = state.get("files", {})
     discovered = find_mp3s(settings)
     relative_paths = tuple(path.relative_to(library_path) for path in discovered)
+    previous_tracks = (
+        {track.relative_path: track for track in previous_snapshot.tracks}
+        if previous_snapshot is not None
+        and not warnings
+        and previous_snapshot.library_path == library_path
+        and previous_snapshot.state_signature == state_signature
+        else {}
+    )
     tracks: list[LibraryTrack] = []
     for path in discovered:
         relative_path = path.relative_to(library_path)
+        prior = previous_tracks.get(relative_path)
+        if prior is not None and prior.content_fingerprint is not None:
+            sidecar = sidecar_lrc_path(path)
+            try:
+                current_sidecar = file_fingerprint(sidecar) if sidecar.is_file() else None
+                if (
+                    file_fingerprint(path) == prior.content_fingerprint
+                    and current_sidecar == prior.sidecar_fingerprint
+                ):
+                    tracks.append(prior)
+                    continue
+            except OSError:
+                pass
         reference = str(relative_path)
         state_key, resolved_entry = resolve_state_entry(
             state_files,
@@ -287,6 +318,10 @@ def get_library_snapshot(
 
         if raw_entry is None:
             state_status = LibraryStateStatus.NEW
+            try:
+                content_fingerprint = file_fingerprint(path)
+            except OSError:
+                pass
         elif entry is None:
             state_status = LibraryStateStatus.INVALID
             track_warnings.append("Stored library state is malformed.")
@@ -334,6 +369,12 @@ def get_library_snapshot(
         )
         adjacent_lrc = sidecar_lrc_path(path)
         sidecar_exists = adjacent_lrc.is_file()
+        sidecar_fingerprint = None
+        if sidecar_exists:
+            try:
+                sidecar_fingerprint = file_fingerprint(adjacent_lrc)
+            except OSError:
+                pass
         lrc_path = adjacent_lrc if lyric_status is LibraryLyricStatus.SYNCED or expected_synced or sidecar_exists else None
         if lrc_path is None:
             lrc_status = LibraryLrcStatus.NONE
@@ -379,9 +420,10 @@ def get_library_snapshot(
                 warning=" ".join(track_warnings) or None,
                 content_sha256=content_sha256,
                 content_fingerprint=content_fingerprint,
+                sidecar_fingerprint=sidecar_fingerprint,
             )
         )
-    return LibrarySnapshot(library_path, True, tuple(tracks), warnings)
+    return LibrarySnapshot(library_path, True, tuple(tracks), warnings, state_signature)
 
 
 def get_library_status(

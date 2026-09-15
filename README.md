@@ -37,13 +37,15 @@ Your Juice WRLD folder is kept together:
 
 ### Normal use
 
-Open `999`, choose **Library**, then use **Refresh**, **Maintain lyrics**,
-**Verify**, or **Backups**. Maintenance always shows a non-mutating preview and
+Open `999`, choose **Library**, then press `s` for **Sync Library**. It discovers
+new, changed, and removed local tracks, identifies confident catalogue matches,
+and updates the Library view without changing audio or lyrics. **Maintain lyrics**
+is the separate, explicitly approved repair action. Maintenance shows a non-mutating preview and
 a cancel-first confirmation before changing audio metadata or sidecars.
 Press `?` on any TUI section for a scrollable guide to every app shortcut.
 The on-screen shortcut lines show the common actions; adding songs to Downloads
 is immediate and never starts a download. Confirmations are reserved for bulk
-downloads and changes to audio, state, backups, or player configuration.
+downloads and high-impact changes to audio, backups, catalogue identities, or player configuration.
 Library lyric coverage is determined from the local audio and a genuinely
 timestamped adjacent `.lrc`; catalogue matching is shown separately because it
 is needed for automatic refresh, not for recognizing already healthy lyrics.

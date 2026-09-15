@@ -27,6 +27,7 @@ from ...services.library_status import (
     LibraryTrack,
 )
 from ...services.library_identity import IdentityBackfillResult
+from ...services.library_index_sync import LibraryIndexSyncResult
 from ...services.identity_rebuild import (
     IdentityRebuildPlan,
     IdentityRebuildProgress,
@@ -40,6 +41,7 @@ from .base import HubScreen
 
 SnapshotProvider = Callable[[Any], LibrarySnapshot]
 IdentityProvider = Callable[..., IdentityBackfillResult]
+IndexSyncProvider = Callable[..., LibraryIndexSyncResult]
 IdentityRebuildPlanProvider = Callable[..., IdentityRebuildPlan]
 IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
 PreviewProvider = Callable[[Any], LibrarySyncPlan]
@@ -472,6 +474,7 @@ class LibraryScreen(HubScreen):
         settings: Any,
         *,
         snapshot_provider: SnapshotProvider,
+        index_sync_provider: IndexSyncProvider,
         identity_provider: IdentityProvider,
         identity_rebuild_plan_provider: IdentityRebuildPlanProvider,
         identity_rebuild_execution_provider: IdentityRebuildExecutionProvider,
@@ -485,6 +488,7 @@ class LibraryScreen(HubScreen):
         super().__init__("library", "Library")
         self.settings = settings
         self._snapshot_provider = snapshot_provider
+        self._index_sync_provider = index_sync_provider
         self._identity_provider = identity_provider
         self._identity_rebuild_plan_provider = identity_rebuild_plan_provider
         self._identity_rebuild_execution_provider = identity_rebuild_execution_provider
@@ -501,6 +505,8 @@ class LibraryScreen(HubScreen):
         self._details_mode = False
         self._snapshot_worker: Worker[SnapshotOutcome] | None = None
         self._identity_worker: Worker[IdentityOutcome] | None = None
+        self._index_sync_worker: Worker[LibraryIndexSyncResult] | None = None
+        self._pending_index_sync: LibraryIndexSyncResult | None = None
         self._identity_rebuild_plan_worker: Worker[IdentityRebuildPlanOutcome] | None = None
         self._identity_rebuild_worker: Worker[IdentityRebuildOutcome] | None = None
         self._preview_worker: Worker[PreviewOutcome] | None = None
@@ -544,14 +550,17 @@ class LibraryScreen(HubScreen):
                 yield Static("Track details", classes="panel-title")
                 with VerticalScroll(id="library-details-scroll"):
                     yield Static("Select a track to inspect it.", id="library-details", markup=False)
-        yield Static("Choose Maintain lyrics to preview changes safely.", id="library-preview", markup=False)
-        yield Static("↑↓ Move · Enter Details · r Refresh · m Maintain · v Verify · ? Help", id="library-position", markup=False)
+        yield Static("Sync Library updates the catalogue view without changing audio or lyrics.", id="library-preview", markup=False)
+        yield Static("s Sync Library · ↑↓ Move · Enter Details · m Maintain lyrics · ? Help", id="library-position", markup=False)
 
     def action_focus_search(self) -> None:
         self.query_one("#library-query", Input).focus()
 
     def on_screen_resume(self, event: ScreenResume) -> None:
         self.call_after_refresh(self.set_focus, None)
+        if self._pending_index_sync is not None:
+            outcome, self._pending_index_sync = self._pending_index_sync, None
+            self._apply_index_sync(outcome)
         if self._pending_snapshot is not None:
             outcome, self._pending_snapshot = self._pending_snapshot, None
             self._apply_snapshot(outcome)
@@ -565,11 +574,14 @@ class LibraryScreen(HubScreen):
             self._apply_identity(outcome)
 
     def refresh_snapshot(self, *, identify: bool = True) -> None:
+        if self._index_sync_worker is not None and not self._index_sync_worker.is_finished:
+            self._set_status("Library Sync is running; the view will update when it finishes.")
+            return
         if self.snapshot is None:
             self.query_one("#library-tracks", Static).update("Loading tracks…")
             self.query_one("#library-details", Static).update("Waiting for library data…")
         self.preview = None
-        self.query_one("#library-preview", Static).update("Choose Maintain lyrics to preview changes safely.")
+        self.query_one("#library-preview", Static).update("Sync Library updates the catalogue view without changing audio or lyrics.")
         self._identify_requested = identify and self._snapshot_action != "verify"
         self._set_status("Verifying library…" if self._snapshot_action == "verify" else "Scanning library…")
         self._snapshot_worker = self._load_snapshot()
@@ -585,6 +597,25 @@ class LibraryScreen(HubScreen):
         self._pending_snapshot = None
         self._pending_identity = None
         self._pending_preview = None
+
+    def sync_library(self) -> None:
+        if self._index_sync_worker is not None and not self._index_sync_worker.is_finished:
+            self._set_status("Library Sync is already running.")
+            return
+        self._snapshot_worker = None
+        self._identity_worker = None
+        self._set_status("Syncing library…")
+        self._index_sync_worker = self._run_index_sync(self.snapshot)
+
+    @work(thread=True, exclusive=True, group="library-index-sync", exit_on_error=False)
+    def _run_index_sync(self, previous: LibrarySnapshot | None) -> LibraryIndexSyncResult:
+        return self._index_sync_provider(self.settings, previous_snapshot=previous)
+
+    def _apply_index_sync(self, result: LibraryIndexSyncResult) -> None:
+        self._index_sync_worker = None
+        self._identify_requested = False
+        self._apply_snapshot(SnapshotOutcome(result.snapshot))
+        self._set_status(result.summary, error=bool(result.error or result.failed))
 
     @work(thread=True, exclusive=True, group="library-snapshot", exit_on_error=False)
     def _load_snapshot(self) -> SnapshotOutcome:
@@ -630,7 +661,16 @@ class LibraryScreen(HubScreen):
             return PreviewOutcome(error=str(exc) or type(exc).__name__)
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        if event.worker is self._snapshot_worker:
+        if event.worker is self._index_sync_worker:
+            if event.state is WorkerState.SUCCESS:
+                if self._can_render():
+                    self._apply_index_sync(event.worker.result)
+                else:
+                    self._pending_index_sync = event.worker.result
+            elif event.state is WorkerState.ERROR:
+                self._index_sync_worker = None
+                self._set_status("Library Sync stopped safely. Please try again.", error=True)
+        elif event.worker is self._snapshot_worker:
             if event.state is WorkerState.SUCCESS:
                 outcome = event.worker.result
                 if self._can_render():
@@ -952,9 +992,9 @@ class LibraryScreen(HubScreen):
 
     def _update_position(self) -> None:
         if not self.filtered_tracks:
-            self.query_one("#library-position", Static).update("r Refresh · m Maintain · v Verify · b Backups · ? Help")
+            self.query_one("#library-position", Static).update("s Sync Library · m Maintain lyrics · b Backups · ? Help")
             return
-        suffix = "Esc Back · l Refresh lyrics · ? Help" if self._details_mode else "↑↓ Move · Enter Details · r Refresh · m Maintain · ? Help"
+        suffix = "Esc Back · l Refresh lyrics · ? Help" if self._details_mode else "s Sync Library · ↑↓ Move · Enter Details · ? Help"
         self.query_one("#library-position", Static).update(
             f"Track {self.selected_index + 1} of {len(self.filtered_tracks)} · {suffix}"
         )
@@ -965,7 +1005,7 @@ class LibraryScreen(HubScreen):
         if isinstance(self.app.focused, (Input, Select)):
             return
         if event.key == "s":
-            self.generate_preview()
+            self.sync_library()
         elif event.key == "m":
             self.generate_preview(action="maintain")
         elif event.key == "v":
