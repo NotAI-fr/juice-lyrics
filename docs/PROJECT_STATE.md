@@ -1,9 +1,9 @@
 # 999 project state
 
-This is the canonical detailed handoff for the current application. The
-one-button Sync baseline is `31ebaf2`; manual catalogue matching and
-file-bound identity locking are now integrated on top of it. Read the code and
-tests if a later working tree disagrees with this document.
+This is the canonical detailed handoff for the current application. One-button
+Sync, manual catalogue locking, and the snapshot-backed Library Issues workflow
+are integrated. Read the code and tests if a later working tree disagrees with
+this document.
 
 ## Repository checkpoint
 
@@ -19,6 +19,9 @@ tests if a later working tree disagrees with this document.
   smoke tests, compileall, and `git diff --check`).
 - Manual identity-lock milestone verification: 424 full-suite tests and 34
   explicit temporary-HOME/XDG identity/state smoke tests passed; compileall and
+  `git diff --check` passed.
+- Library Issues milestone verification: 435 full-suite tests and 30 explicit
+  temporary-HOME/XDG Issues/Sync/identity smoke tests passed; compileall and
   `git diff --check` passed.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
@@ -41,6 +44,7 @@ Library is the maintenance centre. The primary routine action is:
 
 ```text
 s → Sync Library
+a → Issues
 ```
 
 `?` opens the complete scrollable key guide globally. Common actions remain in
@@ -82,6 +86,21 @@ failure.
 Catalogue identity and local lyric health are separate axes. A healthy track
 may be catalogue Unknown without needing lyric attention. An adjacent `.lrc`
 counts as synchronized only when it contains genuine timestamped lyric lines.
+
+The Library headline reports total tracks, healthy tracks, and issue rows. `a`
+opens **Issues** immediately from the current snapshot: opening it performs no
+scan, hash, or API request. There is at most one row per track, combining
+catalogue, lyrics, verification, metadata, and state reasons. Unknown identities
+appear because they may need a manual decision even when local lyrics are fully
+covered. Valid file-bound manual locks stay out; an unavailable locked choice
+appears after a catalogue-backed operation observes that failure, without
+replacing the choice. Retired history stays out because it requires no routine
+action.
+
+Issue details reuse only existing safe actions: manual catalogue match,
+selected lyric-refresh preview, read-only verification, or Sync Library. Every
+completed Sync replaces the displayed snapshot, so resolved rows disappear and
+newly discovered problems appear immediately.
 
 - MP3 full coverage uses the existing format-aware ID3 requirements plus its
   synchronized sidecar behavior.
@@ -180,7 +199,6 @@ real config, state, backups, queue, sidecars, or rmpc configuration.
 
 ## Known limitations and risks
 
-- Library has attention/details but not a consolidated Issues experience.
 - Active download cancellation is not implemented.
 - Acquisition/post-processing remains MP3-focused; FLAC/M4A support is for
   existing local-library files.
@@ -206,19 +224,18 @@ common safe routine work → automatic/simple
 ambiguous/destructive work → explicit user decision
 ```
 
-Keep normal Library UX centered on **Sync Library** and future **Issues**;
+Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Library Issues / Health experience
-2. Duplicate detector
-3. Metadata repair
-4. Missing Library
-5. `999 doctor` / diagnostics
-6. Shell completion
-7. Final performance/reliability acceptance
-8. Packaging and clean installation
-9. GitHub presentation/distribution
-10. Beta release
+1. Duplicate detector
+2. Metadata repair
+3. Missing Library
+4. `999 doctor` / diagnostics
+5. Shell completion
+6. Final performance/reliability acceptance
+7. Packaging and clean installation
+8. GitHub presentation/distribution
+9. Beta release
 
 ## Resume safely
 

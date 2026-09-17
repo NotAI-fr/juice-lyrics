@@ -39,7 +39,9 @@ Your Juice WRLD folder is kept together:
 
 Open `999`, choose **Library**, then press `s` for **Sync Library**. It discovers
 new, changed, and removed local tracks, identifies confident catalogue matches,
-and updates the Library view without changing audio or lyrics. **Maintain lyrics**
+and updates the Library view without changing audio or lyrics. Press `a` for
+**Issues**, the snapshot-backed list of tracks that still need a decision or
+repair. **Maintain lyrics**
 is the separate, explicitly approved repair action. Maintenance shows a non-mutating preview and
 a cancel-first confirmation before changing audio metadata or sidecars.
 Press `?` on any TUI section for a scrollable guide to every app shortcut.

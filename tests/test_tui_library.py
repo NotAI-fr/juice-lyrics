@@ -106,6 +106,7 @@ def _track(
     synchronized_source: bool = False,
     identity_locked: bool = False,
     identity_source: str | None = None,
+    verification_error: str | None = None,
 ) -> LibraryTrack:
     path = root / name
     lrc_path = path.with_suffix(".lrc") if lrc is not LibraryLrcStatus.NONE else None
@@ -127,6 +128,7 @@ def _track(
         synchronized_source=synchronized_source,
         identity_locked=identity_locked,
         identity_source=identity_source,
+        verification_error=verification_error,
     )
 
 
@@ -335,6 +337,113 @@ def test_manual_match_empty_or_offline_search_leaves_identity_unchanged(tmp_path
     assert saves == []
 
 
+def test_issues_opens_from_snapshot_without_rescan_or_api_and_reaches_manual_match(tmp_path):
+    root = tmp_path / "music"
+    unknown = _track(root, "Unknown.flac", matched=False, media_format="FLAC")
+    invalid = _track(
+        root,
+        "Invalid.m4a",
+        media_format="M4A",
+        lrc=LibraryLrcStatus.INVALID,
+        warning="Adjacent LRC has no timestamped lyric lines.",
+    )
+    snapshot_calls = []
+    searches = []
+    audio = tmp_path / "sentinel-audio"
+    sidecar = tmp_path / "sentinel-lrc"
+    audio.write_bytes(b"audio unchanged")
+    sidecar.write_bytes(b"lrc unchanged")
+
+    def snapshot(settings):
+        snapshot_calls.append("snapshot")
+        return _snapshot(root, unknown, invalid)
+
+    def search(settings, query, **kwargs):
+        searches.append(query)
+        return CataloguePage((), 1, 50, 0, None, None)
+
+    async def scenario():
+        app = _app(tmp_path, snapshot, catalogue_search_provider=search)
+        async with app.run_test(size=(120, 40)) as pilot:
+            screen = await _open_library(app, pilot)
+            assert "s Sync Library · a Issues" in _text(app, "#library-position")
+            await pilot.press("a")
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "LibraryIssuesDialog"
+            assert snapshot_calls == ["snapshot"]
+            assert searches == []
+            assert "2 issues" in _text(app, "#library-issues-summary")
+            assert "Catalogue" in _text(app, "#library-issues-list")
+            assert "Catalogue match unknown" in _text(app, "#library-issues-detail")
+
+            await pilot.press("down")
+            assert "Synchronized LRC is invalid" in _text(app, "#library-issues-detail")
+            await pilot.press("up", "c")
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "ManualMatchDialog"
+            dialog = app.screen
+            if dialog._search_worker is not None:
+                await dialog._search_worker.wait()
+                await pilot.pause()
+            assert searches == ["Unknown"]
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen is screen
+
+    asyncio.run(scenario())
+    assert audio.read_bytes() == b"audio unchanged"
+    assert sidecar.read_bytes() == b"lrc unchanged"
+
+
+def test_issues_empty_state_and_sync_replaces_health_immediately(tmp_path):
+    root = tmp_path / "music"
+    unknown = _track(root, "Song.mp3", matched=False)
+    healthy = replace(
+        unknown,
+        match_status=LibraryMatchStatus.MATCHED,
+        matched_title="Song",
+    )
+    broken = replace(
+        healthy,
+        lyric_status=LibraryLyricStatus.NONE,
+        lrc_status=LibraryLrcStatus.NONE,
+        lrc_path=None,
+        verification_error="no managed lyrics frame",
+    )
+    sync_results = iter(
+        (
+            LibraryIndexSyncResult(_snapshot(root, healthy), identified=1),
+            LibraryIndexSyncResult(_snapshot(root, broken)),
+        )
+    )
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, unknown),
+            library_index_sync_provider=lambda settings, **kwargs: next(sync_results),
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            assert "1 issues" in _text(app, "#library-summary")
+            await pilot.press("s")
+            if screen._index_sync_worker is not None:
+                await screen._index_sync_worker.wait()
+            await pilot.pause()
+            assert "1 healthy · 0 issues" in _text(app, "#library-summary")
+            await pilot.press("a")
+            assert "No library issues found" in _text(app, "#library-issues-detail")
+            await pilot.press("escape", "s")
+            if screen._index_sync_worker is not None:
+                await screen._index_sync_worker.wait()
+            await pilot.pause()
+            assert "0 healthy · 1 issues" in _text(app, "#library-summary")
+            await pilot.press("a")
+            assert "Embedded lyrics" in _text(app, "#library-issues-detail")
+
+    asyncio.run(scenario())
+
+
 def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp_path):
     root = tmp_path / "music"
     synced = _track(root, "A Synced.mp3")
@@ -361,9 +470,8 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             screen = await _open_library(app, pilot)
             assert screen.__class__.__name__ == "LibraryScreen"
             summary = _text(app, "#library-summary")
-            assert "3 songs" in summary and "Catalogue unmatched 1" in summary
-            assert "Plain only 1" in summary and "Missing 1" in summary
-            assert "Need attention 1" in summary
+            assert "3 tracks" in summary and "Catalogue unknown 1" in summary
+            assert "1 healthy" in summary and "2 issues" in summary
             assert "MP3 3" in summary and "FLAC 0" in summary and "M4A 0" in summary
             rows = _text(app, "#library-tracks")
             assert rows.index("A Synced") < rows.index("B Plain") < rows.index("C Unknown")
@@ -374,7 +482,7 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             assert screen.selected_track.reference == unmatched.reference
             details = _text(app, "#library-details")
             assert "Catalogue match Unknown" in details and "No lyrics" in details
-            assert "Library state  New" in details and "Attention      Yes" in details
+            assert "Library state  New" in details and "Library issue  New track" in details
             assert "Recorded LRC is missing" in details
             await pilot.press("up", "k", "end", "home")
             assert screen.selected_track.reference == synced.reference
@@ -649,7 +757,7 @@ def test_refresh_catalogue_failure_keeps_healthy_local_coverage_visible(tmp_path
             await pilot.pause()
             assert "Catalogue identification unavailable" in _text(app, "#library-status")
             assert "Fully covered 1" in _text(app, "#library-summary")
-            assert "Need attention 0" in _text(app, "#library-summary")
+            assert "1 issues" in _text(app, "#library-summary")
             assert "Catalogue match Unknown" in _text(app, "#library-details")
 
     asyncio.run(scenario())
@@ -812,7 +920,7 @@ def test_library_summary_is_format_aware_and_flac_m4a_can_be_fully_covered(tmp_p
             screen = await _open_library(app, pilot)
             summary = _text(app, "#library-summary")
             assert "Fully covered 3" in summary
-            assert "Plain only 0" in summary
+            assert "3 healthy" in summary and "0 issues" in summary
             assert "MP3 1" in summary and "FLAC 1" in summary and "M4A 1" in summary
             await pilot.press("down")
             assert "Coverage       Fully covered" in _text(app, "#library-details")
@@ -829,7 +937,7 @@ def test_healthy_unmatched_flac_is_covered_without_lyric_attention(tmp_path):
         matched=False,
         lyric=LibraryLyricStatus.PLAIN,
         media_format="FLAC",
-        state=LibraryStateStatus.NEW,
+        state=LibraryStateStatus.CURRENT,
     )
     preview_calls = []
 
@@ -843,13 +951,13 @@ def test_healthy_unmatched_flac_is_covered_without_lyric_attention(tmp_path):
             screen = await _open_library(app, pilot)
             summary = _text(app, "#library-summary")
             assert "Fully covered 1" in summary
-            assert "Need attention 0" in summary
-            assert "Catalogue unmatched 1" in summary
+            assert "1 issues" in summary
+            assert "Catalogue unknown 1" in summary
             details = _text(app, "#library-details")
             assert "Catalogue match Unknown" in details
             assert "External LRC   Present" in details
             assert "Coverage       Fully covered" in details
-            assert "Attention      No" in details
+            assert "Library issue  Catalogue match unknown" in details
             assert "Automatic refresh requires a catalogue match" in details
 
             await pilot.press("m")

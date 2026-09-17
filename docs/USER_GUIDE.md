@@ -58,6 +58,7 @@ adjacent `.lrc`.
 Open `999`, choose **Library**, and use:
 
 * **Sync Library** (`s`) for the normal update: discover MP3, FLAC, and M4A changes, retire known removed entries, and identify safe catalogue matches without changing audio or lyrics;
+* **Issues** (`a`) to see only tracks still needing a decision or repair;
 * **Maintain lyrics** to preview needed changes, then explicitly approve them;
 * **Verify** for a read-only health check and attention list;
 * **Backups** to inspect valid backups and restore one with confirmation;
@@ -75,6 +76,15 @@ The separate **Refresh** key remains available for a direct local rescan.
 Audio, embedded lyrics, sidecars, audio backups, and rmpc configuration are not
 changed. If the catalogue is unavailable, local health remains usable and the
 track stays **Unknown**.
+
+Issues opens instantly from the current Library snapshot and does not rescan or
+contact the catalogue merely to display the list. Each affected track appears
+once with its combined catalogue, lyric, verification, metadata, or state
+reasons. From an issue, use `c` for manual matching, `l` for the existing
+selected lyric-refresh preview, `v` to verify, or `s` to Sync Library. A valid
+manual lock stays healthy; if a catalogue-backed action later observes that its
+chosen recording is unavailable, the lock is preserved and an Issue explains
+the problem.
 
 To resolve an Unknown track—or correct a wrong automatic match—select it and
 press `c`. The **Match manually** chooser searches using the local title; press
@@ -99,8 +109,8 @@ or M4A file is fully covered when it has embedded plain lyrics and its adjacent
 `.lrc` contains timestamped lyric lines. MP3 keeps its existing synchronized
 embedded-lyrics requirement. A healthy track may still show **Catalogue match:
 Unknown**; that only means automatic refresh cannot identify a safe catalogue
-record yet. The Library shows that count separately from songs needing lyric
-attention.
+record yet. It appears in Issues as an identity decision, not as a claim that
+the existing lyrics are broken.
 
 ## Check health
 

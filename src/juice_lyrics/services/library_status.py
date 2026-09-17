@@ -78,6 +78,7 @@ class LibraryTrack:
     sidecar_fingerprint: tuple[int, int, int, int, int] | None = None
     identity_source: str | None = None
     identity_locked: bool = False
+    verification_error: str | None = None
 
     @property
     def needs_attention(self) -> bool:
@@ -435,6 +436,7 @@ def get_library_snapshot(
                     state_status is LibraryStateStatus.CURRENT
                     and is_identity_locked(entry)
                 ),
+                verification_error=verification if not valid else None,
             )
         )
     return LibrarySnapshot(library_path, True, tuple(tracks), warnings, state_signature)

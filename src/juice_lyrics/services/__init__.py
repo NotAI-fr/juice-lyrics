@@ -86,6 +86,14 @@ from .library_identity import (
     IdentityBackfillResult,
     backfill_catalogue_identities,
 )
+from .library_issues import (
+    LibraryHealth,
+    LibraryIssue,
+    LibraryIssueAction,
+    LibraryIssueCategory,
+    LibraryIssueSeverity,
+    get_library_health,
+)
 from .manual_identity import (
     ManualIdentityDependencies,
     ManualIdentityResult,
@@ -148,6 +156,11 @@ __all__ = [
     "DownloadExecutionStatus",
     "DownloadProgress",
     "LibraryStatus",
+    "LibraryHealth",
+    "LibraryIssue",
+    "LibraryIssueAction",
+    "LibraryIssueCategory",
+    "LibraryIssueSeverity",
     "IdentityBackfillDependencies",
     "IdentityBackfillResult",
     "ManualIdentityDependencies",
@@ -200,6 +213,7 @@ __all__ = [
     "IdentityRebuildProgress",
     "IdentityRebuildResult",
     "backfill_catalogue_identities",
+    "get_library_health",
     "is_identity_locked",
     "set_manual_identity",
     "unlock_manual_identity",

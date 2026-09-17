@@ -78,6 +78,6 @@ ambiguous or destructive work requires an explicit user decision.
 ## Roadmap discipline
 
 The current roadmap is in `docs/PROJECT_STATE.md` and `docs/ROADMAP.md`. Keep
-normal Library UX centered on **Sync Library** and future **Issues**; keep
+normal Library UX centered on **Sync Library** and **Issues**; keep
 repair/recovery tools secondary. After substantial milestones, update
 `docs/PROJECT_STATE.md` and any directly affected design/user documentation.

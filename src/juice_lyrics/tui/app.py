@@ -61,7 +61,7 @@ from .screens.base import NavigationItem
 from .screens.browse import BrowseScreen
 from .screens.dashboard import DashboardScreen
 from .screens.downloads import DownloadsScreen
-from .screens.library import LibraryScreen, ManualMatchDialog
+from .screens.library import LibraryIssuesDialog, LibraryScreen, ManualMatchDialog
 from .screens.settings import SettingsScreen
 from .help import HelpScreen
 
@@ -466,7 +466,8 @@ class JuiceLyricsApp(App[None]):
     BackupBrowser,
     RestoreDialog,
     RmpcDialog,
-    ManualMatchDialog {
+    ManualMatchDialog,
+    LibraryIssuesDialog {
         align: center middle;
         background: transparent;
     }
@@ -512,6 +513,45 @@ class JuiceLyricsApp(App[None]):
     }
 
     #manual-match-results {
+        height: auto;
+        background: transparent;
+    }
+
+    #library-issues-dialog {
+        width: 92;
+        max-width: 96%;
+        height: 82%;
+        padding: 1 2;
+        border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #library-issues-summary,
+    #library-issues-help {
+        height: 2;
+        text-style: bold;
+    }
+
+    #library-issues-main {
+        height: 1fr;
+        layout: grid;
+        grid-size: 2 1;
+        grid-columns: 3fr 2fr;
+        grid-gutter: 0 1;
+    }
+
+    #library-issues-list-scroll,
+    #library-issues-detail-scroll {
+        height: 1fr;
+        border: round ansi_cyan;
+        padding: 0 1;
+        background: transparent;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+    }
+
+    #library-issues-list,
+    #library-issues-detail {
         height: auto;
         background: transparent;
     }

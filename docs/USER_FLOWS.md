@@ -361,6 +361,8 @@ Actions:
 
 s Sync Library
 
+a Issues
+
 r Refresh
 
 m Maintain lyrics
@@ -430,6 +432,11 @@ chooser. The user may refine the query with `/`, choose with arrows, and save
 with Enter. That explicit choice becomes a file-bound manual lock; normal Sync
 and rebuild preserve it. `u` clears the identity lock without touching lyrics
 and leaves automatic reconsideration for a later Sync.
+
+`a` opens Issues from the current snapshot without another scan or catalogue
+request. One row per track combines the reasons that still require attention.
+Arrows select a row; its detail explains the problem; `c`, `l`, `v`, and `s`
+reuse manual match, lyric preview, verification, and Sync.
 
 
 ---
@@ -579,7 +586,6 @@ Ask only before:
 
 # Forward flows
 
-The next planned normal-user addition is an Issues/Health experience backed by
-manual catalogue matching and identity locking. The ordered roadmap lives in
-`PROJECT_STATE.md`; speculative screen lists are intentionally not duplicated
-here.
+Sync Library, Issues, and manual catalogue matching now form the normal Library
+workflow. The ordered remaining roadmap lives in `PROJECT_STATE.md`;
+speculative screen lists are intentionally not duplicated here.
