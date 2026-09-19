@@ -15,15 +15,14 @@ Advanced repair and recovery remain available without crowding routine use.
 
 ## Remaining sequence
 
-1. Duplicate detector
-2. Metadata repair
-3. Missing Library
-4. `999 doctor` / diagnostics
-5. Shell completion
-6. Final performance/reliability acceptance
-7. Packaging and clean installation
-8. GitHub presentation/distribution
-9. Beta release
+1. Metadata repair
+2. Missing Library
+3. `999 doctor` / diagnostics
+4. Shell completion
+5. Final performance/reliability acceptance
+6. Packaging and clean installation
+7. GitHub presentation/distribution
+8. Beta release
 
 Do not force ambiguous tracks into identities. Do not combine these milestones
 into a broad rewrite. Each milestone should preserve the safety invariants in

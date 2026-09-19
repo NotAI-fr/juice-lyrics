@@ -94,6 +94,12 @@ from .library_issues import (
     LibraryIssueSeverity,
     get_library_health,
 )
+from .library_duplicates import (
+    DuplicateConfidence,
+    DuplicateGroup,
+    DuplicateReport,
+    detect_library_duplicates,
+)
 from .manual_identity import (
     ManualIdentityDependencies,
     ManualIdentityResult,
@@ -161,6 +167,9 @@ __all__ = [
     "LibraryIssueAction",
     "LibraryIssueCategory",
     "LibraryIssueSeverity",
+    "DuplicateConfidence",
+    "DuplicateGroup",
+    "DuplicateReport",
     "IdentityBackfillDependencies",
     "IdentityBackfillResult",
     "ManualIdentityDependencies",
@@ -214,6 +223,7 @@ __all__ = [
     "IdentityRebuildResult",
     "backfill_catalogue_identities",
     "get_library_health",
+    "detect_library_duplicates",
     "is_identity_locked",
     "set_manual_identity",
     "unlock_manual_identity",

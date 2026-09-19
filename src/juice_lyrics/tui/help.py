@@ -22,6 +22,7 @@ KEY_GUIDE: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("Library", (("↑/↓ or j/k", "Select track"), ("Enter", "Track details"),
                  ("/", "Focus track search; Enter filters"), ("s", "Sync Library"),
                  ("a", "Open Library Issues"),
+                 ("d", "Review duplicate recordings"),
                  ("m", "Preview and maintain lyrics"), ("r", "Refresh library"),
                  ("v", "Verify library"), ("b", "Browse backups"),
                  ("p", "Check player integration"), ("l", "Preview selected lyric refresh"),

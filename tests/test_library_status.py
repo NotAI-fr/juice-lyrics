@@ -200,6 +200,7 @@ def test_track_snapshot_exposes_typed_local_state_without_api(tmp_path, monkeypa
     assert snapshot.external_lrc_count == 1
     assert snapshot.needs_attention_count == 1
     assert snapshot.tracks[0].match_status is LibraryMatchStatus.MATCHED
+    assert snapshot.tracks[0].catalogue_id == 1
     assert snapshot.tracks[0].lyric_status is LibraryLyricStatus.SYNCED
     assert snapshot.tracks[0].lrc_status is LibraryLrcStatus.PRESENT
     assert snapshot.tracks[0].state_status is LibraryStateStatus.CURRENT

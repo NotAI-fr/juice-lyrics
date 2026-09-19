@@ -53,6 +53,7 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Incremental Library Sync: `src/juice_lyrics/services/library_index_sync.py`
 - Status/maintenance: `src/juice_lyrics/services/library_status.py` and
   `library_sync.py`
+- Read-only duplicate analysis: `src/juice_lyrics/services/library_duplicates.py`
 - Matching/identity: `src/juice_lyrics/library/matching.py` and
   `src/juice_lyrics/services/library_identity.py`
 - State: `src/juice_lyrics/state.py`
@@ -74,6 +75,8 @@ git diff --check
 Normal Library use is `999` → Library → `s` (**Sync Library**). Press `?` for
 the implemented key map. Common safe routine work should be automatic/simple;
 ambiguous or destructive work requires an explicit user decision.
+Duplicate findings are evidence for review only; never auto-delete, merge,
+move, retag, or replace media.
 
 ## Roadmap discipline
 

@@ -35,6 +35,12 @@ from ...services.library_issues import (
     LibraryIssueCategory,
     get_library_health,
 )
+from ...services.library_duplicates import (
+    DuplicateConfidence,
+    DuplicateGroup,
+    DuplicateReport,
+    detect_library_duplicates,
+)
 from ...services.catalogue import CataloguePage, CatalogueSearchResult
 from ...services.identity_rebuild import (
     IdentityRebuildPlan,
@@ -494,6 +500,111 @@ class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
         event.stop()
 
 
+class LibraryDuplicatesDialog(ModalScreen[None]):
+    """Read-only duplicate groups derived from the current Library snapshot."""
+
+    def __init__(self, report: DuplicateReport) -> None:
+        super().__init__()
+        self.report = report
+        self.index = 0
+
+    def compose(self) -> Iterable[Widget]:
+        with Container(id="library-duplicates-dialog"):
+            yield Static("Duplicate recordings", id="library-dialog-title")
+            yield Static("", id="library-duplicates-summary", markup=False)
+            with Grid(id="library-duplicates-main"):
+                with VerticalScroll(id="library-duplicates-list-scroll"):
+                    yield Static("", id="library-duplicates-list", markup=False)
+                with VerticalScroll(id="library-duplicates-detail-scroll"):
+                    yield Static("", id="library-duplicates-detail", markup=False)
+            yield Static("↑/↓ Select · Esc Close · ? Help", id="library-duplicates-help", markup=False)
+
+    def on_mount(self) -> None:
+        self._render_duplicates()
+
+    def _render_duplicates(self) -> None:
+        groups = self.report.groups
+        self.query_one("#library-duplicates-summary", Static).update(
+            f"{len(groups)} duplicate group{'s' if len(groups) != 1 else ''} · "
+            f"{self.report.file_count} file{'s' if self.report.file_count != 1 else ''}"
+        )
+        if not groups:
+            self.query_one("#library-duplicates-list", Static).update(
+                "No duplicate recordings found"
+            )
+            self.query_one("#library-duplicates-detail", Static).update(
+                "No exact or probable duplicate groups are present in the current Library snapshot."
+            )
+            return
+        lines = []
+        for index, group in enumerate(groups):
+            marker = ">" if index == self.index else " "
+            label = "Exact" if group.confidence is DuplicateConfidence.EXACT else "Probable"
+            lines.append(
+                f"{marker} {group.title[:27]:27} · {label:8} · {len(group.tracks)} files"
+            )
+        self.query_one("#library-duplicates-list", Static).update(
+            Text("\n".join(lines), no_wrap=True, overflow="ellipsis")
+        )
+        self._render_duplicate_detail(groups[self.index])
+        self.call_after_refresh(self._scroll_duplicate_selection_into_view)
+
+    def _render_duplicate_detail(self, group: DuplicateGroup) -> None:
+        label = "Exact duplicate audio" if group.confidence is DuplicateConfidence.EXACT else "Probable duplicate recording"
+        lines = [group.title, "", f"Assessment     {label}", "", "Evidence"]
+        lines.extend(f"- {item}" for item in group.evidence)
+        lines.extend(("", "Files"))
+        for track in group.tracks:
+            duration = _duration(track.duration_seconds)
+            catalogue = (
+                f" · catalogue {track.catalogue_id}"
+                if track.catalogue_id is not None
+                else ""
+            )
+            lines.extend(
+                (
+                    f"- {track.relative_path}",
+                    f"  {track.media_format} · {duration}{catalogue}",
+                )
+            )
+        lines.extend(("", "Review only — no files will be changed."))
+        self.query_one("#library-duplicates-detail", Static).update(
+            Text("\n".join(lines), overflow="ellipsis")
+        )
+
+    def _scroll_duplicate_selection_into_view(self) -> None:
+        if not self.report.groups:
+            return
+        self.query_one("#library-duplicates-list-scroll", VerticalScroll).scroll_to(
+            y=self.index, animate=False, immediate=True
+        )
+
+    def on_key(self, event: Key) -> None:
+        groups = self.report.groups
+        if event.key in {"escape", "d"}:
+            self.dismiss(None)
+        elif event.key == "question_mark":
+            self.app.action_show_help()
+        elif event.key in {"down", "j"} and groups:
+            self.index = min(len(groups) - 1, self.index + 1)
+            self._render_duplicates()
+        elif event.key in {"up", "k"} and groups:
+            self.index = max(0, self.index - 1)
+            self._render_duplicates()
+        elif event.key == "home" and groups:
+            self.index = 0
+            self._render_duplicates()
+        elif event.key == "end" and groups:
+            self.index = len(groups) - 1
+            self._render_duplicates()
+        elif event.key in {"1", "2", "3", "4", "5"}:
+            pass
+        else:
+            return
+        event.prevent_default()
+        event.stop()
+
+
 class MaintenanceDialog(ModalScreen[LibrarySyncPlan | None]):
     """Cancel-first confirmation for an already non-mutating maintenance preview."""
 
@@ -881,7 +992,7 @@ class LibraryScreen(HubScreen):
                 with VerticalScroll(id="library-details-scroll"):
                     yield Static("Select a track to inspect it.", id="library-details", markup=False)
         yield Static("Sync Library updates the catalogue view without changing audio or lyrics.", id="library-preview", markup=False)
-        yield Static("s Sync Library · a Issues · ↑↓ Move · Enter Details · ? Help", id="library-position", markup=False)
+        yield Static("s Sync Library · a Issues · d Duplicates · ↑↓ Move · Enter Details · ? Help", id="library-position", markup=False)
 
     def action_focus_search(self) -> None:
         self.query_one("#library-query", Input).focus()
@@ -1371,9 +1482,9 @@ class LibraryScreen(HubScreen):
 
     def _update_position(self) -> None:
         if not self.filtered_tracks:
-            self.query_one("#library-position", Static).update("s Sync Library · a Issues · m Maintain lyrics · ? Help")
+            self.query_one("#library-position", Static).update("s Sync Library · a Issues · d Duplicates · ? Help")
             return
-        suffix = "Esc Back · a Issues · c Match · u Unlock · l Refresh lyrics · ? Help" if self._details_mode else "s Sync Library · a Issues · ↑↓ Move · Enter Details · ? Help"
+        suffix = "Esc Back · a Issues · d Duplicates · c Match · l Refresh · ? Help" if self._details_mode else "s Sync Library · a Issues · d Duplicates · ↑↓ Move · Enter Details · ? Help"
         self.query_one("#library-position", Static).update(
             f"Track {self.selected_index + 1} of {len(self.filtered_tracks)} · {suffix}"
         )
@@ -1387,6 +1498,8 @@ class LibraryScreen(HubScreen):
             self.sync_library()
         elif event.key == "a":
             self._open_issues()
+        elif event.key == "d":
+            self._open_duplicates()
         elif event.key == "m":
             self.generate_preview(action="maintain")
         elif event.key == "v":
@@ -1440,6 +1553,19 @@ class LibraryScreen(HubScreen):
         self.app.push_screen(
             LibraryIssuesDialog(get_library_health(self.snapshot)),
             self._issue_action_selected,
+        )
+
+    def _open_duplicates(self) -> None:
+        if self.snapshot is None:
+            self._set_status("Load the library before viewing duplicates.", error=True)
+            return
+        self.app.push_screen(
+            LibraryDuplicatesDialog(
+                detect_library_duplicates(
+                    self.snapshot,
+                    duration_tolerance=self.settings.duration_tolerance,
+                )
+            )
         )
 
     def _issue_action_selected(self, choice: LibraryIssueChoice | None) -> None:

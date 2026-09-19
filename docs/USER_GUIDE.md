@@ -59,6 +59,7 @@ Open `999`, choose **Library**, and use:
 
 * **Sync Library** (`s`) for the normal update: discover MP3, FLAC, and M4A changes, retire known removed entries, and identify safe catalogue matches without changing audio or lyrics;
 * **Issues** (`a`) to see only tracks still needing a decision or repair;
+* **Duplicates** (`d`) to review exact file copies and conservative probable recordings without changing anything;
 * **Maintain lyrics** to preview needed changes, then explicitly approve them;
 * **Verify** for a read-only health check and attention list;
 * **Backups** to inspect valid backups and restore one with confirmation;
@@ -76,6 +77,14 @@ The separate **Refresh** key remains available for a direct local rescan.
 Audio, embedded lyrics, sidecars, audio backups, and rmpc configuration are not
 changed. If the catalogue is unavailable, local health remains usable and the
 track stays **Unknown**.
+
+Duplicates opens immediately from the current Library snapshot. Exact groups
+share the same recorded whole-file SHA-256. Probable groups use compatible
+catalogue identity, duration, title, artist, and recording-version evidence.
+Live, remix, session, extended, TV mix, and numbered versions are not treated
+as interchangeable. The view shows its evidence and every path, but never
+deletes, merges, moves, retags, or replaces audio. Run Sync Library first when
+you want the snapshot and saved fingerprints brought up to date.
 
 Issues opens instantly from the current Library snapshot and does not rescan or
 contact the catalogue merely to display the list. Each affected track appears

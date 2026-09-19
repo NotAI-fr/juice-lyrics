@@ -107,6 +107,8 @@ def _track(
     identity_locked: bool = False,
     identity_source: str | None = None,
     verification_error: str | None = None,
+    content_sha256: str | None = None,
+    catalogue_id=None,
 ) -> LibraryTrack:
     path = root / name
     lrc_path = path.with_suffix(".lrc") if lrc is not LibraryLrcStatus.NONE else None
@@ -129,6 +131,8 @@ def _track(
         identity_locked=identity_locked,
         identity_source=identity_source,
         verification_error=verification_error,
+        content_sha256=content_sha256,
+        catalogue_id=catalogue_id,
     )
 
 
@@ -440,6 +444,85 @@ def test_issues_empty_state_and_sync_replaces_health_immediately(tmp_path):
             assert "0 healthy · 1 issues" in _text(app, "#library-summary")
             await pilot.press("a")
             assert "Embedded lyrics" in _text(app, "#library-issues-detail")
+
+    asyncio.run(scenario())
+
+
+def test_duplicates_open_from_snapshot_without_rescan_api_or_mutation(tmp_path):
+    root = tmp_path / "music"
+    first = _track(root, "Album/Song.mp3", content_sha256="same", catalogue_id=1)
+    second = _track(root, "Copy/Song.flac", media_format="FLAC", content_sha256="same", catalogue_id=1)
+    snapshot_calls = []
+    api_calls = []
+    audio = tmp_path / "sentinel-audio"
+    sidecar = tmp_path / "sentinel-lrc"
+    audio.write_bytes(b"audio unchanged")
+    sidecar.write_bytes(b"lrc unchanged")
+
+    def snapshot(settings):
+        snapshot_calls.append("snapshot")
+        return _snapshot(root, first, second)
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            snapshot,
+            catalogue_search_provider=lambda *args, **kwargs: api_calls.append(args),
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            screen = await _open_library(app, pilot)
+            assert "d Duplicates" in _text(app, "#library-position")
+            await pilot.press("d")
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "LibraryDuplicatesDialog"
+            assert snapshot_calls == ["snapshot"]
+            assert api_calls == []
+            assert "1 duplicate group" in _text(app, "#library-duplicates-summary")
+            detail = _text(app, "#library-duplicates-detail")
+            assert "Exact duplicate audio" in detail
+            assert "same SHA-256" in detail
+            assert "Album/Song.mp3" in detail and "Copy/Song.flac" in detail
+            await pilot.press("question_mark")
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "HelpScreen"
+            await pilot.press("escape", "escape")
+            assert app.screen is screen
+
+    asyncio.run(scenario())
+    assert audio.read_bytes() == b"audio unchanged"
+    assert sidecar.read_bytes() == b"lrc unchanged"
+
+
+def test_duplicate_navigation_probable_evidence_and_empty_state(tmp_path):
+    root = tmp_path / "music"
+    exact = (
+        _track(root, "A/Exact.mp3", content_sha256="exact"),
+        _track(root, "B/Exact.mp3", content_sha256="exact"),
+    )
+    probable = (
+        _track(root, "A/Probable.flac", media_format="FLAC", content_sha256="a", catalogue_id=42),
+        _track(root, "B/Probable.m4a", media_format="M4A", content_sha256="b", catalogue_id=42),
+    )
+
+    async def scenario():
+        app = _app(tmp_path, lambda settings: _snapshot(root, *exact, *probable))
+        async with app.run_test() as pilot:
+            await _open_library(app, pilot)
+            await pilot.press("d")
+            assert "Exact duplicate audio" in _text(app, "#library-duplicates-detail")
+            await pilot.press("down")
+            detail = _text(app, "#library-duplicates-detail")
+            assert "Probable duplicate recording" in detail
+            assert "Same catalogue identity (42)" in detail
+            await pilot.press("escape")
+
+        empty = _app(tmp_path, lambda settings: _snapshot(root, exact[0]))
+        async with empty.run_test() as pilot:
+            await _open_library(empty, pilot)
+            await pilot.press("d")
+            assert "No duplicate recordings found" in _text(
+                empty, "#library-duplicates-list"
+            )
 
     asyncio.run(scenario())
 

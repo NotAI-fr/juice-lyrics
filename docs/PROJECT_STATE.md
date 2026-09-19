@@ -1,9 +1,9 @@
 # 999 project state
 
 This is the canonical detailed handoff for the current application. One-button
-Sync, manual catalogue locking, and the snapshot-backed Library Issues workflow
-are integrated. Read the code and tests if a later working tree disagrees with
-this document.
+Sync, manual catalogue locking, snapshot-backed Library Issues, and read-only
+duplicate review are integrated. Read the code and tests if a later working
+tree disagrees with this document.
 
 ## Repository checkpoint
 
@@ -23,6 +23,9 @@ this document.
 - Library Issues milestone verification: 435 full-suite tests and 30 explicit
   temporary-HOME/XDG Issues/Sync/identity smoke tests passed; compileall and
   `git diff --check` passed.
+- Duplicate detector milestone verification: 453 full-suite tests and 45
+  explicit temporary-HOME/XDG duplicate/status/Sync smoke tests passed;
+  compileall and `git diff --check` passed.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -45,6 +48,7 @@ Library is the maintenance centre. The primary routine action is:
 ```text
 s → Sync Library
 a → Issues
+d → Duplicates
 ```
 
 `?` opens the complete scrollable key guide globally. Common actions remain in
@@ -101,6 +105,21 @@ Issue details reuse only existing safe actions: manual catalogue match,
 selected lyric-refresh preview, read-only verification, or Sync Library. Every
 completed Sync replaces the displayed snapshot, so resolved rows disappear and
 newly discovered problems appear immediately.
+
+## Duplicate review
+
+`d` opens **Duplicates** immediately from the current Library snapshot. It does
+not rescan, rehash, call the catalogue API, or mutate files/state merely to
+render the view. Exact groups share the same saved whole-file SHA-256. Probable
+groups require compatible recording-version evidence and either the same
+catalogue identity or compatible title, artist, and known duration metadata.
+
+The detail panel explains the evidence and lists every library-relative path.
+Numbered versions and named variants such as live, remix, recording session,
+extended, TV mix, acoustic, demo, instrumental, and stems remain distinct.
+Detection is review-only: it never deletes, merges, moves, retags, or replaces
+audio. Because the view deliberately reuses current snapshot data, running Sync
+first provides the freshest paths, metadata, identities, and saved hashes.
 
 - MP3 full coverage uses the existing format-aware ID3 requirements plus its
   synchronized sidecar behavior.
@@ -227,15 +246,14 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Duplicate detector
-2. Metadata repair
-3. Missing Library
-4. `999 doctor` / diagnostics
-5. Shell completion
-6. Final performance/reliability acceptance
-7. Packaging and clean installation
-8. GitHub presentation/distribution
-9. Beta release
+1. Metadata repair
+2. Missing Library
+3. `999 doctor` / diagnostics
+4. Shell completion
+5. Final performance/reliability acceptance
+6. Packaging and clean installation
+7. GitHub presentation/distribution
+8. Beta release
 
 ## Resume safely
 

@@ -61,7 +61,12 @@ from .screens.base import NavigationItem
 from .screens.browse import BrowseScreen
 from .screens.dashboard import DashboardScreen
 from .screens.downloads import DownloadsScreen
-from .screens.library import LibraryIssuesDialog, LibraryScreen, ManualMatchDialog
+from .screens.library import (
+    LibraryDuplicatesDialog,
+    LibraryIssuesDialog,
+    LibraryScreen,
+    ManualMatchDialog,
+)
 from .screens.settings import SettingsScreen
 from .help import HelpScreen
 
@@ -467,7 +472,8 @@ class JuiceLyricsApp(App[None]):
     RestoreDialog,
     RmpcDialog,
     ManualMatchDialog,
-    LibraryIssuesDialog {
+    LibraryIssuesDialog,
+    LibraryDuplicatesDialog {
         align: center middle;
         background: transparent;
     }
@@ -552,6 +558,45 @@ class JuiceLyricsApp(App[None]):
 
     #library-issues-list,
     #library-issues-detail {
+        height: auto;
+        background: transparent;
+    }
+
+    #library-duplicates-dialog {
+        width: 94;
+        max-width: 96%;
+        height: 82%;
+        padding: 1 2;
+        border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #library-duplicates-summary,
+    #library-duplicates-help {
+        height: 2;
+        text-style: bold;
+    }
+
+    #library-duplicates-main {
+        height: 1fr;
+        layout: grid;
+        grid-size: 2 1;
+        grid-columns: 2fr 3fr;
+        grid-gutter: 0 1;
+    }
+
+    #library-duplicates-list-scroll,
+    #library-duplicates-detail-scroll {
+        height: 1fr;
+        border: round ansi_cyan;
+        padding: 0 1;
+        background: transparent;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+    }
+
+    #library-duplicates-list,
+    #library-duplicates-detail {
         height: auto;
         background: transparent;
     }
@@ -1115,7 +1160,9 @@ class JuiceLyricsApp(App[None]):
             self.notify(f"{self.screen.title or 'This section'} has no data to refresh yet.")
 
     def action_show_help(self) -> None:
-        if not isinstance(self.screen, ModalScreen):
+        if not isinstance(self.screen, ModalScreen) or isinstance(
+            self.screen, LibraryDuplicatesDialog
+        ):
             self.push_screen(HelpScreen())
 
     def on_navigation_item_activated(self, event: NavigationItem.Activated) -> None:

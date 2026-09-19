@@ -363,6 +363,8 @@ s Sync Library
 
 a Issues
 
+d Duplicates
+
 r Refresh
 
 m Maintain lyrics
@@ -437,6 +439,12 @@ and leaves automatic reconsideration for a later Sync.
 request. One row per track combines the reasons that still require attention.
 Arrows select a row; its detail explains the problem; `c`, `l`, `v`, and `s`
 reuse manual match, lyric preview, verification, and Sync.
+
+`d` opens a read-only duplicate review from that same snapshot. Exact groups
+share a saved whole-file hash; probable groups show the catalogue, metadata,
+duration, and version evidence that connected them. Distinct live, remix,
+session, extended, TV mix, and numbered versions stay separate. No files are
+deleted, merged, moved, retagged, or replaced.
 
 
 ---
@@ -586,6 +594,6 @@ Ask only before:
 
 # Forward flows
 
-Sync Library, Issues, and manual catalogue matching now form the normal Library
+Sync Library, Issues, duplicate review, and manual catalogue matching form the normal Library
 workflow. The ordered remaining roadmap lives in `PROJECT_STATE.md`;
 speculative screen lists are intentionally not duplicated here.

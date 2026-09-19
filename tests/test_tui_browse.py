@@ -885,6 +885,7 @@ def test_help_inventories_app_bindings_and_focus_palette():
     for label in ("Switch sections", "Refresh current section", "Open Help", "Quit",
                   "Mark or unmark", "Download entire queue", "Preview and maintain",
                   "Open Library Issues",
+                  "Review duplicate recordings",
                   "Choose and lock a catalogue match", "Unlock and clear a manual match",
                   "Inspect setting", "Confirm immediately"):
         assert label in guide

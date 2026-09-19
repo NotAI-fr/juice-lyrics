@@ -79,6 +79,7 @@ class LibraryTrack:
     identity_source: str | None = None
     identity_locked: bool = False
     verification_error: str | None = None
+    catalogue_id: Any | None = None
 
     @property
     def needs_attention(self) -> bool:
@@ -437,6 +438,12 @@ def get_library_snapshot(
                     and is_identity_locked(entry)
                 ),
                 verification_error=verification if not valid else None,
+                catalogue_id=(
+                    entry.get("song_id")
+                    if entry is not None
+                    and state_status is LibraryStateStatus.CURRENT
+                    else None
+                ),
             )
         )
     return LibrarySnapshot(library_path, True, tuple(tracks), warnings, state_signature)

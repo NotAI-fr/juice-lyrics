@@ -41,7 +41,9 @@ Open `999`, choose **Library**, then press `s` for **Sync Library**. It discover
 new, changed, and removed local tracks, identifies confident catalogue matches,
 and updates the Library view without changing audio or lyrics. Press `a` for
 **Issues**, the snapshot-backed list of tracks that still need a decision or
-repair. **Maintain lyrics**
+repair. Press `d` for a read-only **Duplicates** view showing exact file copies
+and conservative probable-recording groups with their evidence and paths.
+**Maintain lyrics**
 is the separate, explicitly approved repair action. Maintenance shows a non-mutating preview and
 a cancel-first confirmation before changing audio metadata or sidecars.
 Press `?` on any TUI section for a scrollable guide to every app shortcut.
@@ -57,6 +59,10 @@ When a track remains Unknown or has a wrong automatic identity, select it in
 Library and press `c` to search, choose, and lock the correct catalogue
 record. Press `u` to unlock and clear a manual choice so a later Sync can
 reconsider it.
+
+Duplicate review uses the already-loaded Library snapshot. It does not rescan,
+contact the catalogue, or change files. Distinct versions such as live,
+remix, session, extended, TV mix, and numbered versions are kept separate.
 
 The CLI remains available for scripting and automation. `999 sync` remembers
 files it has already processed, so unchanged verified files are skipped.
