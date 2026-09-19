@@ -365,6 +365,8 @@ a Issues
 
 d Duplicates
 
+e Metadata repair preview
+
 r Refresh
 
 m Maintain lyrics
@@ -445,6 +447,12 @@ share a saved whole-file hash; probable groups show the catalogue, metadata,
 duration, and version evidence that connected them. Distinct live, remix,
 session, extended, TV mix, and numbered versions stay separate. No files are
 deleted, merged, moved, retagged, or replaced.
+
+`e` reads only the selected track's supported tags and confirmed catalogue
+record. The preview shows before/after values and separates confidently
+repairable missing fields from existing differences requiring review. Unknown
+identities are not guessed. This milestone deliberately provides no Apply
+action and changes no files or application state.
 
 
 ---

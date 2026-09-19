@@ -100,6 +100,13 @@ from .library_duplicates import (
     DuplicateReport,
     detect_library_duplicates,
 )
+from .metadata_audit import (
+    MetadataAudit,
+    MetadataProposal,
+    MetadataProposalConfidence,
+    audit_track_metadata,
+    build_metadata_audit,
+)
 from .manual_identity import (
     ManualIdentityDependencies,
     ManualIdentityResult,
@@ -170,6 +177,9 @@ __all__ = [
     "DuplicateConfidence",
     "DuplicateGroup",
     "DuplicateReport",
+    "MetadataAudit",
+    "MetadataProposal",
+    "MetadataProposalConfidence",
     "IdentityBackfillDependencies",
     "IdentityBackfillResult",
     "ManualIdentityDependencies",
@@ -224,6 +234,8 @@ __all__ = [
     "backfill_catalogue_identities",
     "get_library_health",
     "detect_library_duplicates",
+    "audit_track_metadata",
+    "build_metadata_audit",
     "is_identity_locked",
     "set_manual_identity",
     "unlock_manual_identity",

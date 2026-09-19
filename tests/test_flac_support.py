@@ -35,6 +35,7 @@ def _make_flac(
     title: str | None = "Rental",
     artist: str | None = "Juice WRLD",
     album: str | None = "Unreleased",
+    track_number: str | None = None,
     duration: float = 2.0,
 ) -> Path:
     """Create a tiny metadata-capable FLAC container without audio samples."""
@@ -56,10 +57,10 @@ def _make_flac(
     )
     path.write_bytes(b"fLaC" + b"\x80" + len(stream_info).to_bytes(3, "big") + stream_info)
     tags = FLAC(path)
-    for key, value in (("TITLE", title), ("ARTIST", artist), ("ALBUM", album)):
+    for key, value in (("TITLE", title), ("ARTIST", artist), ("ALBUM", album), ("TRACKNUMBER", track_number)):
         if value is not None:
             tags[key] = [value]
-    if any(value is not None for value in (title, artist, album)):
+    if any(value is not None for value in (title, artist, album, track_number)):
         tags.save()
     return path
 
@@ -97,6 +98,7 @@ def test_flac_metadata_and_duration_are_read_natively(tmp_path):
         title="Rental (v2)",
         artist="Juice WRLD",
         album="Test Album",
+        track_number="7/20",
         duration=3.25,
     )
 
@@ -105,6 +107,7 @@ def test_flac_metadata_and_duration_are_read_natively(tmp_path):
     assert metadata.title == "Rental (v2)"
     assert metadata.artist == "Juice WRLD"
     assert metadata.album == "Test Album"
+    assert metadata.track_number == "7/20"
     assert metadata.duration_seconds == pytest.approx(3.25)
     assert local_duration(path) == pytest.approx(3.25)
     assert search_title_for(path) == "Rental"

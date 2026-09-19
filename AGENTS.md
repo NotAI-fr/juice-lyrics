@@ -54,6 +54,7 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Status/maintenance: `src/juice_lyrics/services/library_status.py` and
   `library_sync.py`
 - Read-only duplicate analysis: `src/juice_lyrics/services/library_duplicates.py`
+- Read-only metadata proposals: `src/juice_lyrics/services/metadata_audit.py`
 - Matching/identity: `src/juice_lyrics/library/matching.py` and
   `src/juice_lyrics/services/library_identity.py`
 - State: `src/juice_lyrics/state.py`
@@ -77,6 +78,8 @@ the implemented key map. Common safe routine work should be automatic/simple;
 ambiguous or destructive work requires an explicit user decision.
 Duplicate findings are evidence for review only; never auto-delete, merge,
 move, retag, or replace media.
+Metadata repair is preview-only until the apply transaction in
+`docs/METADATA_REPAIR_DESIGN.md` is implemented and verified.
 
 ## Roadmap discipline
 

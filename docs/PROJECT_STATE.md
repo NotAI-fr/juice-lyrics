@@ -1,9 +1,9 @@
 # 999 project state
 
 This is the canonical detailed handoff for the current application. One-button
-Sync, manual catalogue locking, snapshot-backed Library Issues, and read-only
-duplicate review are integrated. Read the code and tests if a later working
-tree disagrees with this document.
+Sync, manual catalogue locking, snapshot-backed Library Issues, read-only
+duplicate review, and metadata repair audit/preview are integrated. Read the
+code and tests if a later working tree disagrees with this document.
 
 ## Repository checkpoint
 
@@ -25,6 +25,9 @@ tree disagrees with this document.
   `git diff --check` passed.
 - Duplicate detector milestone verification: 453 full-suite tests and 45
   explicit temporary-HOME/XDG duplicate/status/Sync smoke tests passed;
+  compileall and `git diff --check` passed.
+- Metadata audit/preview milestone verification: 470 full-suite tests and 50
+  explicit temporary-HOME/XDG metadata/status/identity/Sync smoke tests passed;
   compileall and `git diff --check` passed.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
@@ -49,6 +52,7 @@ Library is the maintenance centre. The primary routine action is:
 s → Sync Library
 a → Issues
 d → Duplicates
+e → Metadata repair preview for the selected track
 ```
 
 `?` opens the complete scrollable key guide globally. Common actions remain in
@@ -120,6 +124,31 @@ extended, TV mix, acoustic, demo, instrumental, and stems remain distinct.
 Detection is review-only: it never deletes, merges, moves, retags, or replaces
 audio. Because the view deliberately reuses current snapshot data, running Sync
 first provides the freshest paths, metadata, identities, and saved hashes.
+
+## Metadata repair audit and preview
+
+`e` prepares a read-only metadata repair preview for the selected MP3, FLAC, or
+M4A in a background worker. Metadata Issues also expose the same action. The
+service reads the exact supported local tags and only the already-confirmed
+catalogue ID; Unknown identities short-circuit without guessing or making a
+catalogue request. Repeated preview in the same unchanged snapshot reuses its
+result.
+
+Supported proposal fields are title, artist, album, and track number. A missing
+local field with explicit trustworthy catalogue evidence is **Confident**. Any
+different non-empty local value is **Review** and is not treated as an automatic
+replacement. Recording/version markers remain significant, including live,
+remix, session, extended, TV mix, and numbered versions. Missing catalogue
+fields produce no proposal. Album inference from an API path is limited to a
+normal released record; track number requires an explicit API value.
+
+The preview checks that the local file fingerprint did not change while it was
+read and displays before/after evidence, identity provenance, format, and path.
+It writes no audio, state, embedded lyrics, sidecars, backups, downloads, or
+rmpc configuration. There is intentionally no Apply action in this milestone.
+The required backup, temporary-copy verification, atomic replacement/rollback,
+format-specific preservation, state-conflict, new-hash, and manual-lock rebinding
+contract is recorded in `METADATA_REPAIR_DESIGN.md` for the apply milestone.
 
 - MP3 full coverage uses the existing format-aware ID3 requirements plus its
   synchronized sidecar behavior.
@@ -233,6 +262,8 @@ real config, state, backups, queue, sidecars, or rmpc configuration.
   historical centralized files.
 - Packaging/install acceptance and public GitHub presentation still need a
   final release pass.
+- Metadata repair currently audits and previews only; safe writes remain a
+  separate milestone governed by `METADATA_REPAIR_DESIGN.md`.
 
 ## Roadmap
 
@@ -246,7 +277,7 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Metadata repair
+1. Metadata repair apply (backed up, verified, and atomic)
 2. Missing Library
 3. `999 doctor` / diagnostics
 4. Shell completion

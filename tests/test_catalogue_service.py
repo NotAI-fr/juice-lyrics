@@ -189,6 +189,24 @@ def test_details_by_id_uses_stable_selected_song_id(tmp_path):
     assert fetched == [95214]
 
 
+def test_details_normalize_explicit_track_number_and_released_path_album(tmp_path):
+    details = get_song_details_by_id(
+        Settings(music_dir=tmp_path),
+        94102,
+        details_fetcher=lambda settings, song_id: {
+            "id": song_id,
+            "name": "10 Feet",
+            "category": "released",
+            "track_number": "8/22",
+            "path": "Compilation/Released Discography/11. Death Race For Love/10 Feet.mp3",
+        },
+    )
+
+    assert details is not None
+    assert details.album == "Death Race For Love"
+    assert details.track_number == "8/22"
+
+
 def test_search_handles_malformed_optional_metadata_without_writes(tmp_path):
     settings = Settings(music_dir=tmp_path / "does-not-exist")
     record = {
@@ -198,6 +216,7 @@ def test_search_handles_malformed_optional_metadata_without_writes(tmp_path):
         "length": ["3:00"],
         "credited_artists": [{"unexpected": "shape"}, None],
         "producers": 42,
+        "album": 42,
     }
 
     result = search_catalogue(
@@ -212,6 +231,7 @@ def test_search_handles_malformed_optional_metadata_without_writes(tmp_path):
     assert result.length is None
     assert result.artists == ()
     assert result.producers == ()
+    assert result.album is None
     assert result.media_path is None
     assert result.downloadable is False
     assert not settings.music_dir.exists()

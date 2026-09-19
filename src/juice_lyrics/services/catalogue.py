@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+import re
 from typing import Any
 
 from ..acquisition.resolver import ResourceResolutionError, resolve_resource
@@ -44,6 +45,8 @@ class CatalogueSearchResult:
     media_path: str | None
     lyrics: LyricAvailability
     downloadable: bool
+    album: str | None = None
+    track_number: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +95,8 @@ class SongDetails:
     synced_lyrics: str | None
     plain_lyrics: str | None
     downloadable: bool
+    album: str | None = None
+    track_number: str | None = None
 
 
 def _text(value: Any) -> str | None:
@@ -125,6 +130,51 @@ def _era(value: Any) -> str | None:
     if isinstance(value, Mapping):
         return _text(value.get("name"))
     return _text(value)
+
+
+def _named_value(value: Any) -> str | None:
+    if isinstance(value, Mapping):
+        return _text(value.get("name")) or _text(value.get("title"))
+    if isinstance(value, str):
+        return _text(value)
+    values = _named_values(value)
+    return values[0] if values else None
+
+
+def _catalogue_album(record: Mapping[str, Any]) -> str | None:
+    explicit = _named_value(record.get("album"))
+    if explicit:
+        return explicit
+    media_path = _text(record.get("path") or record.get("file_path"))
+    category = _text(record.get("category"))
+    if not media_path or category is None or category.casefold() != "released":
+        return None
+    parent = Path(media_path).parent.name.strip()
+    parent = re.sub(r"^\d+\.\s*", "", parent).strip()
+    if parent.casefold() in {"released", "released discography", "singles", "compilation"}:
+        return None
+    return parent or None
+
+
+def _track_number(record: Mapping[str, Any]) -> str | None:
+    for key in ("track_number", "track", "track_no"):
+        value = record.get(key)
+        if isinstance(value, bool) or isinstance(value, Mapping):
+            continue
+        if isinstance(value, (list, tuple)) and value:
+            if (
+                len(value) > 1
+                and isinstance(value[0], int)
+                and isinstance(value[1], int)
+                and value[0] > 0
+            ):
+                value = f"{value[0]}/{value[1]}" if value[1] > 0 else value[0]
+            else:
+                value = value[0]
+        text = _text(value)
+        if text:
+            return text
+    return None
 
 
 def _song_id(value: Any) -> SongId | None:
@@ -172,6 +222,8 @@ def _common_fields(settings: Settings, record: Mapping[str, Any]) -> dict[str, A
         "synced_lyrics": synced,
         "plain_lyrics": plain,
         "downloadable": _is_downloadable(settings, record),
+        "album": _catalogue_album(record),
+        "track_number": _track_number(record),
     }
 
 

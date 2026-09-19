@@ -41,7 +41,17 @@ from ...services.library_duplicates import (
     DuplicateReport,
     detect_library_duplicates,
 )
-from ...services.catalogue import CataloguePage, CatalogueSearchResult
+from ...services.metadata_audit import (
+    MetadataAudit,
+    MetadataProposalConfidence,
+    audit_track_metadata,
+)
+from ...services.catalogue import (
+    CataloguePage,
+    CatalogueSearchResult,
+    SongDetails,
+    get_song_details_by_id,
+)
 from ...services.identity_rebuild import (
     IdentityRebuildPlan,
     IdentityRebuildProgress,
@@ -65,6 +75,8 @@ IdentityRebuildPlanProvider = Callable[..., IdentityRebuildPlan]
 IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
 ManualSearchProvider = Callable[..., CataloguePage]
 ManualIdentityProvider = Callable[..., ManualIdentityResult]
+MetadataAuditProvider = Callable[..., MetadataAudit]
+CatalogueDetailsProvider = Callable[..., SongDetails | None]
 PreviewProvider = Callable[[Any], LibrarySyncPlan]
 ExecutionProvider = Callable[..., LibrarySyncResult]
 BackupProvider = Callable[[], tuple[BackupRecord, ...]]
@@ -189,6 +201,13 @@ class ManualIdentityOutcome:
     result: ManualIdentityResult | None = None
     error: str | None = None
     action: str = "match"
+
+
+@dataclass(frozen=True, slots=True)
+class MetadataAuditOutcome:
+    reference: str
+    audit: MetadataAudit | None = None
+    error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -440,12 +459,16 @@ class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
             detail_lines.extend(("", "Next step: press s to Sync Library."))
         else:
             detail_lines.extend(("", "Next step: press v to verify the library again."))
+        if LibraryIssueCategory.METADATA in issue.categories:
+            detail_lines.extend(("", "Press e to inspect a read-only metadata repair preview."))
         self.query_one("#library-issues-detail", Static).update(
             Text("\n".join(detail_lines), overflow="ellipsis")
         )
         available = ["↑/↓ Select"]
         if LibraryIssueCategory.CATALOGUE in issue.categories:
             available.append("c Match manually")
+        if LibraryIssueCategory.METADATA in issue.categories:
+            available.append("e Metadata preview")
         if LibraryIssueCategory.LYRICS in issue.categories:
             available.append("l Refresh lyrics")
         available.extend(("v Verify", "s Sync Library", "Esc Close", "? Help"))
@@ -484,6 +507,8 @@ class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
             self.dismiss(LibraryIssueChoice(issue.track.reference, LibraryIssueAction.MANUAL_MATCH))
         elif event.key == "l" and issue is not None and LibraryIssueCategory.LYRICS in issue.categories:
             self.dismiss(LibraryIssueChoice(issue.track.reference, LibraryIssueAction.REFRESH_LYRICS))
+        elif event.key == "e" and issue is not None and LibraryIssueCategory.METADATA in issue.categories:
+            self.dismiss(LibraryIssueChoice(issue.track.reference, LibraryIssueAction.METADATA_AUDIT))
         elif event.key == "v":
             self.dismiss(
                 LibraryIssueChoice(issue.track.reference if issue else "", LibraryIssueAction.VERIFY)
@@ -603,6 +628,71 @@ class LibraryDuplicatesDialog(ModalScreen[None]):
             return
         event.prevent_default()
         event.stop()
+
+
+class MetadataAuditDialog(ModalScreen[None]):
+    """Read-only before/after metadata proposal for one local track."""
+
+    def __init__(self, audit: MetadataAudit) -> None:
+        super().__init__()
+        self.audit = audit
+
+    def compose(self) -> Iterable[Widget]:
+        with Container(id="metadata-audit-dialog"):
+            yield Static("Metadata repair preview", id="library-dialog-title")
+            with VerticalScroll(id="metadata-audit-scroll"):
+                yield Static(self._text(), id="metadata-audit-content", markup=False)
+            yield Static("Preview only · Esc Close", id="metadata-audit-help", markup=False)
+
+    def _text(self) -> Text:
+        audit = self.audit
+        track = audit.track
+        lines = [
+            track.title,
+            "",
+            f"Format         {track.media_format}",
+            f"Path           {track.relative_path}",
+            f"Catalogue ID   {track.catalogue_id or 'Unknown'}",
+            f"Identity       {'Manual lock' if track.identity_locked else 'Automatic' if track.catalogue_id is not None else 'Unknown'}",
+        ]
+        if audit.error:
+            lines.extend(("", f"Preview unavailable: {audit.error}"))
+        if audit.catalogue is not None:
+            lines.extend(
+                (
+                    f"Catalogue      {audit.catalogue.title or 'Not available'}",
+                    f"Category       {audit.catalogue.category or 'Not available'}",
+                    f"Era            {audit.catalogue.era or 'Not available'}",
+                    f"Duration       {audit.catalogue.length or 'Not available'}",
+                )
+            )
+        lines.extend(("", "Proposed metadata"))
+        if not audit.proposals:
+            lines.append("No metadata changes proposed")
+        for proposal in audit.proposals:
+            label = (
+                "Confident"
+                if proposal.confidence is MetadataProposalConfidence.CONFIDENT
+                else "Review"
+            )
+            lines.extend(
+                (
+                    f"{proposal.label}",
+                    f"  Before       {proposal.before or '(missing)'}",
+                    f"  After        {proposal.after}",
+                    f"  Assessment   {label}",
+                    f"  Why          {proposal.reason}",
+                )
+            )
+        if audit.notes:
+            lines.extend(("", "Notes", *(f"- {note}" for note in audit.notes)))
+        return Text("\n".join(lines), overflow="ellipsis")
+
+    def on_key(self, event: Key) -> None:
+        if event.key in {"escape", "e"}:
+            self.dismiss(None)
+            event.prevent_default()
+            event.stop()
 
 
 class MaintenanceDialog(ModalScreen[LibrarySyncPlan | None]):
@@ -918,6 +1008,8 @@ class LibraryScreen(HubScreen):
         rmpc_status_provider: RmpcStatusProvider,
         rmpc_setup_provider: RmpcSetupProvider,
         manual_search_provider: ManualSearchProvider,
+        catalogue_details_provider: CatalogueDetailsProvider = get_song_details_by_id,
+        metadata_audit_provider: MetadataAuditProvider = audit_track_metadata,
         manual_identity_provider: ManualIdentityProvider = set_manual_identity,
         manual_unlock_provider: ManualIdentityProvider = unlock_manual_identity,
     ) -> None:
@@ -935,6 +1027,8 @@ class LibraryScreen(HubScreen):
         self._rmpc_status_provider = rmpc_status_provider
         self._rmpc_setup_provider = rmpc_setup_provider
         self._manual_search_provider = manual_search_provider
+        self._catalogue_details_provider = catalogue_details_provider
+        self._metadata_audit_provider = metadata_audit_provider
         self._manual_identity_provider = manual_identity_provider
         self._manual_unlock_provider = manual_unlock_provider
         self.snapshot: LibrarySnapshot | None = None
@@ -966,6 +1060,9 @@ class LibraryScreen(HubScreen):
         self._identity_rebuild_completed = 0
         self._manual_identity_worker: Worker[ManualIdentityOutcome] | None = None
         self._manual_track: LibraryTrack | None = None
+        self._metadata_audit_worker: Worker[MetadataAuditOutcome] | None = None
+        self._pending_metadata_audit: MetadataAuditOutcome | None = None
+        self._metadata_audit_cache: dict[tuple[str, str | None, str], MetadataAudit] = {}
 
     def compose_content(self) -> Iterable[Widget]:
         yield Static(
@@ -1013,6 +1110,9 @@ class LibraryScreen(HubScreen):
         if self._pending_identity is not None:
             outcome, self._pending_identity = self._pending_identity, None
             self._apply_identity(outcome)
+        if self._pending_metadata_audit is not None:
+            outcome, self._pending_metadata_audit = self._pending_metadata_audit, None
+            self._apply_metadata_audit(outcome)
 
     def refresh_snapshot(self, *, identify: bool = True) -> None:
         if self._index_sync_worker is not None and not self._index_sync_worker.is_finished:
@@ -1036,6 +1136,9 @@ class LibraryScreen(HubScreen):
         self._identity_rebuild_worker = None
         self._manual_identity_worker = None
         self._manual_track = None
+        self._metadata_audit_worker = None
+        self._pending_metadata_audit = None
+        self._metadata_audit_cache.clear()
         self._preview_worker = None
         self._pending_snapshot = None
         self._pending_identity = None
@@ -1159,6 +1262,17 @@ class LibraryScreen(HubScreen):
             elif event.state is WorkerState.ERROR:
                 self._apply_manual_identity(
                     ManualIdentityOutcome(error="Catalogue match update stopped safely.")
+                )
+        elif event.worker is self._metadata_audit_worker:
+            if event.state is WorkerState.SUCCESS:
+                outcome = event.worker.result
+                if self._can_render():
+                    self._apply_metadata_audit(outcome)
+                else:
+                    self._pending_metadata_audit = outcome
+            elif event.state is WorkerState.ERROR:
+                self._apply_metadata_audit(
+                    MetadataAuditOutcome("", error="Metadata preview stopped safely.")
                 )
         elif event.worker is self._preview_worker:
             if event.state is WorkerState.SUCCESS:
@@ -1484,7 +1598,7 @@ class LibraryScreen(HubScreen):
         if not self.filtered_tracks:
             self.query_one("#library-position", Static).update("s Sync Library · a Issues · d Duplicates · ? Help")
             return
-        suffix = "Esc Back · a Issues · d Duplicates · c Match · l Refresh · ? Help" if self._details_mode else "s Sync Library · a Issues · d Duplicates · ↑↓ Move · Enter Details · ? Help"
+        suffix = "Esc Back · e Metadata · c Match · l Refresh · ? Help" if self._details_mode else "s Sync Library · a Issues · d Duplicates · e Metadata · ↑↓ Move · ? Help"
         self.query_one("#library-position", Static).update(
             f"Track {self.selected_index + 1} of {len(self.filtered_tracks)} · {suffix}"
         )
@@ -1500,6 +1614,8 @@ class LibraryScreen(HubScreen):
             self._open_issues()
         elif event.key == "d":
             self._open_duplicates()
+        elif event.key == "e" and self.selected_track is not None:
+            self._open_metadata_audit(self.selected_track)
         elif event.key == "m":
             self.generate_preview(action="maintain")
         elif event.key == "v":
@@ -1591,6 +1707,58 @@ class LibraryScreen(HubScreen):
             self._open_manual_match(track)
         elif choice.action is LibraryIssueAction.REFRESH_LYRICS:
             self.generate_preview(action="selected", selected_path=track.path)
+        elif choice.action is LibraryIssueAction.METADATA_AUDIT:
+            self._open_metadata_audit(track)
+
+    def _metadata_cache_key(self, track: LibraryTrack) -> tuple[str, str | None, str]:
+        return track.reference, track.content_sha256, str(track.catalogue_id)
+
+    def _open_metadata_audit(self, track: LibraryTrack) -> None:
+        if self._metadata_audit_worker is not None and not self._metadata_audit_worker.is_finished:
+            self._set_status("A metadata preview is already being prepared.")
+            return
+        cached = self._metadata_audit_cache.get(self._metadata_cache_key(track))
+        if cached is not None:
+            self.app.push_screen(MetadataAuditDialog(cached))
+            return
+        self._set_status("Preparing metadata repair preview… · No files are being changed")
+        self._metadata_audit_worker = self._load_metadata_audit(track)
+
+    @work(thread=True, exclusive=True, group="metadata-audit", exit_on_error=False)
+    def _load_metadata_audit(self, track: LibraryTrack) -> MetadataAuditOutcome:
+        try:
+            return MetadataAuditOutcome(
+                track.reference,
+                self._metadata_audit_provider(
+                    self.settings,
+                    track,
+                    details_provider=self._catalogue_details_provider,
+                ),
+            )
+        except Exception as exc:
+            return MetadataAuditOutcome(
+                track.reference,
+                error=str(exc) or type(exc).__name__,
+            )
+
+    def _apply_metadata_audit(self, outcome: MetadataAuditOutcome) -> None:
+        self._metadata_audit_worker = None
+        track = next(
+            (item for item in self.snapshot.tracks if item.reference == outcome.reference),
+            None,
+        ) if self.snapshot is not None else None
+        if outcome.error or outcome.audit is None:
+            self._set_status(
+                f"Metadata preview unavailable: {outcome.error or 'Unknown error'}",
+                error=True,
+            )
+            return
+        if track is None or self._metadata_cache_key(track) != self._metadata_cache_key(outcome.audit.track):
+            self._set_status("The selected track changed; refresh and preview it again.", error=True)
+            return
+        self._metadata_audit_cache[self._metadata_cache_key(track)] = outcome.audit
+        self._set_status("Metadata repair preview ready · No files were changed")
+        self.app.push_screen(MetadataAuditDialog(outcome.audit))
 
     def _open_manual_match(self, track: LibraryTrack | None = None) -> None:
         track = track or self.selected_track

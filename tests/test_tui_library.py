@@ -30,7 +30,10 @@ from juice_lyrics.services import (
     LyricAvailability,
     ManualIdentityResult,
     QueueSnapshot,
+    SongDetails,
 )
+from juice_lyrics.library.media import AudioMetadata
+from juice_lyrics.services.metadata_audit import build_metadata_audit
 from juice_lyrics.services.library_sync import (
     LibrarySyncResult,
     LibrarySyncOptions,
@@ -523,6 +526,114 @@ def test_duplicate_navigation_probable_evidence_and_empty_state(tmp_path):
             assert "No duplicate recordings found" in _text(
                 empty, "#library-duplicates-list"
             )
+
+    asyncio.run(scenario())
+
+
+def test_metadata_preview_is_backgrounded_cached_and_read_only(tmp_path):
+    root = tmp_path / "music"
+    track = _track(root, "Album/Track.flac", media_format="FLAC", catalogue_id=42)
+    track = replace(track, artist=None, album=None, identity_locked=True)
+    media = tmp_path / "sentinel-audio"
+    sidecar = tmp_path / "sentinel-lrc"
+    state = tmp_path / "sentinel-state"
+    for path, data in (
+        (media, b"audio"),
+        (sidecar, b"lrc"),
+        (state, b"state"),
+    ):
+        path.write_bytes(data)
+    calls = []
+    ui_thread = get_ident()
+    details = SongDetails(
+        1, 42, "Track", "released", "DRFL", "3:03",
+        ("Juice WRLD",), (), "Released/Album/Track.mp3",
+        LyricAvailability.SYNCED, None, None, False,
+        album="Album", track_number="2",
+    )
+
+    def audit_provider(settings, selected, **kwargs):
+        calls.append(get_ident())
+        return build_metadata_audit(
+            selected,
+            AudioMetadata("Track", None, None, 183.4, None),
+            details,
+        )
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, track),
+            metadata_audit_provider=audit_provider,
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            screen = await _open_library(app, pilot)
+            assert "e Metadata" in _text(app, "#library-position")
+            await pilot.press("e")
+            worker = screen._metadata_audit_worker
+            if worker is not None:
+                await worker.wait()
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "MetadataAuditDialog"
+            content = _text(app, "#metadata-audit-content")
+            assert "Preview unavailable" not in content
+            assert "Artist" in content and "Juice WRLD" in content
+            assert "Track number" in content and "Confident" in content
+            assert "Manual lock" in content
+            await pilot.press("escape")
+            assert app.screen is screen
+            await pilot.press("e")
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "MetadataAuditDialog"
+            assert len(calls) == 1
+
+    asyncio.run(scenario())
+    assert calls and calls[0] != ui_thread
+    assert media.read_bytes() == b"audio"
+    assert sidecar.read_bytes() == b"lrc"
+    assert state.read_bytes() == b"state"
+
+
+def test_metadata_issue_opens_preview_and_help_lists_action(tmp_path):
+    root = tmp_path / "music"
+    track = _track(
+        root,
+        "Missing Tags.m4a",
+        matched=False,
+        media_format="M4A",
+        warning="M4A metadata is missing title, artist; track cannot be matched safely.",
+        catalogue_id=7,
+    )
+    details = SongDetails(
+        1, 7, "Missing Tags", "released", "GBGR", "3:00",
+        ("Juice WRLD",), (), None, LyricAvailability.PLAIN,
+        None, None, False, album=None, track_number=None,
+    )
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, track),
+            metadata_audit_provider=lambda settings, selected, **kwargs: build_metadata_audit(
+                selected,
+                AudioMetadata(None, None, None, 180.0),
+                details,
+            ),
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("a")
+            assert "e Metadata preview" in _text(app, "#library-issues-help")
+            await pilot.press("e")
+            worker = screen._metadata_audit_worker
+            if worker is not None:
+                await worker.wait()
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "MetadataAuditDialog"
+            assert "Missing Tags" in _text(app, "#metadata-audit-content")
+            await pilot.press("escape", "question_mark")
+            await pilot.pause()
+            assert "Preview metadata repairs" in _text(app, "#help-content")
 
     asyncio.run(scenario())
 

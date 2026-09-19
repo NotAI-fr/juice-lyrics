@@ -33,6 +33,7 @@ class LibraryIssueAction(str, Enum):
     REFRESH_LYRICS = "refresh_lyrics"
     VERIFY = "verify"
     SYNC = "sync"
+    METADATA_AUDIT = "metadata_audit"
 
 
 @dataclass(frozen=True, slots=True)

@@ -60,6 +60,7 @@ Open `999`, choose **Library**, and use:
 * **Sync Library** (`s`) for the normal update: discover MP3, FLAC, and M4A changes, retire known removed entries, and identify safe catalogue matches without changing audio or lyrics;
 * **Issues** (`a`) to see only tracks still needing a decision or repair;
 * **Duplicates** (`d`) to review exact file copies and conservative probable recordings without changing anything;
+* **Metadata preview** (`e`) on the selected track to compare supported tags with its confirmed catalogue recording;
 * **Maintain lyrics** to preview needed changes, then explicitly approve them;
 * **Verify** for a read-only health check and attention list;
 * **Backups** to inspect valid backups and restore one with confirmation;
@@ -85,6 +86,14 @@ Live, remix, session, extended, TV mix, and numbered versions are not treated
 as interchangeable. The view shows its evidence and every path, but never
 deletes, merges, moves, retags, or replaces audio. Run Sync Library first when
 you want the snapshot and saved fingerprints brought up to date.
+
+Metadata preview reads the selected MP3, FLAC, or M4A tags and its confirmed
+catalogue record. It can propose title, artist, album, and track number where
+the catalogue actually supplies those fields. Missing local values are marked
+**Confident**; differences from existing values are marked **Review**. Unknown
+tracks receive no guesses, and version distinctions are preserved. The current
+milestone has no Apply action and changes no media, state, lyrics, sidecars,
+backups, or player configuration.
 
 Issues opens instantly from the current Library snapshot and does not rescan or
 contact the catalogue merely to display the list. Each affected track appears

@@ -39,6 +39,7 @@ from ..services.download_queue import (
 from ..services.library_status import LibrarySnapshot, LibraryStatus, get_library_snapshot, get_library_status
 from ..services.library_identity import IdentityBackfillResult, backfill_catalogue_identities
 from ..services.library_index_sync import LibraryIndexSyncResult, sync_library_index
+from ..services.metadata_audit import MetadataAudit, audit_track_metadata
 from ..services.manual_identity import (
     ManualIdentityResult,
     set_manual_identity,
@@ -66,6 +67,7 @@ from .screens.library import (
     LibraryIssuesDialog,
     LibraryScreen,
     ManualMatchDialog,
+    MetadataAuditDialog,
 )
 from .screens.settings import SettingsScreen
 from .help import HelpScreen
@@ -89,6 +91,7 @@ IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
 LibraryPreviewProvider = Callable[[Any], LibrarySyncPlan]
 LibraryExecutionProvider = Callable[..., LibrarySyncResult]
 SettingsSnapshotProvider = Callable[[Any], SettingsSnapshot]
+MetadataAuditProvider = Callable[..., MetadataAudit]
 
 
 class JuiceLyricsApp(App[None]):
@@ -473,7 +476,8 @@ class JuiceLyricsApp(App[None]):
     RmpcDialog,
     ManualMatchDialog,
     LibraryIssuesDialog,
-    LibraryDuplicatesDialog {
+    LibraryDuplicatesDialog,
+    MetadataAuditDialog {
         align: center middle;
         background: transparent;
     }
@@ -599,6 +603,34 @@ class JuiceLyricsApp(App[None]):
     #library-duplicates-detail {
         height: auto;
         background: transparent;
+    }
+
+    #metadata-audit-dialog {
+        width: 88;
+        max-width: 96%;
+        height: 82%;
+        padding: 1 2;
+        border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #metadata-audit-scroll {
+        height: 1fr;
+        border: round ansi_cyan;
+        padding: 0 1;
+        background: transparent;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+    }
+
+    #metadata-audit-content {
+        height: auto;
+        background: transparent;
+    }
+
+    #metadata-audit-help {
+        height: 2;
+        text-style: bold;
     }
 
     #library-dialog-title {
@@ -1017,6 +1049,7 @@ class JuiceLyricsApp(App[None]):
         manual_unlock_provider: ManualIdentityProvider = unlock_manual_identity,
         library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
         library_execution_provider: LibraryExecutionProvider = execute_library_sync_preview,
+        metadata_audit_provider: MetadataAuditProvider = audit_track_metadata,
         backup_provider: Callable[[], tuple[BackupRecord, ...]] = list_backups,
         restore_provider: Callable[[Any, Any], int] = restore_backup,
         rmpc_setup_provider: Callable[[Any, Any], Any] = patch_rmpc_config,
@@ -1058,6 +1091,7 @@ class JuiceLyricsApp(App[None]):
         self.manual_unlock_provider = manual_unlock_provider
         self.library_preview_provider = library_preview_provider
         self.library_execution_provider = library_execution_provider
+        self.metadata_audit_provider = metadata_audit_provider
         self.backup_provider = backup_provider
         self.restore_provider = restore_provider
         self.rmpc_setup_provider = rmpc_setup_provider
@@ -1098,6 +1132,8 @@ class JuiceLyricsApp(App[None]):
                 rmpc_status_provider=self.settings_snapshot_provider,
                 rmpc_setup_provider=self.rmpc_setup_provider,
                 manual_search_provider=self.catalogue_search_provider,
+                catalogue_details_provider=self.catalogue_details_provider,
+                metadata_audit_provider=self.metadata_audit_provider,
                 manual_identity_provider=self.manual_identity_provider,
                 manual_unlock_provider=self.manual_unlock_provider,
             ),

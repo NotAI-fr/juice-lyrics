@@ -43,6 +43,7 @@ def _make_m4a(
     title: str | None = "All Life Long",
     artist: str | None = "Juice WRLD",
     album: str | None = "Unreleased",
+    track_number: tuple[int, int] | None = None,
     duration: float = 2.0,
 ) -> Path:
     """Create a tiny metadata-capable M4A container without external tools."""
@@ -60,11 +61,13 @@ def _make_m4a(
         + _atom(b"mdat", _MEDIA_PAYLOAD)
     )
     tags = MP4(path)
-    if any(value is not None for value in (title, artist, album)):
+    if any(value is not None for value in (title, artist, album, track_number)):
         tags.add_tags()
         for key, value in (("\xa9nam", title), ("\xa9ART", artist), ("\xa9alb", album)):
             if value is not None:
                 tags[key] = [value]
+        if track_number is not None:
+            tags["trkn"] = [track_number]
         tags.save()
     return path
 
@@ -101,6 +104,7 @@ def test_m4a_metadata_atoms_and_duration_are_read_natively(tmp_path):
         title="All Life Long (v2)",
         artist="Juice WRLD",
         album="Test Album",
+        track_number=(7, 20),
         duration=3.25,
     )
 
@@ -109,6 +113,7 @@ def test_m4a_metadata_atoms_and_duration_are_read_natively(tmp_path):
     assert metadata.title == "All Life Long (v2)"
     assert metadata.artist == "Juice WRLD"
     assert metadata.album == "Test Album"
+    assert metadata.track_number == "7/20"
     assert metadata.duration_seconds == pytest.approx(3.25)
     assert local_duration(path) == pytest.approx(3.25)
     assert search_title_for(path) == "All Life Long"
