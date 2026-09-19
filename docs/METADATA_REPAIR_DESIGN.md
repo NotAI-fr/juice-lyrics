@@ -1,8 +1,9 @@
 # Metadata repair safety design
 
-The current milestone is audit and preview only. It does not contain a metadata
-writer or an Apply action. This document defines the minimum safety contract for
-a later apply milestone.
+The audit/preview UI still has no Apply action. The backend transaction in
+`services/metadata_repair.py` now implements the safety foundation below for
+MP3, FLAC, and M4A, but it is deliberately not exposed to normal users until a
+separate field-selection/confirmation acceptance pass is complete.
 
 ## Evidence and user decision
 
@@ -51,6 +52,14 @@ M4A `©lyr` and cover art, custom/free-form tags, and unknown metadata. Adjacent
 No state should record a post-edit hash until the replacement has been verified.
 No success should be reported until both media and state agree.
 
+The implemented service requires an explicit subset of previewed fields and an
+explicit `confirmed=True` execution gate. It pins the original state bytes,
+whole-file hash/fingerprint, catalogue ID, unrelated tag snapshot, encoded
+media payload hash, and adjacent-sidecar signature. It creates and manifests a
+normal backup before editing a same-filesystem temporary copy. The copy is
+reopened and verified before atomic replacement; state failure rolls the audio
+back. Tests also cover interruptions immediately after media/state replacement.
+
 ## Manual identity locks
 
 A controlled metadata edit necessarily changes the whole-file SHA-256. A valid
@@ -66,3 +75,14 @@ true:
 Any unexpected file change, identity change, verification failure, interruption,
 or state conflict must preserve/restore the original binding rather than weaken
 the normal changed-file safety rules.
+
+## Remaining UI integration
+
+- Add an explicit per-field selector to the existing preview. Review fields
+  must never be preselected merely because catalogue text differs.
+- Add a cancel-first destructive confirmation summarizing the selected fields,
+  path, and backup behavior.
+- Run the backend transaction in a worker, refresh the Library snapshot after
+  success, and provide the generated backup path on success/failure.
+- Complete manual acceptance with representative real-world copies before
+  enabling Apply for normal libraries.

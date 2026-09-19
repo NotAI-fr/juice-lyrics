@@ -107,6 +107,16 @@ from .metadata_audit import (
     audit_track_metadata,
     build_metadata_audit,
 )
+from .metadata_repair import (
+    MediaPreservation,
+    MetadataRepairDependencies,
+    MetadataRepairPlan,
+    MetadataRepairResult,
+    execute_metadata_repair,
+    inspect_media_preservation,
+    plan_metadata_repair,
+    write_metadata_fields,
+)
 from .manual_identity import (
     ManualIdentityDependencies,
     ManualIdentityResult,
@@ -180,6 +190,10 @@ __all__ = [
     "MetadataAudit",
     "MetadataProposal",
     "MetadataProposalConfidence",
+    "MediaPreservation",
+    "MetadataRepairDependencies",
+    "MetadataRepairPlan",
+    "MetadataRepairResult",
     "IdentityBackfillDependencies",
     "IdentityBackfillResult",
     "ManualIdentityDependencies",
@@ -236,6 +250,10 @@ __all__ = [
     "detect_library_duplicates",
     "audit_track_metadata",
     "build_metadata_audit",
+    "execute_metadata_repair",
+    "inspect_media_preservation",
+    "plan_metadata_repair",
+    "write_metadata_fields",
     "is_identity_locked",
     "set_manual_identity",
     "unlock_manual_identity",

@@ -55,6 +55,7 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
   `library_sync.py`
 - Read-only duplicate analysis: `src/juice_lyrics/services/library_duplicates.py`
 - Read-only metadata proposals: `src/juice_lyrics/services/metadata_audit.py`
+- Transactional metadata writer foundation: `src/juice_lyrics/services/metadata_repair.py`
 - Matching/identity: `src/juice_lyrics/library/matching.py` and
   `src/juice_lyrics/services/library_identity.py`
 - State: `src/juice_lyrics/state.py`
@@ -78,8 +79,9 @@ the implemented key map. Common safe routine work should be automatic/simple;
 ambiguous or destructive work requires an explicit user decision.
 Duplicate findings are evidence for review only; never auto-delete, merge,
 move, retag, or replace media.
-Metadata repair is preview-only until the apply transaction in
-`docs/METADATA_REPAIR_DESIGN.md` is implemented and verified.
+Metadata repair has a tested backend transaction, but remains preview-only in
+the normal TUI until selection/confirmation integration receives its own
+acceptance pass. Never bypass `metadata_repair.py` with direct tag writes.
 
 ## Roadmap discipline
 

@@ -29,6 +29,10 @@ code and tests if a later working tree disagrees with this document.
 - Metadata audit/preview milestone verification: 470 full-suite tests and 50
   explicit temporary-HOME/XDG metadata/status/identity/Sync smoke tests passed;
   compileall and `git diff --check` passed.
+- Metadata safe-apply foundation verification: 486 full-suite tests, 158
+  affected regression tests, and 51 explicit temporary-HOME/XDG
+  repair/audit/identity/Sync smoke tests passed; compileall and
+  `git diff --check` passed.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -145,10 +149,28 @@ normal released record; track number requires an explicit API value.
 The preview checks that the local file fingerprint did not change while it was
 read and displays before/after evidence, identity provenance, format, and path.
 It writes no audio, state, embedded lyrics, sidecars, backups, downloads, or
-rmpc configuration. There is intentionally no Apply action in this milestone.
-The required backup, temporary-copy verification, atomic replacement/rollback,
-format-specific preservation, state-conflict, new-hash, and manual-lock rebinding
-contract is recorded in `METADATA_REPAIR_DESIGN.md` for the apply milestone.
+rmpc configuration. The normal TUI intentionally has no Apply action yet.
+`METADATA_REPAIR_DESIGN.md` records the implemented backend safety contract and
+the remaining UI/acceptance work.
+
+The backend safe-apply foundation is implemented in `metadata_repair.py` for
+MP3, FLAC, and M4A. Planning accepts only an explicit subset of proposals from
+the reviewed audit. Execution additionally requires explicit confirmation. It
+pins the current path, whole-file hash/fingerprint, state bytes, catalogue ID,
+encoded media payload, unrelated tags/artwork/lyrics, and adjacent sidecar.
+
+Execution creates and manifests a normal backup before modifying a
+same-filesystem temporary copy. It writes only the selected format-native tags,
+fsyncs, reopens, and verifies the copy before atomic replacement. It then
+updates the existing state entry's hash without discarding custom or lyric
+fields. State conflict/failure restores the original audio; interruption paths
+before/after media and state replacement are covered. A valid manual lock is
+preserved and rebound only after the controlled edit verifies successfully.
+
+This backend is deliberately **not exposed by the TUI yet**. The existing `e`
+workflow remains preview-only. Per-field controls, a cancel-first confirmation,
+background execution/result UX, and real-copy acceptance are the next metadata
+repair step; no incomplete Apply action is visible to normal users.
 
 - MP3 full coverage uses the existing format-aware ID3 requirements plus its
   synchronized sidecar behavior.
@@ -262,8 +284,8 @@ real config, state, backups, queue, sidecars, or rmpc configuration.
   historical centralized files.
 - Packaging/install acceptance and public GitHub presentation still need a
   final release pass.
-- Metadata repair currently audits and previews only; safe writes remain a
-  separate milestone governed by `METADATA_REPAIR_DESIGN.md`.
+- Metadata repair remains preview-only in the TUI. Its backend transaction is
+  implemented, but selection/confirmation UI and real-copy acceptance remain.
 
 ## Roadmap
 
@@ -277,7 +299,7 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Metadata repair apply (backed up, verified, and atomic)
+1. Metadata repair apply UI integration and real-copy acceptance
 2. Missing Library
 3. `999 doctor` / diagnostics
 4. Shell completion

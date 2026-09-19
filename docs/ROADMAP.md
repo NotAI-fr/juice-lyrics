@@ -15,7 +15,7 @@ Advanced repair and recovery remain available without crowding routine use.
 
 ## Remaining sequence
 
-1. Metadata repair apply (backed up, verified, and atomic)
+1. Metadata repair apply UI integration and real-copy acceptance
 2. Missing Library
 3. `999 doctor` / diagnostics
 4. Shell completion
