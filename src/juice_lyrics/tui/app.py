@@ -40,6 +40,12 @@ from ..services.library_status import LibrarySnapshot, LibraryStatus, get_librar
 from ..services.library_identity import IdentityBackfillResult, backfill_catalogue_identities
 from ..services.library_index_sync import LibraryIndexSyncResult, sync_library_index
 from ..services.metadata_audit import MetadataAudit, audit_track_metadata
+from ..services.metadata_repair import (
+    MetadataRepairPlan,
+    MetadataRepairResult,
+    execute_metadata_repair,
+    plan_metadata_repair,
+)
 from ..services.manual_identity import (
     ManualIdentityResult,
     set_manual_identity,
@@ -68,6 +74,7 @@ from .screens.library import (
     LibraryScreen,
     ManualMatchDialog,
     MetadataAuditDialog,
+    MetadataRepairConfirmationDialog,
 )
 from .screens.settings import SettingsScreen
 from .help import HelpScreen
@@ -92,6 +99,8 @@ LibraryPreviewProvider = Callable[[Any], LibrarySyncPlan]
 LibraryExecutionProvider = Callable[..., LibrarySyncResult]
 SettingsSnapshotProvider = Callable[[Any], SettingsSnapshot]
 MetadataAuditProvider = Callable[..., MetadataAudit]
+MetadataRepairPlanProvider = Callable[..., MetadataRepairPlan]
+MetadataRepairExecutionProvider = Callable[..., MetadataRepairResult]
 
 
 class JuiceLyricsApp(App[None]):
@@ -477,7 +486,8 @@ class JuiceLyricsApp(App[None]):
     ManualMatchDialog,
     LibraryIssuesDialog,
     LibraryDuplicatesDialog,
-    MetadataAuditDialog {
+    MetadataAuditDialog,
+    MetadataRepairConfirmationDialog {
         align: center middle;
         background: transparent;
     }
@@ -1050,6 +1060,8 @@ class JuiceLyricsApp(App[None]):
         library_preview_provider: LibraryPreviewProvider = get_library_sync_preview,
         library_execution_provider: LibraryExecutionProvider = execute_library_sync_preview,
         metadata_audit_provider: MetadataAuditProvider = audit_track_metadata,
+        metadata_repair_plan_provider: MetadataRepairPlanProvider = plan_metadata_repair,
+        metadata_repair_execution_provider: MetadataRepairExecutionProvider = execute_metadata_repair,
         backup_provider: Callable[[], tuple[BackupRecord, ...]] = list_backups,
         restore_provider: Callable[[Any, Any], int] = restore_backup,
         rmpc_setup_provider: Callable[[Any, Any], Any] = patch_rmpc_config,
@@ -1092,6 +1104,8 @@ class JuiceLyricsApp(App[None]):
         self.library_preview_provider = library_preview_provider
         self.library_execution_provider = library_execution_provider
         self.metadata_audit_provider = metadata_audit_provider
+        self.metadata_repair_plan_provider = metadata_repair_plan_provider
+        self.metadata_repair_execution_provider = metadata_repair_execution_provider
         self.backup_provider = backup_provider
         self.restore_provider = restore_provider
         self.rmpc_setup_provider = rmpc_setup_provider
@@ -1134,6 +1148,8 @@ class JuiceLyricsApp(App[None]):
                 manual_search_provider=self.catalogue_search_provider,
                 catalogue_details_provider=self.catalogue_details_provider,
                 metadata_audit_provider=self.metadata_audit_provider,
+                metadata_repair_plan_provider=self.metadata_repair_plan_provider,
+                metadata_repair_execution_provider=self.metadata_repair_execution_provider,
                 manual_identity_provider=self.manual_identity_provider,
                 manual_unlock_provider=self.manual_unlock_provider,
             ),

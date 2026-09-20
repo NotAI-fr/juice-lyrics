@@ -886,7 +886,7 @@ def test_help_inventories_app_bindings_and_focus_palette():
                   "Mark or unmark", "Download entire queue", "Preview and maintain",
                   "Open Library Issues",
                   "Review duplicate recordings",
-                  "Preview metadata repairs",
+                  "Review and apply selected metadata repairs",
                   "Choose and lock a catalogue match", "Unlock and clear a manual match",
                   "Inspect setting", "Confirm immediately"):
         assert label in guide

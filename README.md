@@ -63,11 +63,12 @@ reconsider it.
 Duplicate review uses the already-loaded Library snapshot. It does not rescan,
 contact the catalogue, or change files. Distinct versions such as live,
 remix, session, extended, TV mix, and numbered versions are kept separate.
-Select a track and press `e` for a read-only metadata repair preview. Missing
-title, artist, album, or track-number values are proposed only when its
-confirmed catalogue record supplies trustworthy evidence. Existing values and
-version differences are marked for review rather than replaced. Applying these
-repairs is intentionally not implemented yet.
+Select a track and press `e` to review metadata repair proposals. Nothing is
+selected automatically: choose individual title, artist, album, or track-number
+changes, then review a cancel-first confirmation. Apply creates a full audio
+backup and verifies that audio, artwork, lyrics, unrelated tags, and the
+adjacent sidecar were preserved. Existing values and version differences are
+marked for review rather than silently replaced.
 
 The CLI remains available for scripting and automation. `999 sync` remembers
 files it has already processed, so unchanged verified files are skipped.

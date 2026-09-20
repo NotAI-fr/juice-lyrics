@@ -79,9 +79,9 @@ the implemented key map. Common safe routine work should be automatic/simple;
 ambiguous or destructive work requires an explicit user decision.
 Duplicate findings are evidence for review only; never auto-delete, merge,
 move, retag, or replace media.
-Metadata repair has a tested backend transaction, but remains preview-only in
-the normal TUI until selection/confirmation integration receives its own
-acceptance pass. Never bypass `metadata_repair.py` with direct tag writes.
+Metadata repair is exposed only through explicit per-field selection and a
+cancel-first confirmation. Never bypass `metadata_repair.py` with direct tag
+writes or weaken its backup, preservation, conflict, rollback, and lock checks.
 
 ## Roadmap discipline
 

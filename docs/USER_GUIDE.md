@@ -60,7 +60,7 @@ Open `999`, choose **Library**, and use:
 * **Sync Library** (`s`) for the normal update: discover MP3, FLAC, and M4A changes, retire known removed entries, and identify safe catalogue matches without changing audio or lyrics;
 * **Issues** (`a`) to see only tracks still needing a decision or repair;
 * **Duplicates** (`d`) to review exact file copies and conservative probable recordings without changing anything;
-* **Metadata preview** (`e`) on the selected track to compare supported tags with its confirmed catalogue recording;
+* **Metadata repair** (`e`) on the selected track to compare supported tags, explicitly select fields, and review a cancel-first Apply confirmation;
 * **Maintain lyrics** to preview needed changes, then explicitly approve them;
 * **Verify** for a read-only health check and attention list;
 * **Backups** to inspect valid backups and restore one with confirmation;
@@ -87,13 +87,18 @@ as interchangeable. The view shows its evidence and every path, but never
 deletes, merges, moves, retags, or replaces audio. Run Sync Library first when
 you want the snapshot and saved fingerprints brought up to date.
 
-Metadata preview reads the selected MP3, FLAC, or M4A tags and its confirmed
+Metadata repair reads the selected MP3, FLAC, or M4A tags and its confirmed
 catalogue record. It can propose title, artist, album, and track number where
 the catalogue actually supplies those fields. Missing local values are marked
 **Confident**; differences from existing values are marked **Review**. Unknown
-tracks receive no guesses, and version distinctions are preserved. The current
-milestone has no Apply action and changes no media, state, lyrics, sidecars,
-backups, or player configuration.
+tracks receive no guesses, and version distinctions are preserved. No fields
+are selected by default. Space or Enter toggles one field; `a` reviews the exact
+selection; the final confirmation starts on Cancel. A confirmed repair runs in
+the background, creates a complete audio backup, writes a temporary copy, and
+verifies the encoded audio, artwork, embedded lyrics, unrelated tags, and
+adjacent sidecar before replacing the file. Failure restores the original where
+replacement began. Success updates the saved whole-file hash and refreshes the
+Library and Issues view. Normal repair does not change lyrics or player config.
 
 Issues opens instantly from the current Library snapshot and does not rescan or
 contact the catalogue merely to display the list. Each affected track appears

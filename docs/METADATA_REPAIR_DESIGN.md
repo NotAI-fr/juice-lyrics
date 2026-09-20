@@ -1,9 +1,9 @@
 # Metadata repair safety design
 
-The audit/preview UI still has no Apply action. The backend transaction in
-`services/metadata_repair.py` now implements the safety foundation below for
-MP3, FLAC, and M4A, but it is deliberately not exposed to normal users until a
-separate field-selection/confirmation acceptance pass is complete.
+The Library UI now exposes the backend transaction in
+`services/metadata_repair.py` for MP3, FLAC, and M4A through explicit per-field
+selection and a cancel-first confirmation. Nothing is selected by default and
+the write runs in a guarded background worker.
 
 ## Evidence and user decision
 
@@ -76,13 +76,16 @@ Any unexpected file change, identity change, verification failure, interruption,
 or state conflict must preserve/restore the original binding rather than weaken
 the normal changed-file safety rules.
 
-## Remaining UI integration
+## Implemented UI integration
 
-- Add an explicit per-field selector to the existing preview. Review fields
-  must never be preselected merely because catalogue text differs.
-- Add a cancel-first destructive confirmation summarizing the selected fields,
-  path, and backup behavior.
-- Run the backend transaction in a worker, refresh the Library snapshot after
-  success, and provide the generated backup path on success/failure.
-- Complete manual acceptance with representative real-world copies before
-  enabling Apply for normal libraries.
+- The preview separates Confident and Review proposals and shows each original
+  and proposed value. No field is preselected.
+- Apply is unavailable with zero selections. Its confirmation lists the exact
+  fields and backup behavior, starts on Cancel, and cannot submit twice.
+- Execution runs off the UI thread. Success reports the backup and refreshes
+  Library health/Issues; failure distinguishes safe failure from rollback
+  failure requiring recovery.
+- Generated MP3, FLAC, and M4A fixtures exercise audio, artwork, embedded lyric,
+  custom-tag, sidecar, backup, interruption, conflict, and rollback guarantees.
+  Real-world copied-file acceptance remains advisable as a beta check because
+  no suitable repository media samples are available.

@@ -2,7 +2,7 @@
 
 This is the canonical detailed handoff for the current application. One-button
 Sync, manual catalogue locking, snapshot-backed Library Issues, read-only
-duplicate review, and metadata repair audit/preview are integrated. Read the
+duplicate review, and safe metadata repair are integrated. Read the
 code and tests if a later working tree disagrees with this document.
 
 ## Repository checkpoint
@@ -31,6 +31,10 @@ code and tests if a later working tree disagrees with this document.
   compileall and `git diff --check` passed.
 - Metadata safe-apply foundation verification: 486 full-suite tests, 158
   affected regression tests, and 51 explicit temporary-HOME/XDG
+  repair/audit/identity/Sync smoke tests passed; compileall and
+  `git diff --check` passed.
+- Metadata safe-TUI-apply verification: 492 full-suite tests, 156 affected
+  regression tests, and 51 explicit temporary-HOME/XDG
   repair/audit/identity/Sync smoke tests passed; compileall and
   `git diff --check` passed.
 
@@ -129,10 +133,10 @@ Detection is review-only: it never deletes, merges, moves, retags, or replaces
 audio. Because the view deliberately reuses current snapshot data, running Sync
 first provides the freshest paths, metadata, identities, and saved hashes.
 
-## Metadata repair audit and preview
+## Metadata repair audit and safe apply
 
-`e` prepares a read-only metadata repair preview for the selected MP3, FLAC, or
-M4A in a background worker. Metadata Issues also expose the same action. The
+`e` prepares a metadata repair review for the selected MP3, FLAC, or M4A in a
+background worker. Metadata Issues also expose the same action. The
 service reads the exact supported local tags and only the already-confirmed
 catalogue ID; Unknown identities short-circuit without guessing or making a
 catalogue request. Repeated preview in the same unchanged snapshot reuses its
@@ -146,12 +150,12 @@ remix, session, extended, TV mix, and numbered versions. Missing catalogue
 fields produce no proposal. Album inference from an API path is limited to a
 normal released record; track number requires an explicit API value.
 
-The preview checks that the local file fingerprint did not change while it was
+The review checks that the local file fingerprint did not change while it was
 read and displays before/after evidence, identity provenance, format, and path.
-It writes no audio, state, embedded lyrics, sidecars, backups, downloads, or
-rmpc configuration. The normal TUI intentionally has no Apply action yet.
-`METADATA_REPAIR_DESIGN.md` records the implemented backend safety contract and
-the remaining UI/acceptance work.
+It separates Confident missing-field proposals from Review differences. No
+field is selected by default. Space/Enter toggles the current field; `a` moves
+to a confirmation listing the exact changes and backup behavior. Cancel has
+initial focus, initial Enter cancels, and duplicate submission is guarded.
 
 The backend safe-apply foundation is implemented in `metadata_repair.py` for
 MP3, FLAC, and M4A. Planning accepts only an explicit subset of proposals from
@@ -167,10 +171,18 @@ fields. State conflict/failure restores the original audio; interruption paths
 before/after media and state replacement are covered. A valid manual lock is
 preserved and rebound only after the controlled edit verifies successfully.
 
-This backend is deliberately **not exposed by the TUI yet**. The existing `e`
-workflow remains preview-only. Per-field controls, a cancel-first confirmation,
-background execution/result UX, and real-copy acceptance are the next metadata
-repair step; no incomplete Apply action is visible to normal users.
+Confirmed execution runs in a background worker and reuses the backend without
+duplicating tag logic. Success reports the backup path, clears cached audit
+evidence, and refreshes the Library snapshot, health, and Issues. Safe failure
+reports preserved/restored data; rollback failure is surfaced as needing
+recovery with the backup retained. Opening, selecting, cancelling, and planning
+remain non-mutating.
+
+Repository tests use comprehensive generated MP3, FLAC, and M4A containers and
+verify preservation of encoded audio, artwork, embedded lyrics, custom tags,
+and sidecars through success and failure paths. No suitable real media samples
+are stored in the repository, so manual acceptance on temporary copies of
+representative real files remains a beta-validation step.
 
 - MP3 full coverage uses the existing format-aware ID3 requirements plus its
   synchronized sidecar behavior.
@@ -284,8 +296,8 @@ real config, state, backups, queue, sidecars, or rmpc configuration.
   historical centralized files.
 - Packaging/install acceptance and public GitHub presentation still need a
   final release pass.
-- Metadata repair remains preview-only in the TUI. Its backend transaction is
-  implemented, but selection/confirmation UI and real-copy acceptance remain.
+- Metadata repair has safe TUI selection/apply integration. Acceptance against
+  temporary copies of representative real-world files remains outstanding.
 
 ## Roadmap
 
@@ -299,7 +311,7 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Metadata repair apply UI integration and real-copy acceptance
+1. Real-copy metadata repair acceptance
 2. Missing Library
 3. `999 doctor` / diagnostics
 4. Shell completion

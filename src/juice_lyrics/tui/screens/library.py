@@ -46,6 +46,12 @@ from ...services.metadata_audit import (
     MetadataProposalConfidence,
     audit_track_metadata,
 )
+from ...services.metadata_repair import (
+    MetadataRepairPlan,
+    MetadataRepairResult,
+    execute_metadata_repair,
+    plan_metadata_repair,
+)
 from ...services.catalogue import (
     CataloguePage,
     CatalogueSearchResult,
@@ -76,6 +82,8 @@ IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
 ManualSearchProvider = Callable[..., CataloguePage]
 ManualIdentityProvider = Callable[..., ManualIdentityResult]
 MetadataAuditProvider = Callable[..., MetadataAudit]
+MetadataRepairPlanProvider = Callable[..., MetadataRepairPlan]
+MetadataRepairExecutionProvider = Callable[..., MetadataRepairResult]
 CatalogueDetailsProvider = Callable[..., SongDetails | None]
 PreviewProvider = Callable[[Any], LibrarySyncPlan]
 ExecutionProvider = Callable[..., LibrarySyncResult]
@@ -207,6 +215,18 @@ class ManualIdentityOutcome:
 class MetadataAuditOutcome:
     reference: str
     audit: MetadataAudit | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MetadataRepairPlanOutcome:
+    plan: MetadataRepairPlan | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MetadataRepairOutcome:
+    result: MetadataRepairResult | None = None
     error: str | None = None
 
 
@@ -460,7 +480,7 @@ class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
         else:
             detail_lines.extend(("", "Next step: press v to verify the library again."))
         if LibraryIssueCategory.METADATA in issue.categories:
-            detail_lines.extend(("", "Press e to inspect a read-only metadata repair preview."))
+            detail_lines.extend(("", "Press e to review and select metadata repairs."))
         self.query_one("#library-issues-detail", Static).update(
             Text("\n".join(detail_lines), overflow="ellipsis")
         )
@@ -468,7 +488,7 @@ class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
         if LibraryIssueCategory.CATALOGUE in issue.categories:
             available.append("c Match manually")
         if LibraryIssueCategory.METADATA in issue.categories:
-            available.append("e Metadata preview")
+            available.append("e Metadata repair")
         if LibraryIssueCategory.LYRICS in issue.categories:
             available.append("l Refresh lyrics")
         available.extend(("v Verify", "s Sync Library", "Esc Close", "? Help"))
@@ -630,19 +650,42 @@ class LibraryDuplicatesDialog(ModalScreen[None]):
         event.stop()
 
 
-class MetadataAuditDialog(ModalScreen[None]):
-    """Read-only before/after metadata proposal for one local track."""
+class MetadataAuditDialog(ModalScreen[tuple[str, ...] | None]):
+    """Select explicit fields from a before/after metadata preview."""
 
     def __init__(self, audit: MetadataAudit) -> None:
         super().__init__()
         self.audit = audit
+        self.index = 0
+        self.selected: set[str] = set()
+        self._submitted = False
 
     def compose(self) -> Iterable[Widget]:
         with Container(id="metadata-audit-dialog"):
             yield Static("Metadata repair preview", id="library-dialog-title")
             with VerticalScroll(id="metadata-audit-scroll"):
                 yield Static(self._text(), id="metadata-audit-content", markup=False)
-            yield Static("Preview only · Esc Close", id="metadata-audit-help", markup=False)
+            yield Static(self._help_text(), id="metadata-audit-help", markup=False)
+
+    def on_mount(self) -> None:
+        self.query_one("#metadata-audit-scroll", VerticalScroll).focus()
+
+    def _help_text(self) -> str:
+        if not self.audit.proposals:
+            return "No repairable fields · Esc Close"
+        return "↑↓ Choose · Space/Enter Select · a Review apply · Esc Cancel"
+
+    @property
+    def _ordered_proposals(self) -> tuple[Any, ...]:
+        return tuple(
+            proposal
+            for confidence in (
+                MetadataProposalConfidence.CONFIDENT,
+                MetadataProposalConfidence.REVIEW,
+            )
+            for proposal in self.audit.proposals
+            if proposal.confidence is confidence
+        )
 
     def _text(self) -> Text:
         audit = self.audit
@@ -666,33 +709,171 @@ class MetadataAuditDialog(ModalScreen[None]):
                     f"Duration       {audit.catalogue.length or 'Not available'}",
                 )
             )
-        lines.extend(("", "Proposed metadata"))
+        lines.extend(("", "Proposed metadata · nothing is selected by default"))
         if not audit.proposals:
             lines.append("No metadata changes proposed")
-        for proposal in audit.proposals:
-            label = (
-                "Confident"
-                if proposal.confidence is MetadataProposalConfidence.CONFIDENT
-                else "Review"
+        for confidence, heading in (
+            (MetadataProposalConfidence.CONFIDENT, "Confident recommendations"),
+            (MetadataProposalConfidence.REVIEW, "Review carefully"),
+        ):
+            proposals = tuple(
+                (index, proposal)
+                for index, proposal in enumerate(self._ordered_proposals)
+                if proposal.confidence is confidence
             )
-            lines.extend(
-                (
-                    f"{proposal.label}",
-                    f"  Before       {proposal.before or '(missing)'}",
-                    f"  After        {proposal.after}",
-                    f"  Assessment   {label}",
-                    f"  Why          {proposal.reason}",
+            if not proposals:
+                continue
+            lines.extend(("", heading))
+            for index, proposal in proposals:
+                cursor = ">" if index == self.index else " "
+                checked = "x" if proposal.field in self.selected else " "
+                lines.extend(
+                    (
+                        f"{cursor} [{checked}] {proposal.label}",
+                        f"      {proposal.before or '(missing)'} → {proposal.after}",
+                        f"      {proposal.reason}",
+                    )
                 )
-            )
         if audit.notes:
             lines.extend(("", "Notes", *(f"- {note}" for note in audit.notes)))
         return Text("\n".join(lines), overflow="ellipsis")
 
+    def _render_content(self) -> None:
+        self.query_one("#metadata-audit-content", Static).update(self._text())
+
+    def _toggle(self) -> None:
+        if not self.audit.proposals:
+            return
+        field = self._ordered_proposals[self.index].field
+        if field in self.selected:
+            self.selected.remove(field)
+        else:
+            self.selected.add(field)
+        self._render_content()
+
     def on_key(self, event: Key) -> None:
-        if event.key in {"escape", "e"}:
-            self.dismiss(None)
+        if self._submitted:
             event.prevent_default()
             event.stop()
+            return
+        if event.key in {"escape", "e"}:
+            self._submitted = True
+            self.dismiss(None)
+        elif event.key in {"down", "j"} and self.audit.proposals:
+            self.index = min(len(self._ordered_proposals) - 1, self.index + 1)
+            self._render_content()
+        elif event.key in {"up", "k"} and self.audit.proposals:
+            self.index = max(0, self.index - 1)
+            self._render_content()
+        elif event.key in {"space", "enter"}:
+            self._toggle()
+        elif event.key == "a":
+            if not self.selected:
+                self.query_one("#metadata-audit-help", Static).update(
+                    "Select at least one field · No changes have been made"
+                )
+            else:
+                self._submitted = True
+                fields = tuple(
+                    proposal.field
+                    for proposal in self._ordered_proposals
+                    if proposal.field in self.selected
+                )
+                self.dismiss(fields)
+        elif event.key == "question_mark":
+            self.app.action_show_help()
+        elif event.key in {"1", "2", "3", "4", "5"}:
+            pass
+        else:
+            return
+        event.prevent_default()
+        event.stop()
+
+
+class MetadataRepairConfirmationDialog(ModalScreen[bool]):
+    """Cancel-first confirmation for one pinned metadata repair plan."""
+
+    def __init__(self, plan: MetadataRepairPlan) -> None:
+        super().__init__()
+        self.plan = plan
+        self._choice = "cancel"
+        self._submitted = False
+
+    def compose(self) -> Iterable[Widget]:
+        changes = "\n".join(
+            f"{proposal.label}: {proposal.before or '(missing)'} → {proposal.after}"
+            for proposal in self.plan.selected
+        )
+        body = (
+            f"{self.plan.reference}\n\n{changes}\n\n"
+            "A complete audio backup will be created first. Only the selected "
+            "metadata fields will change; audio, artwork, lyrics, and other tags "
+            "will be verified."
+        )
+        with Container(id="library-dialog"):
+            yield Static("Apply metadata repair?", id="library-dialog-title")
+            yield Static(body, id="library-dialog-body", markup=False)
+            with Grid(id="library-dialog-actions"):
+                yield LibraryDialogAction("Apply", "confirm", id="library-dialog-confirm")
+                yield LibraryDialogAction("Cancel", "cancel", id="library-dialog-cancel")
+
+    def on_mount(self) -> None:
+        self._render_choice()
+        self.call_after_refresh(
+            self.query_one("#library-dialog-cancel", LibraryDialogAction).focus
+        )
+
+    def _render_choice(self) -> None:
+        self.query_one("#library-dialog-confirm", Static).update(
+            "[Apply]" if self._choice == "confirm" else "Apply"
+        )
+        self.query_one("#library-dialog-cancel", Static).update(
+            "[Cancel]" if self._choice == "cancel" else "Cancel"
+        )
+
+    def _activate(self) -> None:
+        if self._submitted:
+            return
+        self._submitted = True
+        self.dismiss(self._choice == "confirm")
+
+    def on_library_dialog_action_activated(
+        self, event: LibraryDialogAction.Activated
+    ) -> None:
+        if self._submitted:
+            return
+        self._choice = event.action
+        self._render_choice()
+        self._activate()
+
+    def on_key(self, event: Key) -> None:
+        if self._submitted:
+            event.prevent_default()
+            event.stop()
+            return
+        if event.key in {"escape", "n"}:
+            self._choice = "cancel"
+            self._activate()
+        elif event.key == "y":
+            self._choice = "confirm"
+            self._activate()
+        elif event.key in {"left", "right", "tab", "shift+tab"}:
+            self._choice = "confirm" if self._choice == "cancel" else "cancel"
+            self._render_choice()
+            target = (
+                "#library-dialog-confirm"
+                if self._choice == "confirm"
+                else "#library-dialog-cancel"
+            )
+            self.query_one(target, LibraryDialogAction).focus()
+        elif event.key == "enter":
+            self._activate()
+        elif event.key in {"1", "2", "3", "4", "5"}:
+            pass
+        else:
+            return
+        event.prevent_default()
+        event.stop()
 
 
 class MaintenanceDialog(ModalScreen[LibrarySyncPlan | None]):
@@ -1010,6 +1191,8 @@ class LibraryScreen(HubScreen):
         manual_search_provider: ManualSearchProvider,
         catalogue_details_provider: CatalogueDetailsProvider = get_song_details_by_id,
         metadata_audit_provider: MetadataAuditProvider = audit_track_metadata,
+        metadata_repair_plan_provider: MetadataRepairPlanProvider = plan_metadata_repair,
+        metadata_repair_execution_provider: MetadataRepairExecutionProvider = execute_metadata_repair,
         manual_identity_provider: ManualIdentityProvider = set_manual_identity,
         manual_unlock_provider: ManualIdentityProvider = unlock_manual_identity,
     ) -> None:
@@ -1029,6 +1212,8 @@ class LibraryScreen(HubScreen):
         self._manual_search_provider = manual_search_provider
         self._catalogue_details_provider = catalogue_details_provider
         self._metadata_audit_provider = metadata_audit_provider
+        self._metadata_repair_plan_provider = metadata_repair_plan_provider
+        self._metadata_repair_execution_provider = metadata_repair_execution_provider
         self._manual_identity_provider = manual_identity_provider
         self._manual_unlock_provider = manual_unlock_provider
         self.snapshot: LibrarySnapshot | None = None
@@ -1063,6 +1248,8 @@ class LibraryScreen(HubScreen):
         self._metadata_audit_worker: Worker[MetadataAuditOutcome] | None = None
         self._pending_metadata_audit: MetadataAuditOutcome | None = None
         self._metadata_audit_cache: dict[tuple[str, str | None, str], MetadataAudit] = {}
+        self._metadata_repair_plan_worker: Worker[MetadataRepairPlanOutcome] | None = None
+        self._metadata_repair_worker: Worker[MetadataRepairOutcome] | None = None
 
     def compose_content(self) -> Iterable[Widget]:
         yield Static(
@@ -1139,6 +1326,8 @@ class LibraryScreen(HubScreen):
         self._metadata_audit_worker = None
         self._pending_metadata_audit = None
         self._metadata_audit_cache.clear()
+        self._metadata_repair_plan_worker = None
+        self._metadata_repair_worker = None
         self._preview_worker = None
         self._pending_snapshot = None
         self._pending_identity = None
@@ -1273,6 +1462,20 @@ class LibraryScreen(HubScreen):
             elif event.state is WorkerState.ERROR:
                 self._apply_metadata_audit(
                     MetadataAuditOutcome("", error="Metadata preview stopped safely.")
+                )
+        elif event.worker is self._metadata_repair_plan_worker:
+            if event.state is WorkerState.SUCCESS:
+                self._apply_metadata_repair_plan(event.worker.result)
+            elif event.state is WorkerState.ERROR:
+                self._apply_metadata_repair_plan(
+                    MetadataRepairPlanOutcome(error="Metadata repair planning stopped safely.")
+                )
+        elif event.worker is self._metadata_repair_worker:
+            if event.state is WorkerState.SUCCESS:
+                self._apply_metadata_repair(event.worker.result)
+            elif event.state is WorkerState.ERROR:
+                self._apply_metadata_repair(
+                    MetadataRepairOutcome(error="Metadata repair stopped safely.")
                 )
         elif event.worker is self._preview_worker:
             if event.state is WorkerState.SUCCESS:
@@ -1714,12 +1917,21 @@ class LibraryScreen(HubScreen):
         return track.reference, track.content_sha256, str(track.catalogue_id)
 
     def _open_metadata_audit(self, track: LibraryTrack) -> None:
+        if (
+            self._metadata_repair_plan_worker is not None
+            and not self._metadata_repair_plan_worker.is_finished
+        ) or (
+            self._metadata_repair_worker is not None
+            and not self._metadata_repair_worker.is_finished
+        ):
+            self._set_status("A metadata repair is already running.")
+            return
         if self._metadata_audit_worker is not None and not self._metadata_audit_worker.is_finished:
             self._set_status("A metadata preview is already being prepared.")
             return
         cached = self._metadata_audit_cache.get(self._metadata_cache_key(track))
         if cached is not None:
-            self.app.push_screen(MetadataAuditDialog(cached))
+            self._show_metadata_audit(cached)
             return
         self._set_status("Preparing metadata repair preview… · No files are being changed")
         self._metadata_audit_worker = self._load_metadata_audit(track)
@@ -1758,7 +1970,109 @@ class LibraryScreen(HubScreen):
             return
         self._metadata_audit_cache[self._metadata_cache_key(track)] = outcome.audit
         self._set_status("Metadata repair preview ready · No files were changed")
-        self.app.push_screen(MetadataAuditDialog(outcome.audit))
+        self._show_metadata_audit(outcome.audit)
+
+    def _show_metadata_audit(self, audit: MetadataAudit) -> None:
+        self.app.push_screen(
+            MetadataAuditDialog(audit),
+            lambda fields: self._metadata_selection_closed(audit, fields),
+        )
+
+    def _metadata_selection_closed(
+        self, audit: MetadataAudit, fields: tuple[str, ...] | None
+    ) -> None:
+        if fields is None:
+            self._set_status("Metadata repair cancelled. No files were changed.")
+            return
+        if not fields:
+            self._set_status("Select at least one metadata field.", error=True)
+            return
+        if (
+            self._metadata_repair_plan_worker is not None
+            and not self._metadata_repair_plan_worker.is_finished
+        ) or (
+            self._metadata_repair_worker is not None
+            and not self._metadata_repair_worker.is_finished
+        ):
+            self._set_status("A metadata repair is already running.")
+            return
+        self._set_status("Checking selected metadata fields… · No files are being changed")
+        self._metadata_repair_plan_worker = self._plan_metadata_repair(audit, fields)
+
+    @work(thread=True, exclusive=True, group="metadata-repair-plan", exit_on_error=False)
+    def _plan_metadata_repair(
+        self, audit: MetadataAudit, fields: tuple[str, ...]
+    ) -> MetadataRepairPlanOutcome:
+        try:
+            return MetadataRepairPlanOutcome(
+                self._metadata_repair_plan_provider(self.settings, audit, fields)
+            )
+        except Exception as exc:
+            return MetadataRepairPlanOutcome(error=str(exc) or type(exc).__name__)
+
+    def _apply_metadata_repair_plan(self, outcome: MetadataRepairPlanOutcome) -> None:
+        self._metadata_repair_plan_worker = None
+        if outcome.error or outcome.plan is None:
+            self._set_status(
+                f"Metadata repair unavailable: {outcome.error or 'Unknown error'}",
+                error=True,
+            )
+            return
+        self._set_status("Metadata repair ready for confirmation · No files were changed")
+        self.app.push_screen(
+            MetadataRepairConfirmationDialog(outcome.plan),
+            lambda confirmed: self._metadata_repair_confirmation_closed(
+                outcome.plan, confirmed
+            ),
+        )
+
+    def _metadata_repair_confirmation_closed(
+        self, plan: MetadataRepairPlan, confirmed: bool
+    ) -> None:
+        if not confirmed:
+            self._set_status("Metadata repair cancelled. No files were changed.")
+            return
+        if self._metadata_repair_worker is not None and not self._metadata_repair_worker.is_finished:
+            self._set_status("A metadata repair is already running.")
+            return
+        self._set_status("Applying metadata repair… · 0 / 1 · Creating a backup first")
+        self._metadata_repair_worker = self._execute_metadata_repair(plan)
+
+    @work(thread=True, exclusive=True, group="metadata-repair-apply", exit_on_error=False)
+    def _execute_metadata_repair(
+        self, plan: MetadataRepairPlan
+    ) -> MetadataRepairOutcome:
+        try:
+            return MetadataRepairOutcome(
+                self._metadata_repair_execution_provider(plan, confirmed=True)
+            )
+        except BaseException as exc:
+            return MetadataRepairOutcome(error=str(exc) or type(exc).__name__)
+
+    def _apply_metadata_repair(self, outcome: MetadataRepairOutcome) -> None:
+        self._metadata_repair_worker = None
+        if outcome.error or outcome.result is None:
+            message = outcome.error or "Unknown error"
+            if "rollback failed" in message.casefold():
+                self._set_status(
+                    f"Metadata repair needs recovery: {message} · The backup was retained",
+                    error=True,
+                )
+            else:
+                self._set_status(
+                    f"Metadata repair failed safely: {message} · Existing data was preserved or restored",
+                    error=True,
+                )
+            return
+        result = outcome.result
+        fields = ", ".join(result.fields)
+        self._metadata_audit_cache.clear()
+        self._completion_message = (
+            f"Metadata repaired · {fields} · Backup: {result.backup_path}",
+            False,
+        )
+        self._set_status("Metadata repair complete · Refreshing Library health…")
+        self.refresh_snapshot(identify=False)
 
     def _open_manual_match(self, track: LibraryTrack | None = None) -> None:
         track = track or self.selected_track

@@ -365,7 +365,7 @@ a Issues
 
 d Duplicates
 
-e Metadata repair preview
+e Metadata repair
 
 r Refresh
 
@@ -448,11 +448,13 @@ duration, and version evidence that connected them. Distinct live, remix,
 session, extended, TV mix, and numbered versions stay separate. No files are
 deleted, merged, moved, retagged, or replaced.
 
-`e` reads only the selected track's supported tags and confirmed catalogue
-record. The preview shows before/after values and separates confidently
-repairable missing fields from existing differences requiring review. Unknown
-identities are not guessed. This milestone deliberately provides no Apply
-action and changes no files or application state.
+`e` reads the selected track's supported tags and confirmed catalogue record.
+The preview shows before/after values and separates confidently repairable
+missing fields from existing differences requiring review. Nothing is selected
+by default. Space/Enter toggles a field and `a` opens a cancel-first summary of
+the exact changes. Confirmed work runs in the background through the shared
+backup, temporary-copy verification, atomic replacement, rollback, and state
+conflict service. Unknown identities are not guessed.
 
 
 ---

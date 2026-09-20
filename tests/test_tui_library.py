@@ -4,6 +4,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sys
 from threading import Event, get_ident
+from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -623,7 +626,7 @@ def test_metadata_issue_opens_preview_and_help_lists_action(tmp_path):
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
             await pilot.press("a")
-            assert "e Metadata preview" in _text(app, "#library-issues-help")
+            assert "e Metadata repair" in _text(app, "#library-issues-help")
             await pilot.press("e")
             worker = screen._metadata_audit_worker
             if worker is not None:
@@ -633,7 +636,237 @@ def test_metadata_issue_opens_preview_and_help_lists_action(tmp_path):
             assert "Missing Tags" in _text(app, "#metadata-audit-content")
             await pilot.press("escape", "question_mark")
             await pilot.pause()
-            assert "Preview metadata repairs" in _text(app, "#help-content")
+            assert "Review and apply selected metadata repairs" in _text(app, "#help-content")
+
+    asyncio.run(scenario())
+
+
+def test_metadata_apply_requires_explicit_fields_and_cancel_is_default(tmp_path):
+    root = tmp_path / "music"
+    track = replace(
+        _track(root, "Album/Track.flac", media_format="FLAC", catalogue_id=42),
+        artist=None,
+        album="Local album",
+    )
+    details = SongDetails(
+        1, 42, "Track", "released", "DRFL", "3:03",
+        ("Juice WRLD",), (), "Released/Album/Track.mp3",
+        LyricAvailability.PLAIN, None, None, False,
+        album="Catalogue album", track_number=None,
+    )
+    audit = build_metadata_audit(
+        track,
+        AudioMetadata("Track", None, "Local album", 183.4, None),
+        details,
+    )
+    planned = []
+    executed = []
+
+    def plan_provider(settings, selected_audit, fields):
+        planned.append(fields)
+        selected = tuple(
+            proposal for proposal in selected_audit.proposals if proposal.field in fields
+        )
+        return SimpleNamespace(reference=track.reference, selected=selected)
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, track),
+            metadata_audit_provider=lambda *args, **kwargs: audit,
+            metadata_repair_plan_provider=plan_provider,
+            metadata_repair_execution_provider=lambda *args, **kwargs: executed.append(args),
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("e")
+            if screen._metadata_audit_worker is not None:
+                await screen._metadata_audit_worker.wait()
+            await pilot.pause()
+            content = _text(app, "#metadata-audit-content")
+            assert "Confident recommendations" in content
+            assert "Review carefully" in content
+            assert "[ ] Artist" in content and "[ ] Album" in content
+            assert "(missing) → Juice WRLD" in content
+
+            await pilot.press("a")
+            assert app.screen.__class__.__name__ == "MetadataAuditDialog"
+            assert "Select at least one field" in _text(app, "#metadata-audit-help")
+            assert planned == []
+
+            await pilot.press("enter", "a")
+            await pilot.pause()
+            if screen._metadata_repair_plan_worker is not None:
+                await screen._metadata_repair_plan_worker.wait()
+            await pilot.pause()
+            assert planned == [("artist",)]
+            assert app.screen.__class__.__name__ == "MetadataRepairConfirmationDialog"
+            confirmation = _text(app, "#library-dialog-body")
+            assert "Artist: (missing) → Juice WRLD" in confirmation
+            assert "complete audio backup" in confirmation
+
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app.screen is screen
+            assert executed == []
+            assert "cancelled" in _text(app, "#library-status").lower()
+
+    asyncio.run(scenario())
+
+
+def test_confirmed_metadata_apply_runs_once_in_background_and_refreshes(tmp_path):
+    root = tmp_path / "music"
+    track = replace(
+        _track(root, "Album/Track.m4a", media_format="M4A", catalogue_id=42),
+        artist=None,
+    )
+    details = SongDetails(
+        1, 42, "Track", "released", "DRFL", "3:03",
+        ("Juice WRLD",), (), None, LyricAvailability.PLAIN,
+        None, None, False, album=None, track_number=None,
+    )
+    audit = build_metadata_audit(
+        track, AudioMetadata("Track", None, None, 183.4, None), details
+    )
+    started = Event()
+    release = Event()
+    calls = []
+    snapshot_calls = []
+    ui_thread = get_ident()
+
+    def snapshot_provider(settings):
+        snapshot_calls.append(1)
+        return _snapshot(root, track)
+
+    def plan_provider(settings, selected_audit, fields):
+        return SimpleNamespace(
+            reference=track.reference,
+            selected=tuple(
+                proposal for proposal in selected_audit.proposals if proposal.field in fields
+            ),
+        )
+
+    def execute_provider(plan, *, confirmed=False):
+        calls.append((confirmed, get_ident()))
+        started.set()
+        assert release.wait(timeout=5)
+        return SimpleNamespace(
+            fields=tuple(proposal.field for proposal in plan.selected),
+            backup_path=tmp_path / "backups/track.m4a",
+        )
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            snapshot_provider,
+            metadata_audit_provider=lambda *args, **kwargs: audit,
+            metadata_repair_plan_provider=plan_provider,
+            metadata_repair_execution_provider=execute_provider,
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("e")
+            if screen._metadata_audit_worker is not None:
+                await screen._metadata_audit_worker.wait()
+            await pilot.pause()
+            await pilot.press("space", "a")
+            await pilot.pause()
+            if screen._metadata_repair_plan_worker is not None:
+                await screen._metadata_repair_plan_worker.wait()
+            await pilot.pause()
+            await pilot.press("y", "enter")
+            assert await asyncio.to_thread(started.wait, 2)
+            assert len(calls) == 1
+            assert calls[0][0] is True and calls[0][1] != ui_thread
+            assert "Applying metadata repair" in _text(app, "#library-status")
+            await pilot.press("question_mark")
+            assert app.screen is not screen
+            await pilot.press("escape")
+            release.set()
+            if screen._metadata_repair_worker is not None:
+                await screen._metadata_repair_worker.wait()
+            await pilot.pause()
+            if screen._snapshot_worker is not None:
+                await screen._snapshot_worker.wait()
+            await pilot.pause()
+            assert len(calls) == 1
+            assert len(snapshot_calls) >= 2
+            status = _text(app, "#library-status")
+            assert "Metadata repaired" in status
+            assert "Backup:" in status
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    (
+        (OSError("backup full"), "failed safely"),
+        (RuntimeError("Library state changed during metadata repair."), "failed safely"),
+        (
+            RuntimeError("Metadata repair failed and automatic rollback failed: disk"),
+            "needs recovery",
+        ),
+        (KeyboardInterrupt(), "failed safely"),
+    ),
+)
+def test_metadata_apply_failures_are_reported_without_refresh(tmp_path, failure, expected):
+    root = tmp_path / "music"
+    track = replace(
+        _track(root, "Track.mp3", catalogue_id=42), artist=None
+    )
+    details = SongDetails(
+        1, 42, "Track", "released", "DRFL", "3:03",
+        ("Juice WRLD",), (), None, LyricAvailability.PLAIN,
+        None, None, False, album=None, track_number=None,
+    )
+    audit = build_metadata_audit(
+        track, AudioMetadata("Track", None, None, 183.4, None), details
+    )
+    snapshot_calls = []
+
+    def snapshot_provider(settings):
+        snapshot_calls.append(1)
+        return _snapshot(root, track)
+
+    def plan_provider(settings, selected_audit, fields):
+        return SimpleNamespace(
+            reference=track.reference,
+            selected=tuple(selected_audit.proposals),
+        )
+
+    def execute_provider(*args, **kwargs):
+        raise failure
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            snapshot_provider,
+            metadata_audit_provider=lambda *args, **kwargs: audit,
+            metadata_repair_plan_provider=plan_provider,
+            metadata_repair_execution_provider=execute_provider,
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("e")
+            if screen._metadata_audit_worker is not None:
+                await screen._metadata_audit_worker.wait()
+            await pilot.pause()
+            await pilot.press("space", "a")
+            await pilot.pause()
+            if screen._metadata_repair_plan_worker is not None:
+                await screen._metadata_repair_plan_worker.wait()
+            await pilot.pause()
+            await pilot.press("y")
+            await pilot.pause()
+            if screen._metadata_repair_worker is not None:
+                await screen._metadata_repair_worker.wait()
+            await pilot.pause()
+            assert expected in _text(app, "#library-status").lower()
+            assert len(snapshot_calls) == 1
 
     asyncio.run(scenario())
 
