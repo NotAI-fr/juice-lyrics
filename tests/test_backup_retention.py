@@ -41,6 +41,28 @@ def _backup_set(backup_dir: Path, count: int) -> list[Path]:
     ]
 
 
+def test_backup_roots_are_unique_within_the_same_second(tmp_path, monkeypatch):
+    backup_dir = tmp_path / "backups"
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 9, 20, 13, 31, 40, tzinfo=tz)
+
+    monkeypatch.setattr(manager, "BACKUP_DIR", backup_dir)
+    monkeypatch.setattr(manager, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(manager, "datetime", FixedDatetime)
+
+    first = manager.make_backup_root()
+    second = manager.make_backup_root()
+    third = manager.make_backup_root()
+
+    assert first.name == "20260920-133140"
+    assert second.name == "20260920-133140-01"
+    assert third.name == "20260920-133140-02"
+    assert len({first, second, third}) == 3
+
+
 @pytest.mark.parametrize("count", [9, 10])
 def test_retention_does_nothing_at_or_below_limit(tmp_path, count):
     backup_dir = tmp_path / "backups"

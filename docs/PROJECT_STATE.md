@@ -37,6 +37,13 @@ code and tests if a later working tree disagrees with this document.
   regression tests, and 51 explicit temporary-HOME/XDG
   repair/audit/identity/Sync smoke tests passed; compileall and
   `git diff --check` passed.
+- Metadata real-copy acceptance used isolated copies of representative MP3,
+  FLAC, and M4A files with embedded lyrics/artwork/unrelated tags and adjacent
+  sidecars. Three repairs plus an injected post-replacement state-write
+  rollback passed without changing the originals. The audit found and fixed
+  ID3v1 false rejection/comment loss and same-second backup-directory reuse.
+  Post-fix verification: 81 affected tests, 33 final targeted tests, and 494
+  full-suite tests passed; compileall and `git diff --check` passed.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -180,9 +187,18 @@ remain non-mutating.
 
 Repository tests use comprehensive generated MP3, FLAC, and M4A containers and
 verify preservation of encoded audio, artwork, embedded lyrics, custom tags,
-and sidecars through success and failure paths. No suitable real media samples
-are stored in the repository, so manual acceptance on temporary copies of
-representative real files remains a beta-validation step.
+and sidecars through success and failure paths. A focused beta audit also ran
+the same transaction against temporary copies of three representative real
+files. It verified their encoded payloads, lyrics, artwork, unrelated tags,
+sidecars, recoverable backups, state hashes, and manual locks, plus rollback
+after an injected state-write failure. Source hashes, sizes, and mtimes remained
+unchanged.
+
+That audit exposed two production issues which are now regression-covered:
+selected MP3 fields may legitimately change in both ID3v2 and ID3v1 while
+unselected ID3v1 year/comment/genre fields must be explicitly preserved; and
+rapid independent repairs must receive unique suffixed backup roots rather
+than sharing a second-resolution directory.
 
 - MP3 full coverage uses the existing format-aware ID3 requirements plus its
   synchronized sidecar behavior.
@@ -296,8 +312,9 @@ real config, state, backups, queue, sidecars, or rmpc configuration.
   historical centralized files.
 - Packaging/install acceptance and public GitHub presentation still need a
   final release pass.
-- Metadata repair has safe TUI selection/apply integration. Acceptance against
-  temporary copies of representative real-world files remains outstanding.
+- Metadata repair has safe TUI selection/apply integration and passed isolated
+  real-copy acceptance for MP3, FLAC, and M4A. Wider beta use should remain
+  conservative because tag combinations in the wild are unbounded.
 
 ## Roadmap
 
@@ -311,14 +328,13 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Real-copy metadata repair acceptance
-2. Missing Library
-3. `999 doctor` / diagnostics
-4. Shell completion
-5. Final performance/reliability acceptance
-6. Packaging and clean installation
-7. GitHub presentation/distribution
-8. Beta release
+1. Missing Library
+2. `999 doctor` / diagnostics
+3. Shell completion
+4. Final performance/reliability acceptance
+5. Packaging and clean installation
+6. GitHub presentation/distribution
+7. Beta release
 
 ## Resume safely
 

@@ -29,6 +29,7 @@ from juice_lyrics.services.metadata_audit import build_metadata_audit
 from juice_lyrics.services.metadata_repair import (
     MetadataRepairDependencies,
     execute_metadata_repair,
+    inspect_media_preservation,
     plan_metadata_repair,
     write_metadata_fields,
 )
@@ -46,6 +47,20 @@ def _make_mp3(path: Path) -> Path:
     tags.add(TXXX(encoding=3, desc="custom", text=["keep me"]))
     tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="cover", data=b"artwork"))
     tags.save(path)
+    # Real-world files often retain ID3v1 alongside ID3v2. Selected common
+    # fields may legitimately change in both; unrelated v1 bytes must not.
+    id3v1 = (
+        b"TAG"
+        + b"Old title".ljust(30, b"\0")
+        + b"Original artist".ljust(30, b"\0")
+        + b"Album".ljust(30, b"\0")
+        + b"2020"
+        + b"keep this comment".ljust(28, b"\0")
+        + b"\0\x01"
+        + b"\x0d"
+    )
+    with path.open("ab") as handle:
+        handle.write(id3v1)
     return path
 
 
@@ -187,6 +202,11 @@ def _assert_unrelated_metadata_preserved(path: Path) -> None:
         assert tags.getall("USLT")[0].text == "embedded lyrics"
         assert tags.getall("APIC")[0].data == b"artwork"
         assert tags.getall("TXXX")[0].text == ["keep me"]
+        id3v1 = path.read_bytes()[-128:]
+        assert id3v1[63:93].rstrip(b"\0") == b"Album"
+        assert id3v1[93:97] == b"2020"
+        assert id3v1[97:125].rstrip(b"\0") == b"keep this comment"
+        assert id3v1[127] == 0x0D
     elif path.suffix == ".flac":
         audio = FLAC(path)
         assert audio["lyrics"] == ["embedded lyrics"]
@@ -247,6 +267,20 @@ def test_plan_requires_explicit_previewed_field_selection(tmp_path):
         plan_metadata_repair(
             settings, audit, ("album",), state_file=state_file, dependencies=deps
         )
+
+
+def test_track_number_write_preserves_id3v1_v10_comment(tmp_path):
+    path = _make_mp3(tmp_path / "track.mp3")
+    data = bytearray(path.read_bytes())
+    comment = b"123456789012345678901234567890"
+    data[-31:-1] = comment
+    path.write_bytes(data)
+    before = inspect_media_preservation(path, frozenset({"track_number"}))
+
+    write_metadata_fields(path, {"track_number": "2/20"})
+
+    assert inspect_media_preservation(path, frozenset({"track_number"})) == before
+    assert path.read_bytes()[-31:-1] == comment
 
 
 def test_execution_requires_confirmation_and_creates_no_backup_without_it(tmp_path):

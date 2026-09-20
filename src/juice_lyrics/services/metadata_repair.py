@@ -248,8 +248,27 @@ def _unrelated_tags(path: Path, selected_fields: frozenset[str]) -> tuple[Any, .
         )
     )
     data = path.read_bytes()
-    id3v1 = data[-128:] if len(data) >= 128 and data[-128:-125] == b"TAG" else b""
+    id3v1 = _unrelated_id3v1(data, selected_fields)
     return ("MP3", preserved, _freeze(id3v1))
+
+
+def _unrelated_id3v1(data: bytes, selected_fields: frozenset[str]) -> bytes:
+    """Mask only selected ID3v1 fields while preserving the rest byte-for-byte."""
+
+    if len(data) < 128 or data[-128:-125] != b"TAG":
+        return b""
+    tag = bytearray(data[-128:])
+    ranges = {
+        "title": (3, 33),
+        "artist": (33, 63),
+        "album": (63, 93),
+    }
+    for field, (start, end) in ranges.items():
+        if field in selected_fields:
+            tag[start:end] = b"\0" * (end - start)
+    if "track_number" in selected_fields and tag[125] == 0:
+        tag[126] = 0
+    return bytes(tag)
 
 
 def inspect_media_preservation(
@@ -272,6 +291,39 @@ def _parse_track_number(value: str) -> tuple[int, int]:
     if number <= 0 or total < 0:
         raise RuntimeError("The proposed track number is not valid.")
     return number, total
+
+
+def _preserve_unselected_id3v1(
+    path: Path,
+    original: bytes,
+    selected_fields: frozenset[str],
+) -> None:
+    """Restore unselected ID3v1 bytes that Mutagen cannot round-trip itself."""
+
+    if len(original) != 128 or original[:3] != b"TAG":
+        return
+    data = path.read_bytes()
+    if len(data) < 128 or data[-128:-125] != b"TAG":
+        raise RuntimeError("MP3 ID3v1 metadata disappeared during the tag write.")
+    updated = bytearray(data[-128:])
+    ranges = {
+        "title": (3, 33),
+        "artist": (33, 63),
+        "album": (63, 93),
+    }
+    for field, (start, end) in ranges.items():
+        if field not in selected_fields:
+            updated[start:end] = original[start:end]
+    updated[93:97] = original[93:97]  # year is not a supported repair field
+    if "track_number" in selected_fields and original[125] == 0:
+        updated[97:125] = original[97:125]
+    else:
+        updated[97:127] = original[97:127]
+    updated[127] = original[127]  # genre is not a supported repair field
+    if updated != data[-128:]:
+        with path.open("r+b") as handle:
+            handle.seek(-128, os.SEEK_END)
+            handle.write(updated)
 
 
 def write_metadata_fields(path: Path, values: Mapping[str, str]) -> None:
@@ -301,6 +353,12 @@ def write_metadata_fields(path: Path, values: Mapping[str, str]) -> None:
                 audio[atoms[field]] = [value]
         audio.save()
         return
+    source = path.read_bytes()
+    original_id3v1 = (
+        source[-128:]
+        if len(source) >= 128 and source[-128:-125] == b"TAG"
+        else b""
+    )
     try:
         tags = ID3(path)
     except ID3NoHeaderError:
@@ -311,6 +369,7 @@ def write_metadata_fields(path: Path, values: Mapping[str, str]) -> None:
         tags.add(frames[field](encoding=3, text=[value]))
     version = 3 if getattr(tags, "version", None) and tags.version[0] == 3 else 4
     tags.save(path, v2_version=version)
+    _preserve_unselected_id3v1(path, original_id3v1, frozenset(values))
 
 
 def _sidecar_signature(path: Path) -> tuple[bool, str | None]:

@@ -63,9 +63,16 @@ def now_iso() -> str:
 
 def make_backup_root() -> Path:
     ensure_data_dirs()
-    root = BACKUP_DIR / datetime.now().strftime("%Y%m%d-%H%M%S")
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+    stem = datetime.now().strftime("%Y%m%d-%H%M%S")
+    for counter in range(10_000):
+        suffix = "" if counter == 0 else f"-{counter:02d}"
+        root = BACKUP_DIR / f"{stem}{suffix}"
+        try:
+            root.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            continue
+        return root
+    raise RuntimeError("Could not allocate a unique backup directory.")
 
 
 def backup_file(path: Path, root: Path, base: Path) -> Path:

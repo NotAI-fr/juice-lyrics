@@ -87,5 +87,8 @@ the normal changed-file safety rules.
   failure requiring recovery.
 - Generated MP3, FLAC, and M4A fixtures exercise audio, artwork, embedded lyric,
   custom-tag, sidecar, backup, interruption, conflict, and rollback guarantees.
-  Real-world copied-file acceptance remains advisable as a beta check because
-  no suitable repository media samples are available.
+- Isolated temporary copies of representative real MP3, FLAC, and M4A files
+  passed the same preservation checks and an injected state-write rollback.
+  The audit added explicit preservation for unselected ID3v1 fields and unique
+  backup roots for rapid independent repairs. Originals were hash/stat checked
+  before and after and were unchanged.
