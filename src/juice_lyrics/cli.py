@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -709,6 +710,11 @@ from .services.identity_rebuild import (
     execute_catalogue_identity_rebuild,
     plan_catalogue_identity_rebuild,
 )
+from .services.doctor import (
+    DoctorStatus,
+    render_support_report,
+    run_doctor,
+)
 
 
 def search_api(settings: Settings, title: str, refresh: bool = False) -> list[dict[str, Any]]:
@@ -1077,16 +1083,49 @@ def command_restore(args: argparse.Namespace, settings: Settings, use_color: boo
 
 
 def command_doctor(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    print_header("999 Doctor", use_color)
-    problems = 0
-    print(f"Version: {__version__}\nPython:  {sys.version.split()[0]}\nMutagen: OK\nLibrary: {settings.music_dir}")
-    if not settings.music_dir.is_dir(): problems += 1; print(colorize("  Library directory does not exist", RED, use_color))
-    try:
-        api_get(settings.api_base.rstrip("/") + "/", settings.timeout); print("API:     OK")
-    except Exception as exc:
-        problems += 1; print(colorize(f"API:     FAILED ({exc})", RED, use_color))
-    print(f"Config:  {CONFIG_FILE}\nCache:   {CACHE_DIR}\nState:   {STATE_FILE}\nBackups: {BACKUP_DIR}")
-    return 1 if problems else 0
+    report = run_doctor(
+        settings,
+        config_path=CONFIG_FILE,
+        state_file=STATE_FILE,
+        cache_dir=CACHE_DIR,
+        backup_dir=BACKUP_DIR,
+        rmpc_config_path=DEFAULT_RMPC_CONFIG,
+    )
+    support_text = render_support_report(report)
+    if args.support_report:
+        print(support_text)
+    else:
+        print_header("999 Doctor", use_color)
+        colors = {
+            DoctorStatus.PASS: GREEN,
+            DoctorStatus.WARN: YELLOW,
+            DoctorStatus.FAIL: RED,
+        }
+        for check in report.checks:
+            prefix = colorize(f"{check.status.value:<4}", colors[check.status], use_color)
+            print(f"{prefix}  {check.label}: {check.detail}")
+            if check.suggestion:
+                print(f"      Suggestion: {check.suggestion}")
+        print(f"\nSummary: {report.passed} PASS · {report.warned} WARN · {report.failed} FAIL")
+        print("No audio, state, cache, configuration, backups, downloads, or rmpc settings were changed.")
+    if args.save_report:
+        destination = Path(args.save_report).expanduser()
+        temporary: Path | None = None
+        try:
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+            )
+            os.close(descriptor)
+            temporary = Path(temporary_name)
+            temporary.write_text(support_text + "\n", encoding="utf-8")
+            temporary.replace(destination)
+        except OSError as exc:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            raise RuntimeError(f"Could not save support report: {exc}") from exc
+        if not args.support_report:
+            print(f"Sanitized support report saved to {destination}")
+    return 1 if report.failed else 0
 
 
 def command_config(args: argparse.Namespace, settings: Settings | None = None) -> int:
@@ -1627,7 +1666,9 @@ def build_parser() -> argparse.ArgumentParser:
     restore.add_argument("--backup")
     restore.add_argument("--yes", action="store_true")
 
-    doctor = sub.add_parser("doctor", help="Check the installation and API connection.")
+    doctor = sub.add_parser("doctor", help="Run bounded, read-only installation and library diagnostics.")
+    doctor.add_argument("--support-report", action="store_true", help="Print a sanitized JSON support report.")
+    doctor.add_argument("--save-report", metavar="PATH", help="Deliberately save the sanitized support report to PATH.")
 
     guide = sub.add_parser("guide", help="Show the built-in quick guide.")
 
@@ -1717,7 +1758,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     use_color = not args.no_color and sys.stdout.isatty()
     try:
-        settings = load_settings(getattr(args, "path", None), getattr(args, "api_base", None))
+        try:
+            settings = load_settings(getattr(args, "path", None), getattr(args, "api_base", None))
+        except RuntimeError:
+            if args.command != "doctor":
+                raise
+            settings = Settings()
+            if getattr(args, "path", None):
+                settings.music_dir = Path(args.path).expanduser()
+            if getattr(args, "api_base", None):
+                settings.api_base = args.api_base.rstrip("/")
         if args.command is None: return command_tui(settings)
         if args.command == "setup": return command_setup(args, settings, use_color)
         if args.command == "sync": return command_sync(args, settings, use_color)

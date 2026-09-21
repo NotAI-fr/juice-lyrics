@@ -258,6 +258,24 @@ Those plain-only songs are still tagged correctly, but rmpc's synchronized Lyric
 999 doctor
 ```
 
+Doctor reports clear `PASS`, `WARN`, and `FAIL` results for the installed
+command/Python package, configuration, state and cache JSON, the configured
+music directory and supported-format counts, one small catalogue connectivity
+probe, backup storage, and optional rmpc integration. It does not hash the
+library, run Sync, write cache/state, invoke downloads, or change rmpc.
+
+For support, print or deliberately save a JSON report:
+
+```bash
+999 doctor --support-report
+999 doctor --save-report ./999-support.json
+```
+
+The report is sanitized by default: it contains no song list or state content,
+and home paths and common credential forms are redacted. Review any report
+before sharing it, as unusual third-party error text cannot be guaranteed to
+follow common formats.
+
 For detailed matching:
 
 ```bash

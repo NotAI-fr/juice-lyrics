@@ -47,6 +47,10 @@ code and tests if a later working tree disagrees with this document.
 - Missing Library milestone verification: 108 focused catalogue/queue/Library
   tests, 502 full-suite tests, and 35 explicit temporary-HOME/XDG
   snapshot/Sync smoke tests passed; compileall and `git diff --check` passed.
+- Doctor milestone verification: 47 focused CLI/diagnostic/state/cache/rmpc/
+  backup tests, 510 full-suite tests, and 24 explicit temporary-HOME/XDG
+  diagnostic/settings smoke tests passed; compileall and `git diff --check`
+  passed.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -316,6 +320,22 @@ and XDG paths before application imports and guard against the real home.
 Never run automated library work against `/home/nobloat/Music` or the user's
 real config, state, backups, queue, sidecars, or rmpc configuration.
 
+## Doctor diagnostics
+
+`999 doctor` is a bounded, read-only diagnostic command. It emits `PASS`,
+`WARN`, and `FAIL` checks for the installed command/Python/package version,
+Mutagen, configuration validity, state shape, a capped cache JSON sample,
+music-directory readability and MP3/FLAC/M4A filename counts, one one-record
+catalogue request, valid backup count/free storage, and optional rmpc setup.
+Offline catalogue access is a warning because local features remain usable;
+an invalid catalogue response is a failure.
+
+Doctor does not hash or parse every audio file, enumerate the full catalogue,
+run Library Sync, invoke rmpc/MPD, download anything, or write application
+paths. `--support-report` prints sanitized JSON and `--save-report PATH`
+deliberately writes it. The report excludes song lists and state contents and
+redacts home paths and common credential forms by default.
+
 ## Known limitations and risks
 
 - Active download cancellation is not implemented.
@@ -349,12 +369,11 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. `999 doctor` / diagnostics
-2. Shell completion
-3. Final performance/reliability acceptance
-4. Packaging and clean installation
-5. GitHub presentation/distribution
-6. Beta release
+1. Shell completion
+2. Final performance/reliability acceptance
+3. Packaging and clean installation
+4. GitHub presentation/distribution
+5. Beta release
 
 ## Resume safely
 

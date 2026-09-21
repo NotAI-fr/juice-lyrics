@@ -15,12 +15,11 @@ Advanced repair and recovery remain available without crowding routine use.
 
 ## Remaining sequence
 
-1. `999 doctor` / diagnostics
-2. Shell completion
-3. Final performance/reliability acceptance
-4. Packaging and clean installation
-5. GitHub presentation/distribution
-6. Beta release
+1. Shell completion
+2. Final performance/reliability acceptance
+3. Packaging and clean installation
+4. GitHub presentation/distribution
+5. Beta release
 
 Do not force ambiguous tracks into identities. Do not combine these milestones
 into a broad rewrite. Each milestone should preserve the safety invariants in

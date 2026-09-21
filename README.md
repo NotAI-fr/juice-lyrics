@@ -83,6 +83,14 @@ Useful status command:
 999 status
 ```
 
+Read-only diagnostics and an optional sanitized support report:
+
+```bash
+999 doctor
+999 doctor --support-report
+999 doctor --save-report ./999-support.json
+```
+
 Built-in guide:
 
 ```bash
@@ -147,7 +155,7 @@ relevant architecture or user document.
 | `embed` | Lower-level embed-only command |
 | `verify` | Validate supported MP3/FLAC/M4A embedded lyrics |
 | `restore` | Restore a previous audio backup |
-| `doctor` | Diagnose Python, Mutagen, API, and paths |
+| `doctor` | Bounded read-only health checks; optional sanitized support report |
 | `guide` | Show this workflow in the terminal |
 | `search` | Search the public song catalogue |
 | `info` | Inspect a song's API metadata |

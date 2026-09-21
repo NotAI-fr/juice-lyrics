@@ -56,6 +56,7 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Read-only duplicate analysis: `src/juice_lyrics/services/library_duplicates.py`
 - Read-only metadata proposals: `src/juice_lyrics/services/metadata_audit.py`
 - Transactional metadata writer foundation: `src/juice_lyrics/services/metadata_repair.py`
+- Read-only diagnostics/support reports: `src/juice_lyrics/services/doctor.py`
 - Matching/identity: `src/juice_lyrics/library/matching.py` and
   `src/juice_lyrics/services/library_identity.py`
 - State: `src/juice_lyrics/state.py`

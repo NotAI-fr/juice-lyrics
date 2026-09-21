@@ -122,6 +122,15 @@ from .missing_library import (
     MissingLibraryReport,
     get_missing_library,
 )
+from .doctor import (
+    DoctorCheck,
+    DoctorReport,
+    DoctorStatus,
+    render_support_report,
+    run_doctor,
+    sanitize_support_text,
+    support_report_data,
+)
 from .manual_identity import (
     ManualIdentityDependencies,
     ManualIdentityResult,
@@ -202,6 +211,13 @@ __all__ = [
     "CatalogueCoverage",
     "MissingLibraryReport",
     "get_missing_library",
+    "DoctorCheck",
+    "DoctorReport",
+    "DoctorStatus",
+    "render_support_report",
+    "run_doctor",
+    "sanitize_support_text",
+    "support_report_data",
     "IdentityBackfillDependencies",
     "IdentityBackfillResult",
     "ManualIdentityDependencies",
