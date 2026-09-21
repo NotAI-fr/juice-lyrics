@@ -46,6 +46,7 @@ from ..services.metadata_repair import (
     execute_metadata_repair,
     plan_metadata_repair,
 )
+from ..services.missing_library import MissingLibraryReport, get_missing_library
 from ..services.manual_identity import (
     ManualIdentityResult,
     set_manual_identity,
@@ -73,6 +74,7 @@ from .screens.library import (
     LibraryIssuesDialog,
     LibraryScreen,
     ManualMatchDialog,
+    MissingLibraryDialog,
     MetadataAuditDialog,
     MetadataRepairConfirmationDialog,
 )
@@ -101,6 +103,7 @@ SettingsSnapshotProvider = Callable[[Any], SettingsSnapshot]
 MetadataAuditProvider = Callable[..., MetadataAudit]
 MetadataRepairPlanProvider = Callable[..., MetadataRepairPlan]
 MetadataRepairExecutionProvider = Callable[..., MetadataRepairResult]
+MissingLibraryProvider = Callable[..., MissingLibraryReport]
 
 
 class JuiceLyricsApp(App[None]):
@@ -486,6 +489,7 @@ class JuiceLyricsApp(App[None]):
     ManualMatchDialog,
     LibraryIssuesDialog,
     LibraryDuplicatesDialog,
+    MissingLibraryDialog,
     MetadataAuditDialog,
     MetadataRepairConfirmationDialog {
         align: center middle;
@@ -611,6 +615,55 @@ class JuiceLyricsApp(App[None]):
 
     #library-duplicates-list,
     #library-duplicates-detail {
+        height: auto;
+        background: transparent;
+    }
+
+    #missing-library-dialog {
+        width: 96;
+        max-width: 96%;
+        height: 84%;
+        padding: 1 2;
+        border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #missing-library-summary,
+    #missing-library-help {
+        height: 2;
+        text-style: bold;
+    }
+
+    #missing-library-query {
+        height: 3;
+        background: transparent;
+        border: tall ansi_cyan;
+    }
+
+    #missing-library-query:focus {
+        border: tall ansi_blue;
+    }
+
+    #missing-library-main {
+        height: 1fr;
+        layout: grid;
+        grid-size: 2 1;
+        grid-columns: 3fr 2fr;
+        grid-gutter: 0 1;
+    }
+
+    #missing-library-list-scroll,
+    #missing-library-detail-scroll {
+        height: 1fr;
+        border: round ansi_cyan;
+        padding: 0 1;
+        background: transparent;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+    }
+
+    #missing-library-list,
+    #missing-library-detail {
         height: auto;
         background: transparent;
     }
@@ -1062,6 +1115,7 @@ class JuiceLyricsApp(App[None]):
         metadata_audit_provider: MetadataAuditProvider = audit_track_metadata,
         metadata_repair_plan_provider: MetadataRepairPlanProvider = plan_metadata_repair,
         metadata_repair_execution_provider: MetadataRepairExecutionProvider = execute_metadata_repair,
+        missing_library_provider: MissingLibraryProvider = get_missing_library,
         backup_provider: Callable[[], tuple[BackupRecord, ...]] = list_backups,
         restore_provider: Callable[[Any, Any], int] = restore_backup,
         rmpc_setup_provider: Callable[[Any, Any], Any] = patch_rmpc_config,
@@ -1106,6 +1160,7 @@ class JuiceLyricsApp(App[None]):
         self.metadata_audit_provider = metadata_audit_provider
         self.metadata_repair_plan_provider = metadata_repair_plan_provider
         self.metadata_repair_execution_provider = metadata_repair_execution_provider
+        self.missing_library_provider = missing_library_provider
         self.backup_provider = backup_provider
         self.restore_provider = restore_provider
         self.rmpc_setup_provider = rmpc_setup_provider
@@ -1152,6 +1207,9 @@ class JuiceLyricsApp(App[None]):
                 metadata_repair_execution_provider=self.metadata_repair_execution_provider,
                 manual_identity_provider=self.manual_identity_provider,
                 manual_unlock_provider=self.manual_unlock_provider,
+                missing_library_provider=self.missing_library_provider,
+                queue_plan_provider=self.queue_plan_provider,
+                queue_add_provider=self.queue_add_provider,
             ),
             "library",
         )
@@ -1213,7 +1271,7 @@ class JuiceLyricsApp(App[None]):
 
     def action_show_help(self) -> None:
         if not isinstance(self.screen, ModalScreen) or isinstance(
-            self.screen, LibraryDuplicatesDialog
+            self.screen, (LibraryDuplicatesDialog, MissingLibraryDialog)
         ):
             self.push_screen(HelpScreen())
 

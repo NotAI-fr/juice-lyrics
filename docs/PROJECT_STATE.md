@@ -44,6 +44,9 @@ code and tests if a later working tree disagrees with this document.
   ID3v1 false rejection/comment loss and same-second backup-directory reuse.
   Post-fix verification: 81 affected tests, 33 final targeted tests, and 494
   full-suite tests passed; compileall and `git diff --check` passed.
+- Missing Library milestone verification: 108 focused catalogue/queue/Library
+  tests, 502 full-suite tests, and 35 explicit temporary-HOME/XDG
+  snapshot/Sync smoke tests passed; compileall and `git diff --check` passed.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -67,6 +70,7 @@ Library is the maintenance centre. The primary routine action is:
 s → Sync Library
 a → Issues
 d → Duplicates
+g → Missing Library
 e → Metadata repair preview for the selected track
 ```
 
@@ -139,6 +143,23 @@ extended, TV mix, acoustic, demo, instrumental, and stems remain distinct.
 Detection is review-only: it never deletes, merges, moves, retags, or replaces
 audio. Because the view deliberately reuses current snapshot data, running Sync
 first provides the freshest paths, metadata, identities, and saved hashes.
+
+## Missing Library
+
+`g` opens **Missing Library** from the current Library snapshot. Catalogue
+pages load in a background worker through the existing TTL cache and pagination
+service. Ownership is determined only by exact confirmed `song_id` values,
+including valid manual locks; titles are never used as ownership evidence.
+Duplicate titles and released, live, remix, session, demo, extended, TV mix,
+and numbered-version records therefore remain distinct.
+
+The view separately reports confirmed missing recordings, local Unknown tracks,
+and catalogue coverage. A page/network failure produces **Partial** or
+**Unavailable** coverage rather than a falsely complete list. `/` filters the
+already-loaded records without rescanning or another API search. `a` sends the
+selected exact recording through the existing queue planner and durable queue;
+it never starts a download. Opening/filtering the view does not modify audio,
+state, lyrics, sidecars, backups, or rmpc configuration.
 
 ## Metadata repair audit and safe apply
 
@@ -328,13 +349,12 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Missing Library
-2. `999 doctor` / diagnostics
-3. Shell completion
-4. Final performance/reliability acceptance
-5. Packaging and clean installation
-6. GitHub presentation/distribution
-7. Beta release
+1. `999 doctor` / diagnostics
+2. Shell completion
+3. Final performance/reliability acceptance
+4. Packaging and clean installation
+5. GitHub presentation/distribution
+6. Beta release
 
 ## Resume safely
 

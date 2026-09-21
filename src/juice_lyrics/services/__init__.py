@@ -117,6 +117,11 @@ from .metadata_repair import (
     plan_metadata_repair,
     write_metadata_fields,
 )
+from .missing_library import (
+    CatalogueCoverage,
+    MissingLibraryReport,
+    get_missing_library,
+)
 from .manual_identity import (
     ManualIdentityDependencies,
     ManualIdentityResult,
@@ -194,6 +199,9 @@ __all__ = [
     "MetadataRepairDependencies",
     "MetadataRepairPlan",
     "MetadataRepairResult",
+    "CatalogueCoverage",
+    "MissingLibraryReport",
+    "get_missing_library",
     "IdentityBackfillDependencies",
     "IdentityBackfillResult",
     "ManualIdentityDependencies",

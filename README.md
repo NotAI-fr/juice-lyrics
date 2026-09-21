@@ -43,6 +43,10 @@ and updates the Library view without changing audio or lyrics. Press `a` for
 **Issues**, the snapshot-backed list of tracks that still need a decision or
 repair. Press `d` for a read-only **Duplicates** view showing exact file copies
 and conservative probable-recording groups with their evidence and paths.
+Press `g` for **Missing Library**, an exact catalogue-ID comparison that keeps
+alternate versions distinct and labels partial/offline catalogue coverage.
+A selected missing recording can be added to the existing Downloads queue; it
+is never downloaded automatically.
 **Maintain lyrics**
 is the separate, explicitly approved repair action. Maintenance shows a non-mutating preview and
 a cancel-first confirmation before changing audio metadata or sidecars.

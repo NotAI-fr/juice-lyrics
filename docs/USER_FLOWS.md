@@ -363,6 +363,8 @@ s Sync Library
 
 a Issues
 
+g Missing Library
+
 d Duplicates
 
 e Metadata repair
@@ -604,6 +606,6 @@ Ask only before:
 
 # Forward flows
 
-Sync Library, Issues, duplicate review, and manual catalogue matching form the normal Library
+Sync Library, Issues, Missing Library, duplicate review, and manual catalogue matching form the normal Library
 workflow. The ordered remaining roadmap lives in `PROJECT_STATE.md`;
 speculative screen lists are intentionally not duplicated here.

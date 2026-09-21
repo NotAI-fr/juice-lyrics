@@ -37,6 +37,7 @@ from juice_lyrics.services import (
 )
 from juice_lyrics.library.media import AudioMetadata
 from juice_lyrics.services.metadata_audit import build_metadata_audit
+from juice_lyrics.services.missing_library import CatalogueCoverage, MissingLibraryReport
 from juice_lyrics.services.library_sync import (
     LibrarySyncResult,
     LibrarySyncOptions,
@@ -497,6 +498,112 @@ def test_duplicates_open_from_snapshot_without_rescan_api_or_mutation(tmp_path):
     asyncio.run(scenario())
     assert audio.read_bytes() == b"audio unchanged"
     assert sidecar.read_bytes() == b"lrc unchanged"
+
+
+def test_missing_library_loads_in_worker_filters_and_adds_to_existing_queue(tmp_path):
+    root = tmp_path / "music"
+    owned = _track(root, "Owned.mp3", catalogue_id=1)
+    unknown = _track(root, "Unknown.flac", matched=False, media_format="FLAC")
+    missing = CatalogueSearchResult(
+        1, 2, "Missing (Live)", "released", "GBGR", "3:10",
+        ("Juice WRLD",), (), "Compilation/Missing (Live).mp3",
+        LyricAvailability.SYNCED, True,
+    )
+    loaded = Event()
+    release = Event()
+    calls = []
+
+    def report(settings, snapshot):
+        calls.append((snapshot, get_ident()))
+        loaded.set()
+        assert release.wait(timeout=5)
+        return MissingLibraryReport(
+            (missing,), frozenset({"1"}), 1, 2, 2, 1,
+            CatalogueCoverage.COMPLETE,
+        )
+
+    planned = SimpleNamespace(plan=object(), message="Ready", ok=True)
+    added = SimpleNamespace(plan=None, message="Added 1 song to the download queue.", ok=True)
+    queue_calls = []
+
+    def plan(settings, selections):
+        queue_calls.append(("plan", selections))
+        return planned
+
+    def add(plan_value):
+        queue_calls.append(("add", plan_value))
+        return added
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, owned, unknown),
+            missing_library_provider=report,
+            queue_plan_provider=plan,
+            queue_add_provider=add,
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            screen = await _open_library(app, pilot)
+            assert "g Missing" in _text(app, "#library-position")
+            await pilot.press("g")
+            assert await asyncio.to_thread(loaded.wait, 2)
+            await pilot.pause()
+            assert app.screen.__class__.__name__ == "MissingLibraryDialog"
+            assert calls[0][1] != get_ident()
+            assert "Loading catalogue" in _text(app, "#missing-library-summary")
+            release.set()
+            await app.screen._load_worker.wait()
+            await pilot.pause()
+            summary = _text(app, "#missing-library-summary")
+            assert "1 confirmed missing" in summary
+            assert "1 local Unknown" in summary
+            assert "Complete catalogue coverage" in summary
+            assert "Missing (Live)" in _text(app, "#missing-library-list")
+            await pilot.press("/"); await pilot.pause()
+            await pilot.press("l", "i", "v", "e", "enter")
+            assert "Missing (Live)" in _text(app, "#missing-library-list")
+            await pilot.press("a")
+            await app.screen._queue_worker.wait()
+            await pilot.pause()
+            assert queue_calls == [("plan", (missing,)), ("add", planned.plan)]
+            assert "Added 1 song" in _text(app, "#missing-library-summary")
+            await pilot.press("question_mark")
+            assert app.screen.__class__.__name__ == "HelpScreen"
+            await pilot.press("escape"); await pilot.pause(); await pilot.press("escape", "escape")
+            assert app.screen is screen
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+
+
+def test_missing_library_partial_and_offline_states_do_not_claim_completeness(tmp_path):
+    root = tmp_path / "music"
+    reports = iter((
+        MissingLibraryReport((), frozenset(), 1, 3, 10, 1, CatalogueCoverage.PARTIAL, error="offline"),
+        MissingLibraryReport((), frozenset(), 1, 0, None, 0, CatalogueCoverage.UNAVAILABLE, error="offline"),
+    ))
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, _track(root, "Unknown.m4a", matched=False, media_format="M4A")),
+            missing_library_provider=lambda settings, snapshot: next(reports),
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("g")
+            await app.screen._load_worker.wait(); await pilot.pause()
+            assert "Partial catalogue coverage" in _text(app, "#missing-library-summary")
+            assert "No missing recordings can be confirmed" in _text(app, "#missing-library-list")
+            await pilot.press("escape", "g")
+            await app.screen._load_worker.wait(); await pilot.pause()
+            assert "Catalogue unavailable" in _text(app, "#missing-library-summary")
+            await pilot.press("escape")
+            assert app.screen is screen
+
+    asyncio.run(scenario())
 
 
 def test_duplicate_navigation_probable_evidence_and_empty_state(tmp_path):

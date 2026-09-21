@@ -60,6 +60,7 @@ Open `999`, choose **Library**, and use:
 * **Sync Library** (`s`) for the normal update: discover MP3, FLAC, and M4A changes, retire known removed entries, and identify safe catalogue matches without changing audio or lyrics;
 * **Issues** (`a`) to see only tracks still needing a decision or repair;
 * **Duplicates** (`d`) to review exact file copies and conservative probable recordings without changing anything;
+* **Missing Library** (`g`) to compare confirmed local recording IDs with the paginated catalogue and optionally queue one exact recording;
 * **Metadata repair** (`e`) on the selected track to compare supported tags, explicitly select fields, and review a cancel-first Apply confirmation;
 * **Maintain lyrics** to preview needed changes, then explicitly approve them;
 * **Verify** for a read-only health check and attention list;
@@ -86,6 +87,14 @@ Live, remix, session, extended, TV mix, and numbered versions are not treated
 as interchangeable. The view shows its evidence and every path, but never
 deletes, merges, moves, retags, or replaces audio. Run Sync Library first when
 you want the snapshot and saved fingerprints brought up to date.
+
+Missing Library loads cached/paginated catalogue data in the background. It
+uses stable catalogue IDs only: duplicate titles and live, remix, session,
+demo, extended, or numbered versions remain separate. Local Unknown tracks are
+shown as a separate count and never used as loose-title proof of ownership. If
+pages cannot be loaded, coverage is labelled partial or unavailable. `/`
+filters loaded results and `a` adds the selected recording to the normal
+Downloads queue without starting it.
 
 Metadata repair reads the selected MP3, FLAC, or M4A tags and its confirmed
 catalogue record. It can propose title, artist, album, and track number where

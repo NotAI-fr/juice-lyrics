@@ -41,6 +41,17 @@ from ...services.library_duplicates import (
     DuplicateReport,
     detect_library_duplicates,
 )
+from ...services.missing_library import (
+    CatalogueCoverage,
+    MissingLibraryReport,
+    get_missing_library,
+)
+from ...services.download_queue import (
+    QueueAddResult,
+    QueueBatchAddResult,
+    add_batch_to_download_queue,
+    plan_queue_batch_additions,
+)
 from ...services.metadata_audit import (
     MetadataAudit,
     MetadataProposalConfidence,
@@ -84,6 +95,9 @@ ManualIdentityProvider = Callable[..., ManualIdentityResult]
 MetadataAuditProvider = Callable[..., MetadataAudit]
 MetadataRepairPlanProvider = Callable[..., MetadataRepairPlan]
 MetadataRepairExecutionProvider = Callable[..., MetadataRepairResult]
+MissingLibraryProvider = Callable[..., MissingLibraryReport]
+QueuePlanProvider = Callable[..., QueueAddResult | QueueBatchAddResult]
+QueueAddProvider = Callable[..., QueueAddResult | QueueBatchAddResult]
 CatalogueDetailsProvider = Callable[..., SongDetails | None]
 PreviewProvider = Callable[[Any], LibrarySyncPlan]
 ExecutionProvider = Callable[..., LibrarySyncResult]
@@ -650,6 +664,205 @@ class LibraryDuplicatesDialog(ModalScreen[None]):
         event.stop()
 
 
+class MissingLibraryInput(Input):
+    """Local filter input for the Missing Library modal."""
+
+    def on_key(self, event: Key) -> None:
+        if event.key == "escape":
+            self.screen.set_focus(None)
+            event.prevent_default()
+            event.stop()
+        elif event.key == "question_mark":
+            self.app.action_show_help()
+            event.prevent_default()
+            event.stop()
+
+
+class MissingLibraryDialog(ModalScreen[None]):
+    """Identity-based, read-only catalogue gap view with explicit queue add."""
+
+    def __init__(
+        self,
+        settings: Any,
+        snapshot: LibrarySnapshot,
+        *,
+        report_provider: MissingLibraryProvider = get_missing_library,
+        queue_plan_provider: QueuePlanProvider = plan_queue_batch_additions,
+        queue_add_provider: QueueAddProvider = add_batch_to_download_queue,
+    ) -> None:
+        super().__init__()
+        self.settings = settings
+        self.snapshot = snapshot
+        self._report_provider = report_provider
+        self._queue_plan_provider = queue_plan_provider
+        self._queue_add_provider = queue_add_provider
+        self.report: MissingLibraryReport | None = None
+        self.results: tuple[CatalogueSearchResult, ...] = ()
+        self.index = 0
+        self._load_worker: Worker[MissingLibraryReport] | None = None
+        self._queue_worker: Worker[QueueAddResult | QueueBatchAddResult] | None = None
+        self._adding = False
+
+    def compose(self) -> Iterable[Widget]:
+        with Container(id="missing-library-dialog"):
+            yield Static("Missing Library", id="library-dialog-title")
+            yield Static("Loading catalogue coverage…", id="missing-library-summary", markup=False)
+            yield MissingLibraryInput(placeholder="Filter loaded recordings", id="missing-library-query")
+            with Grid(id="missing-library-main"):
+                with VerticalScroll(id="missing-library-list-scroll"):
+                    yield Static("Loading…", id="missing-library-list", markup=False)
+                with VerticalScroll(id="missing-library-detail-scroll"):
+                    yield Static("The catalogue is loading in the background.", id="missing-library-detail", markup=False)
+            yield Static("/ Filter · ↑/↓ Select · a Add to Downloads · Esc Close · ? Help", id="missing-library-help", markup=False)
+
+    def on_mount(self) -> None:
+        self.call_after_refresh(self.set_focus, None)
+        self._load_worker = self._load_report()
+
+    @work(thread=True, exclusive=True, group="missing-library-load", exit_on_error=False)
+    def _load_report(self) -> MissingLibraryReport:
+        return self._report_provider(self.settings, self.snapshot)
+
+    @work(thread=True, exclusive=True, group="missing-library-queue", exit_on_error=False)
+    def _queue_selected(self, selection: CatalogueSearchResult) -> QueueAddResult | QueueBatchAddResult:
+        planned = self._queue_plan_provider(self.settings, (selection,))
+        plan = getattr(planned, "plan", None)
+        if plan is None:
+            return planned
+        return self._queue_add_provider(plan)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        if event.worker is self._load_worker:
+            if event.state is WorkerState.SUCCESS:
+                self.report = event.worker.result
+                self._filter_results()
+            elif event.state is WorkerState.ERROR:
+                self.query_one("#missing-library-summary", Static).update("Catalogue coverage unavailable")
+                self.query_one("#missing-library-list", Static).update("Unable to load the catalogue.")
+                self.query_one("#missing-library-detail", Static).update("Your local Library was not changed.")
+        elif event.worker is self._queue_worker:
+            if event.state is WorkerState.SUCCESS:
+                result = event.worker.result
+                self._adding = False
+                self.query_one("#missing-library-summary", Static).update(result.message)
+                if result.ok:
+                    invalidate = getattr(self.app, "invalidate_download_queue", None)
+                    if callable(invalidate):
+                        invalidate()
+            elif event.state is WorkerState.ERROR:
+                self._adding = False
+                self.query_one("#missing-library-summary", Static).update("Unable to add this recording to Downloads.")
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "missing-library-query" and self.report is not None:
+            self._filter_results()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "missing-library-query":
+            self.set_focus(None)
+
+    def _filter_results(self) -> None:
+        if self.report is None:
+            return
+        query = self.query_one("#missing-library-query", Input).value.strip().casefold()
+        self.results = tuple(
+            item for item in self.report.recordings
+            if not query or query in " ".join(
+                filter(None, (item.title, item.category, item.era, item.album, " ".join(item.artists)))
+            ).casefold()
+        )
+        self.index = min(self.index, max(0, len(self.results) - 1))
+        self._render_report()
+
+    def _render_report(self) -> None:
+        report = self.report
+        if report is None:
+            return
+        coverage = {
+            CatalogueCoverage.COMPLETE: "Complete catalogue coverage",
+            CatalogueCoverage.PARTIAL: "Partial catalogue coverage",
+            CatalogueCoverage.UNAVAILABLE: "Catalogue unavailable",
+        }[report.coverage]
+        summary = (
+            f"{report.missing_count} confirmed missing · {report.local_unknown_count} local Unknown · "
+            f"{report.loaded_recording_count} catalogue recordings loaded · {coverage}"
+        )
+        if report.error:
+            summary += f" · {report.error}"
+        self.query_one("#missing-library-summary", Static).update(summary)
+        if not self.results:
+            message = "No missing recordings match this filter." if report.recordings else (
+                "No confirmed missing recordings in the loaded catalogue."
+                if report.complete else "No missing recordings can be confirmed from the loaded catalogue data."
+            )
+            self.query_one("#missing-library-list", Static).update(message)
+            self.query_one("#missing-library-detail", Static).update(
+                "Local Unknown tracks are not assumed to own any catalogue recording. Run Sync or match them manually."
+            )
+            return
+        lines = []
+        for index, item in enumerate(self.results):
+            marker = ">" if index == self.index else " "
+            category = item.category or "unknown category"
+            lines.append(f"{marker} {(item.title or 'Untitled')[:32]:32} · {category}")
+        self.query_one("#missing-library-list", Static).update(Text("\n".join(lines), no_wrap=True, overflow="ellipsis"))
+        item = self.results[self.index]
+        artists = ", ".join(item.artists) or "Unknown"
+        fields = (
+            item.title or "Untitled",
+            "",
+            f"Catalogue ID   {item.song_id}",
+            f"Category       {item.category or 'Unknown'}",
+            f"Artists        {artists}",
+            f"Album / era    {item.album or item.era or 'Unknown'}",
+            f"Duration       {item.length or 'Unknown'}",
+            f"Download       {'Available' if item.downloadable else 'Unavailable'}",
+            "",
+            "This exact catalogue recording ID is not present among confirmed local identities.",
+        )
+        self.query_one("#missing-library-detail", Static).update(Text("\n".join(fields), overflow="ellipsis"))
+        self.call_after_refresh(
+            self.query_one("#missing-library-list-scroll", VerticalScroll).scroll_to,
+            y=self.index, animate=False, immediate=True,
+        )
+
+    def on_key(self, event: Key) -> None:
+        if isinstance(self.app.focused, Input):
+            return
+        if event.key in {"escape", "g"}:
+            self.dismiss(None)
+        elif event.key == "question_mark":
+            self.app.action_show_help()
+        elif event.key == "slash":
+            self.query_one("#missing-library-query", Input).focus()
+        elif event.key in {"down", "j"} and self.results:
+            self.index = min(len(self.results) - 1, self.index + 1)
+            self._render_report()
+        elif event.key in {"up", "k"} and self.results:
+            self.index = max(0, self.index - 1)
+            self._render_report()
+        elif event.key == "home" and self.results:
+            self.index = 0
+            self._render_report()
+        elif event.key == "end" and self.results:
+            self.index = len(self.results) - 1
+            self._render_report()
+        elif event.key == "a" and self.results and not self._adding:
+            selected = self.results[self.index]
+            if not selected.downloadable:
+                self.query_one("#missing-library-summary", Static).update("This recording is not available to download.")
+            else:
+                self._adding = True
+                self.query_one("#missing-library-summary", Static).update("Adding to Downloads…")
+                self._queue_worker = self._queue_selected(selected)
+        elif event.key in {"1", "2", "3", "4", "5"}:
+            pass
+        else:
+            return
+        event.prevent_default()
+        event.stop()
+
+
 class MetadataAuditDialog(ModalScreen[tuple[str, ...] | None]):
     """Select explicit fields from a before/after metadata preview."""
 
@@ -1195,6 +1408,9 @@ class LibraryScreen(HubScreen):
         metadata_repair_execution_provider: MetadataRepairExecutionProvider = execute_metadata_repair,
         manual_identity_provider: ManualIdentityProvider = set_manual_identity,
         manual_unlock_provider: ManualIdentityProvider = unlock_manual_identity,
+        missing_library_provider: MissingLibraryProvider = get_missing_library,
+        queue_plan_provider: QueuePlanProvider = plan_queue_batch_additions,
+        queue_add_provider: QueueAddProvider = add_batch_to_download_queue,
     ) -> None:
         super().__init__("library", "Library")
         self.settings = settings
@@ -1216,6 +1432,9 @@ class LibraryScreen(HubScreen):
         self._metadata_repair_execution_provider = metadata_repair_execution_provider
         self._manual_identity_provider = manual_identity_provider
         self._manual_unlock_provider = manual_unlock_provider
+        self._missing_library_provider = missing_library_provider
+        self._queue_plan_provider = queue_plan_provider
+        self._queue_add_provider = queue_add_provider
         self.snapshot: LibrarySnapshot | None = None
         self.filtered_tracks: tuple[LibraryTrack, ...] = ()
         self.selected_index = 0
@@ -1276,7 +1495,7 @@ class LibraryScreen(HubScreen):
                 with VerticalScroll(id="library-details-scroll"):
                     yield Static("Select a track to inspect it.", id="library-details", markup=False)
         yield Static("Sync Library updates the catalogue view without changing audio or lyrics.", id="library-preview", markup=False)
-        yield Static("s Sync Library · a Issues · d Duplicates · ↑↓ Move · Enter Details · ? Help", id="library-position", markup=False)
+        yield Static("s Sync Library · a Issues · g Missing · d Duplicates · ↑↓ Move · Enter Details · ? Help", id="library-position", markup=False)
 
     def action_focus_search(self) -> None:
         self.query_one("#library-query", Input).focus()
@@ -1799,9 +2018,9 @@ class LibraryScreen(HubScreen):
 
     def _update_position(self) -> None:
         if not self.filtered_tracks:
-            self.query_one("#library-position", Static).update("s Sync Library · a Issues · d Duplicates · ? Help")
+            self.query_one("#library-position", Static).update("s Sync Library · a Issues · g Missing · d Duplicates · ? Help")
             return
-        suffix = "Esc Back · e Metadata · c Match · l Refresh · ? Help" if self._details_mode else "s Sync Library · a Issues · d Duplicates · e Metadata · ↑↓ Move · ? Help"
+        suffix = "Esc Back · e Metadata · c Match · l Refresh · ? Help" if self._details_mode else "s Sync Library · a Issues · g Missing · d Duplicates · e Metadata · ↑↓ Move · ? Help"
         self.query_one("#library-position", Static).update(
             f"Track {self.selected_index + 1} of {len(self.filtered_tracks)} · {suffix}"
         )
@@ -1817,6 +2036,8 @@ class LibraryScreen(HubScreen):
             self._open_issues()
         elif event.key == "d":
             self._open_duplicates()
+        elif event.key == "g":
+            self._open_missing_library()
         elif event.key == "e" and self.selected_track is not None:
             self._open_metadata_audit(self.selected_track)
         elif event.key == "m":
@@ -1884,6 +2105,20 @@ class LibraryScreen(HubScreen):
                     self.snapshot,
                     duration_tolerance=self.settings.duration_tolerance,
                 )
+            )
+        )
+
+    def _open_missing_library(self) -> None:
+        if self.snapshot is None:
+            self._set_status("Load the library before checking Missing Library.", error=True)
+            return
+        self.app.push_screen(
+            MissingLibraryDialog(
+                self.settings,
+                self.snapshot,
+                report_provider=self._missing_library_provider,
+                queue_plan_provider=self._queue_plan_provider,
+                queue_add_provider=self._queue_add_provider,
             )
         )
 
