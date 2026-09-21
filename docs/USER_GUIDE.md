@@ -276,6 +276,40 @@ and home paths and common credential forms are redacted. Review any report
 before sharing it, as unusual third-party error text cannot be guaranteed to
 follow common formats.
 
+## Shell completion
+
+`999` generates completion directly from its current command definitions, so
+the suggestions cover the installed commands, nested actions, and options.
+Generation is read-only and does not load application configuration, state, or
+catalogue data.
+
+Bash (requires the normal `bash-completion` setup):
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+999 completion bash > ~/.local/share/bash-completion/completions/999
+```
+
+Zsh:
+
+```zsh
+mkdir -p ~/.zfunc
+999 completion zsh > ~/.zfunc/_999
+```
+
+Ensure `fpath=(~/.zfunc $fpath)` appears before `autoload -Uz compinit &&
+compinit` in `~/.zshrc`.
+
+Fish:
+
+```fish
+mkdir -p ~/.config/fish/completions
+999 completion fish > ~/.config/fish/completions/999.fish
+```
+
+Open a new shell after installation, and regenerate the file after updating
+`999`. Each generated script also binds the legacy `juice-lyrics` command.
+
 For detailed matching:
 
 ```bash

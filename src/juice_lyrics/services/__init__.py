@@ -131,6 +131,12 @@ from .doctor import (
     sanitize_support_text,
     support_report_data,
 )
+from .shell_completion import (
+    CompletionNode,
+    CompletionOption,
+    completion_tree,
+    generate_completion,
+)
 from .manual_identity import (
     ManualIdentityDependencies,
     ManualIdentityResult,
@@ -214,10 +220,14 @@ __all__ = [
     "DoctorCheck",
     "DoctorReport",
     "DoctorStatus",
+    "CompletionNode",
+    "CompletionOption",
     "render_support_report",
     "run_doctor",
     "sanitize_support_text",
     "support_report_data",
+    "completion_tree",
+    "generate_completion",
     "IdentityBackfillDependencies",
     "IdentityBackfillResult",
     "ManualIdentityDependencies",

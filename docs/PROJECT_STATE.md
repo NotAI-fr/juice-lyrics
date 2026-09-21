@@ -51,6 +51,11 @@ code and tests if a later working tree disagrees with this document.
   backup tests, 510 full-suite tests, and 24 explicit temporary-HOME/XDG
   diagnostic/settings smoke tests passed; compileall and `git diff --check`
   passed.
+- Shell-completion milestone verification: 20 focused completion/identity
+  tests passed (one Fish syntax check skipped because Fish was not installed),
+  523 full-suite tests passed with the same skip, and an explicit temporary-
+  HOME/XDG generation smoke created no application directories. Bash and Zsh
+  syntax checks, compileall, and `git diff --check` passed.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -336,6 +341,19 @@ paths. `--support-report` prints sanitized JSON and `--save-report PATH`
 deliberately writes it. The report excludes song lists and state contents and
 redacts home paths and common credential forms by default.
 
+## Shell completion
+
+`999 completion bash`, `999 completion zsh`, and `999 completion fish`
+generate shell-native completion from the same argparse tree used by the CLI.
+Current top-level commands, nested actions, option names, fixed choices, and
+path-valued options are therefore covered without maintaining separate static
+command lists. The scripts bind both `999` and the legacy `juice-lyrics` name.
+
+Completion generation exits before settings are loaded. It does not read or
+write application state, access the catalogue, scan music, or alter the normal
+CLI startup path. Users deliberately redirect the generated output into their
+shell's completion directory and regenerate it after CLI upgrades.
+
 ## Known limitations and risks
 
 - Active download cancellation is not implemented.
@@ -369,11 +387,10 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Shell completion
-2. Final performance/reliability acceptance
-3. Packaging and clean installation
-4. GitHub presentation/distribution
-5. Beta release
+1. Final performance/reliability acceptance
+2. Packaging and clean installation
+3. GitHub presentation/distribution
+4. Beta release
 
 ## Resume safely
 

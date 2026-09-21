@@ -25,6 +25,7 @@ from . import __version__
 from .config.settings import DEFAULT_LYRICS_DIR
 from .identity import PRODUCT_NAME, STORAGE_NAMESPACE
 from .lyrics.sidecar import sidecar_lrc_path
+from .services.shell_completion import generate_completion
 
 APP_NAME = PRODUCT_NAME
 DEFAULT_API_BASE = "https://juicewrldapi.com/juicewrld"
@@ -1670,6 +1671,12 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--support-report", action="store_true", help="Print a sanitized JSON support report.")
     doctor.add_argument("--save-report", metavar="PATH", help="Deliberately save the sanitized support report to PATH.")
 
+    completion = sub.add_parser(
+        "completion",
+        help="Generate shell completion without loading application data.",
+    )
+    completion.add_argument("shell", choices=("bash", "zsh", "fish"))
+
     guide = sub.add_parser("guide", help="Show the built-in quick guide.")
 
     sub.add_parser("tui", help="Launch the 999 terminal interface.")
@@ -1757,6 +1764,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     use_color = not args.no_color and sys.stdout.isatty()
+    if args.command == "completion":
+        print(generate_completion(parser, args.shell), end="")
+        return 0
     try:
         try:
             settings = load_settings(getattr(args, "path", None), getattr(args, "api_base", None))

@@ -156,6 +156,7 @@ relevant architecture or user document.
 | `verify` | Validate supported MP3/FLAC/M4A embedded lyrics |
 | `restore` | Restore a previous audio backup |
 | `doctor` | Bounded read-only health checks; optional sanitized support report |
+| `completion bash/zsh/fish` | Generate completion from the current CLI command tree |
 | `guide` | Show this workflow in the terminal |
 | `search` | Search the public song catalogue |
 | `info` | Inspect a song's API metadata |
@@ -301,6 +302,42 @@ contain current checkout changes. Reinstall it deliberately or keep using
 `juice-lyrics` remains available as a legacy compatibility command. Both names
 run the same CLI. Existing config, state, queue, cache, and backups continue to
 use the `juice-lyrics` XDG namespace so no data migration is required.
+
+### Shell completion
+
+Generate completion from the installed CLI after installing or updating `999`.
+Generation only inspects command definitions; it does not load configuration,
+state, or the catalogue.
+
+For Bash:
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+999 completion bash > ~/.local/share/bash-completion/completions/999
+```
+
+Start a new Bash session (with `bash-completion` enabled), or source that file.
+
+For Zsh:
+
+```zsh
+mkdir -p ~/.zfunc
+999 completion zsh > ~/.zfunc/_999
+```
+
+Add `fpath=(~/.zfunc $fpath)` before `autoload -Uz compinit && compinit` in
+`~/.zshrc`, then start a new Zsh session.
+
+For Fish:
+
+```fish
+mkdir -p ~/.config/fish/completions
+999 completion fish > ~/.config/fish/completions/999.fish
+```
+
+Fish loads that file in new sessions. The generated definitions also support
+the legacy `juice-lyrics` command. Regenerate them after a CLI upgrade so the
+available commands and flags stay current.
 
 ## Development
 
