@@ -88,6 +88,24 @@ def test_new_audio_is_discovered_identified_and_unchanged_repeat_skips_work(tmp_
     assert second.summary == "Library is up to date"
     assert counts == before
 
+    saved = json.loads(state_file.read_text(encoding="utf-8"))
+    saved["unrelated_custom_state"] = {"keep": True}
+    state_file.write_text(json.dumps(saved), encoding="utf-8")
+    before_unrelated_change = counts.copy()
+
+    third = sync_library_index(
+        settings,
+        previous_snapshot=second.snapshot,
+        state_file=state_file,
+        dependencies=deps,
+    )
+
+    assert third.summary == "Library is up to date"
+    assert counts == before_unrelated_change
+    assert json.loads(state_file.read_text(encoding="utf-8"))["unrelated_custom_state"] == {
+        "keep": True
+    }
+
 
 def test_changed_audio_replaces_stale_identity_and_ambiguous_stays_unknown(tmp_path):
     music = tmp_path / "music"

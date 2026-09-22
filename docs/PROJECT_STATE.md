@@ -56,6 +56,10 @@ code and tests if a later working tree disagrees with this document.
   523 full-suite tests passed with the same skip, and an explicit temporary-
   HOME/XDG generation smoke created no application directories. Bash and Zsh
   syntax checks, compileall, and `git diff --check` passed.
+- Final performance/reliability acceptance: 276 broad workflow tests and 29
+  focused repair/Sync/lock/Issues regressions passed; the final suite passed
+  527 tests with one Fish-environment skip. All pytest paths used the guarded
+  temporary HOME/XDG environment; compileall and `git diff --check` passed.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -354,6 +358,29 @@ write application state, access the catalogue, scan music, or alter the normal
 CLI startup path. Users deliberately redirect the generated output into their
 shell's completion directory and regenerate it after CLI upgrades.
 
+## Final performance and reliability acceptance
+
+The normal launch/navigation, Browse and queue, Library Sync, manual identity,
+Issues, Duplicates, metadata repair, Missing Library, backup/restore, doctor,
+and completion workflows have a combined focused acceptance pass. Catalogue,
+filesystem, and UI work remains backgrounded where designed; the audit found
+no reason to weaken matcher, downloader, backup, or state-conflict safeguards.
+
+One measured Library refresh bottleneck was fixed. Previously, changing any
+part of `state.json` invalidated cached status for every track, so one manual
+match or metadata repair caused every unchanged audio file to be rehashed and
+its metadata/lyrics rechecked. Snapshots now retain a canonical signature of
+the resolved state entry that affects each track. A changed entry rechecks only
+that track; a top-level or unrelated-entry change reuses safe unchanged track
+results. File and sidecar fingerprints, whole-state conflict signatures, and
+same-path replacement detection remain mandatory, so this does not trust stale
+identity after an actual media change.
+
+Cross-feature acceptance now explicitly covers verified MP3, FLAC, and M4A
+metadata repairs followed by snapshot refresh and Sync. The updated whole-file
+hash stays current, valid manual locks survive, catalogue search is skipped,
+and stale State/Catalogue Issues do not remain after the controlled edit.
+
 ## Known limitations and risks
 
 - Active download cancellation is not implemented.
@@ -387,10 +414,9 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Final performance/reliability acceptance
-2. Packaging and clean installation
-3. GitHub presentation/distribution
-4. Beta release
+1. Packaging and clean installation
+2. GitHub presentation/distribution
+3. Beta release
 
 ## Resume safely
 

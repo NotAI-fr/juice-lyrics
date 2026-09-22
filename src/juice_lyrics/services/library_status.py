@@ -80,6 +80,7 @@ class LibraryTrack:
     identity_locked: bool = False
     verification_error: str | None = None
     catalogue_id: Any | None = None
+    state_entry_signature: str | None = None
 
     @property
     def needs_attention(self) -> bool:
@@ -222,6 +223,18 @@ def _has_timed_lrc(path: Path) -> tuple[bool, str | None]:
     return False, "Adjacent LRC has no timestamped lyric lines."
 
 
+def state_entry_signature(state_key: str | None, raw_entry: object) -> str:
+    """Fingerprint only the state record that can affect one displayed track."""
+
+    encoded = json.dumps(
+        (state_key, raw_entry),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def get_library_snapshot(
     settings: Settings,
     *,
@@ -258,12 +271,22 @@ def get_library_snapshot(
         if previous_snapshot is not None
         and not warnings
         and previous_snapshot.library_path == library_path
-        and previous_snapshot.state_signature == state_signature
         else {}
+    )
+    whole_state_unchanged = bool(
+        previous_snapshot is not None
+        and previous_snapshot.state_signature == state_signature
     )
     tracks: list[LibraryTrack] = []
     for path in discovered:
         relative_path = path.relative_to(library_path)
+        state_key, resolved_entry = resolve_state_entry(
+            state_files,
+            relative_path,
+            relative_paths,
+        )
+        raw_entry = state_files.get(state_key) if state_key is not None else None
+        entry_signature = state_entry_signature(state_key, raw_entry)
         prior = previous_tracks.get(relative_path)
         if prior is not None and prior.content_fingerprint is not None:
             sidecar = sidecar_lrc_path(path)
@@ -272,18 +295,16 @@ def get_library_snapshot(
                 if (
                     file_fingerprint(path) == prior.content_fingerprint
                     and current_sidecar == prior.sidecar_fingerprint
+                    and (
+                        whole_state_unchanged
+                        or prior.state_entry_signature == entry_signature
+                    )
                 ):
                     tracks.append(prior)
                     continue
             except OSError:
                 pass
         reference = str(relative_path)
-        state_key, resolved_entry = resolve_state_entry(
-            state_files,
-            relative_path,
-            relative_paths,
-        )
-        raw_entry = state_files.get(state_key) if state_key is not None else None
         entry = resolved_entry if isinstance(resolved_entry, dict) else None
         content_sha256 = None
         content_fingerprint = None
@@ -444,6 +465,7 @@ def get_library_snapshot(
                     and state_status is LibraryStateStatus.CURRENT
                     else None
                 ),
+                state_entry_signature=entry_signature,
             )
         )
     return LibrarySnapshot(library_path, True, tuple(tracks), warnings, state_signature)

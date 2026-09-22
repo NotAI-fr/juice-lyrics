@@ -15,10 +15,9 @@ Advanced repair and recovery remain available without crowding routine use.
 
 ## Remaining sequence
 
-1. Final performance/reliability acceptance
-2. Packaging and clean installation
-3. GitHub presentation/distribution
-4. Beta release
+1. Packaging and clean installation
+2. GitHub presentation/distribution
+3. Beta release
 
 Do not force ambiguous tracks into identities. Do not combine these milestones
 into a broad rewrite. Each milestone should preserve the safety invariants in

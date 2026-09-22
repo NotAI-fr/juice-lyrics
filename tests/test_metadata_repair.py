@@ -24,6 +24,16 @@ from juice_lyrics.services.library_status import (
     LibraryMatchStatus,
     LibraryStateStatus,
     LibraryTrack,
+    get_library_snapshot,
+)
+from juice_lyrics.services.library_identity import IdentityBackfillDependencies
+from juice_lyrics.services.library_index_sync import (
+    LibraryIndexSyncDependencies,
+    sync_library_index,
+)
+from juice_lyrics.services.library_issues import (
+    LibraryIssueCategory,
+    get_library_health,
 )
 from juice_lyrics.services.metadata_audit import build_metadata_audit
 from juice_lyrics.services.metadata_repair import (
@@ -509,3 +519,51 @@ def test_automatic_identity_remains_unlocked_after_verified_edit(tmp_path):
     entry = read_state_file(state_file)["files"][track.reference]
     assert result.identity_lock_preserved is False
     assert "identity_locked" not in entry and "identity_source" not in entry
+
+
+@pytest.mark.parametrize("suffix", (".mp3", ".flac", ".m4a"))
+def test_verified_repair_then_sync_preserves_lock_and_refreshes_health(tmp_path, suffix):
+    settings, track, audit, state_file, _ = _fixture(tmp_path, suffix)
+    repair_deps = _dependencies(tmp_path)
+    plan = plan_metadata_repair(
+        settings,
+        audit,
+        ("title", "artist"),
+        state_file=state_file,
+        dependencies=repair_deps,
+    )
+
+    repair = execute_metadata_repair(
+        plan,
+        confirmed=True,
+        dependencies=repair_deps,
+    )
+    refreshed = get_library_snapshot(settings, state_file=state_file)
+    searches = []
+    sync_deps = LibraryIndexSyncDependencies(
+        identity=IdentityBackfillDependencies(
+            searcher=lambda *args, **kwargs: searches.append(args) or [],
+        )
+    )
+    synced = sync_library_index(
+        settings,
+        previous_snapshot=refreshed,
+        state_file=state_file,
+        dependencies=sync_deps,
+    )
+
+    updated_track = synced.snapshot.tracks[0]
+    entry = read_state_file(state_file)["files"][track.reference]
+    categories = {
+        category
+        for issue in get_library_health(synced.snapshot).issues
+        for category in issue.categories
+    }
+    assert repair.sha256_after == entry["sha256"] == updated_track.content_sha256
+    assert entry["song_id"] == 42 and entry["identity_locked"] is True
+    assert updated_track.identity_locked is True
+    assert updated_track.catalogue_id == 42
+    assert updated_track.state_status is LibraryStateStatus.CURRENT
+    assert LibraryIssueCategory.STATE not in categories
+    assert LibraryIssueCategory.CATALOGUE not in categories
+    assert searches == []

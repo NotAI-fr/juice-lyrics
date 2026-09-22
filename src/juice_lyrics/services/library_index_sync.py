@@ -24,6 +24,7 @@ from .library_status import (
     LibraryStateStatus,
     LibraryTrack,
     get_library_snapshot,
+    state_entry_signature,
 )
 
 
@@ -261,6 +262,7 @@ def sync_library_index(
             track,
             state_status=LibraryStateStatus.CURRENT,
             content_sha256=audio_hash,
+            state_entry_signature=state_entry_signature(reference, entry),
         )
         if (
             entry.get("song_id") is not None

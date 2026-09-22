@@ -14,6 +14,7 @@ from juice_lyrics.config.settings import Settings
 from juice_lyrics.services.library_identity import IdentityBackfillDependencies, backfill_catalogue_identities
 from juice_lyrics.services.library_status import get_library_snapshot
 from juice_lyrics.state import sha256_file
+from juice_lyrics.library.media import AudioMetadata
 
 
 def test_unchanged_snapshot_backfill_does_not_hash_audio_twice(tmp_path):
@@ -95,3 +96,58 @@ def test_cached_hash_is_not_reused_after_same_size_replacement(tmp_path):
     assert result.identified == 1
     assert searches == [1]
     assert json.loads(state_file.read_text(encoding="utf-8"))["files"]["Song.mp3"]["song_id"] == 2
+
+
+def test_one_state_entry_change_only_rechecks_that_track(tmp_path):
+    music = tmp_path / "music"
+    music.mkdir()
+    files = {}
+    for index in range(8):
+        path = music / f"Track {index:02}.flac"
+        path.write_bytes(bytes([index]) * 4096)
+        files[path.name] = {
+            "sha256": sha256_file(path),
+            "song_id": index + 1,
+            "api_name": f"Track {index:02}",
+        }
+    state_file = tmp_path / "state.json"
+    state_file.write_text(json.dumps({"files": files}), encoding="utf-8")
+    counts = {"hashes": 0, "metadata": 0, "verification": 0}
+
+    def counted_hash(path):
+        counts["hashes"] += 1
+        return sha256_file(path)
+
+    def metadata(path):
+        counts["metadata"] += 1
+        return AudioMetadata(path.stem, "Juice WRLD", "Album", 180.0)
+
+    def verify(path):
+        counts["verification"] += 1
+        return False, "no lyrics"
+
+    first = get_library_snapshot(
+        Settings(music_dir=music),
+        state_file=state_file,
+        verifier=verify,
+        metadata_reader=metadata,
+        hasher=counted_hash,
+    )
+    baseline = counts.copy()
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    state["files"]["Track 00.flac"]["api_name"] = "Corrected title"
+    state_file.write_text(json.dumps(state), encoding="utf-8")
+
+    second = get_library_snapshot(
+        Settings(music_dir=music),
+        state_file=state_file,
+        verifier=verify,
+        metadata_reader=metadata,
+        hasher=counted_hash,
+        previous_snapshot=first,
+    )
+
+    assert second.tracks[0].matched_title == "Corrected title"
+    assert counts["hashes"] - baseline["hashes"] == 1
+    assert counts["metadata"] - baseline["metadata"] == 1
+    assert counts["verification"] - baseline["verification"] == 1
