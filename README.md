@@ -263,23 +263,41 @@ The tool follows XDG locations for its config, cache, state, and backups.
 
 ## Installation
 
-### Recommended pipx editable install
+### Recommended pipx install
 
 ```bash
-pipx install --editable /absolute/path/to/juice-lyrics-codex
+pipx install "git+https://github.com/NotAI-fr/juice-lyrics.git@v2-redesign"
 command -v 999
-999 --help
+999 --version
+999 doctor
 ```
 
 The distribution remains named `juice-wrld-lyrics` for update compatibility.
-If pipx already has an older copy, replace it deliberately:
+Until a release is published, the command above installs the current
+`v2-redesign` branch into pipx without depending on the source checkout after
+installation. If pipx already has an older or stale copy, replace it
+deliberately:
 
 ```bash
-pipx install --force --editable /absolute/path/to/juice-lyrics-codex
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2-redesign"
 hash -r
 command -v 999
-999 --help
+999 --version
+999 doctor
 ```
+
+Repeating the `--force` command is the deterministic upgrade path while using
+the development branch. Installing a locally built wheel is also supported:
+
+```bash
+pipx install --force /absolute/path/to/juice_wrld_lyrics-1.4.0-py3-none-any.whl
+```
+
+If a stale pipx registration cannot be replaced, `pipx uninstall
+juice-wrld-lyrics` followed by the normal install command removes only the
+isolated application environment. It does not remove 999's existing
+`~/.config/juice-lyrics`, `~/.cache/juice-lyrics`, or
+`~/.local/share/juice-lyrics` data.
 
 ### Editable development install
 

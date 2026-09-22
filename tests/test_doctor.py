@@ -87,6 +87,27 @@ def test_healthy_doctor_is_bounded_read_only_and_counts_supported_formats(tmp_pa
     assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == before
 
 
+def test_doctor_reports_the_invoked_isolated_executable_instead_of_a_stale_path(tmp_path):
+    launcher = tmp_path / "isolated-env" / "bin" / "999"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    report = run_doctor(
+        Settings(music_dir=tmp_path / "music"),
+        **_paths(tmp_path),
+        api_probe=lambda url, timeout: {"count": 1, "results": [{"id": 1}]},
+        command_finder=lambda name: "/home/user/.local/bin/999",
+        disk_usage=lambda path: Usage(10_000_000_000, 1, 9_000_000_000),
+        rmpc_probe=lambda executable: True,
+        invoked_command=str(launcher),
+    )
+
+    runtime = _check(report, "runtime")
+    assert runtime.status is DoctorStatus.PASS
+    assert str(launcher) in runtime.detail
+    assert "/home/user/.local/bin/999" not in runtime.detail
+
+
 def test_offline_catalogue_is_warning_but_invalid_response_is_failure(tmp_path):
     def offline(url, timeout):
         raise RuntimeError("network timed out")

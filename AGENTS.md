@@ -76,6 +76,10 @@ python -m compileall -q src
 git diff --check
 ```
 
+For packaging milestones, build with `python -m build` and clean-install both
+the wheel and sdist in temporary environments outside the checkout. Never test
+installation by replacing the user's real pipx environment.
+
 Normal Library use is `999` → Library → `s` (**Sync Library**). Press `?` for
 the implemented key map. Common safe routine work should be automatic/simple;
 ambiguous or destructive work requires an explicit user decision.

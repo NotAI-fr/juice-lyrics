@@ -70,14 +70,21 @@ installed pipx copy is a frozen package snapshot and does not follow this workin
 tree; reinstall it deliberately after a checkpoint or use the explicit `.venv`
 command above.
 
-For a deterministic editable pipx installation:
+For a deterministic pipx installation that does not depend on the checkout
+after installation:
 
 ```bash
-pipx install --force --editable /absolute/path/to/juice-lyrics-codex
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2-redesign"
 hash -r
 command -v 999
-999 --help
+999 --version
+999 doctor
 ```
+
+Use `pip install -e .` inside `.venv` for development. A local wheel can be
+tested or installed with `pipx install --force /absolute/path/to/wheel.whl`.
+Build release artifacts with `python -m build`; both the wheel and source
+distribution must be clean-installed outside the repository before release.
 
 The terminal interface provides functional Dashboard, Browse, Library,
 Downloads, and Settings screens. Its primary journey is **Browse → Add →
@@ -160,10 +167,7 @@ and restore support MP3, FLAC, and M4A.
 
 ## Source of truth and Git workflow
 
-The latest transferred project checkpoint/archive is the source of truth for ongoing development. The existing GitHub repository is not authoritative and should not be used as the development baseline.
-
-When version control is introduced, create a fresh repository from a known-good checkpoint and make logical milestones so changes can be inspected or reverted independently. The user should be given copy/paste instructions rather than being expected to understand Git internals.
-
-## Checkpoint workflow
-
-Development checkpoints are distributed as source ZIPs. When applying one to a local Git checkout, keep `.git/` untouched, run the test suite, then commit the result as a single logical milestone.
+The `v2-redesign` branch in this repository is the active development source
+of truth. Keep milestones inspectable, run the documented verification, and
+push completed work to `origin/v2-redesign`. Do not merge into `main`, tag, or
+publish a distribution as part of an ordinary development milestone.

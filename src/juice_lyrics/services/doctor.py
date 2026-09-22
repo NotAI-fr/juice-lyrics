@@ -68,9 +68,17 @@ def _nearest_existing(path: Path) -> Path | None:
     return candidate
 
 
-def _check_runtime(command_finder: ExecutableFinder) -> DoctorCheck:
+def _check_runtime(
+    command_finder: ExecutableFinder,
+    *,
+    invoked_command: str | None = None,
+) -> DoctorCheck:
     try:
-        executable = command_finder("999")
+        invoked = Path(invoked_command or sys.argv[0]).expanduser()
+        if invoked.name in {"999", "juice-lyrics"} and invoked.parent != Path("."):
+            executable = str(invoked.resolve(strict=True))
+        else:
+            executable = command_finder(invoked.name if invoked.name in {"999", "juice-lyrics"} else "999")
     except Exception as exc:
         return DoctorCheck("runtime", "Runtime", DoctorStatus.WARN, f"Executable location could not be inspected: {exc}")
     detail = f"999 {__version__}; Python {sys.version.split()[0]}; executable {executable or 'not found in PATH'}"
@@ -312,6 +320,7 @@ def run_doctor(
     command_finder: ExecutableFinder = shutil.which,
     disk_usage: DiskUsageProbe = shutil.disk_usage,
     rmpc_probe: RmpcProbe = _probe_rmpc,
+    invoked_command: str | None = None,
 ) -> DoctorReport:
     """Run bounded, read-only application diagnostics."""
 
@@ -326,7 +335,11 @@ def run_doctor(
             )
 
     checks = [
-        safe("runtime", "Runtime", lambda: _check_runtime(command_finder)),
+        safe(
+            "runtime",
+            "Runtime",
+            lambda: _check_runtime(command_finder, invoked_command=invoked_command),
+        ),
         safe("dependencies", "Media dependency", _check_dependencies),
         safe("config", "Configuration", lambda: _check_config(Path(config_path))),
         safe("state", "Library state", lambda: _check_state(Path(state_file))),
