@@ -1,8 +1,29 @@
 # 999
 
-A terminal-native Juice WRLD music hub for Linux, with cautious lyrics management for local MP3, FLAC, and M4A libraries and synchronized `.lrc` sidecars for rmpc.
+A terminal-native Juice WRLD music hub for Linux, with cautious lyrics
+management for local MP3, FLAC, and M4A libraries and synchronized `.lrc`
+sidecars for rmpc.
 
-It uses the Juice WRLD API as a metadata/lyrics source, prefers synchronized lyrics (`SYLT`), and falls back to ordinary embedded lyrics (`USLT`) when timestamps are unavailable.
+> **Beta candidate:** `2.0.0b1` is prepared on `v2-redesign` for acceptance.
+> Keep a separate backup of valuable media and review every confirmed repair.
+> No release or package-registry publication has happened yet.
+
+999 uses the Juice WRLD API as a catalogue and lyrics source. MP3 supports
+plain and synchronized embedded lyrics; FLAC and M4A use standard plain lyric
+tags. Genuine synchronized lyrics for every supported format use an adjacent
+same-basename `.lrc` file.
+
+This is an unofficial fan-made tool. It is not affiliated with or endorsed by
+Juice WRLD's estate, record labels, or the Juice WRLD API. The repository does
+not include music or lyric content; users are responsible for the media and
+services they access.
+
+## Preview
+
+![999 dashboard rendered with synthetic demo data](docs/assets/999-dashboard.png)
+
+_Captured from the real TUI with synthetic counts and a generic path. It
+contains no user library or state data._
 
 ## The simple workflow
 
@@ -140,6 +161,7 @@ The repository keeps its development and continuity context in version-controlle
 - `docs/USER_GUIDE.md` — straightforward user workflows
 - `docs/DEVELOPMENT.md` — development and testing guidance
 - `docs/CHANGELOG.md` — release and milestone history
+- `docs/BETA_RELEASE_CHECKLIST.md` — pre-release acceptance and release steps
 
 Before major changes, read `AGENTS.md`, `docs/PROJECT_STATE.md`, and the
 relevant architecture or user document.
@@ -290,7 +312,7 @@ Repeating the `--force` command is the deterministic upgrade path while using
 the development branch. Installing a locally built wheel is also supported:
 
 ```bash
-pipx install --force /absolute/path/to/juice_wrld_lyrics-1.4.0-py3-none-any.whl
+pipx install --force /absolute/path/to/juice_wrld_lyrics-2.0.0b1-py3-none-any.whl
 ```
 
 If a stale pipx registration cannot be replaced, `pipx uninstall

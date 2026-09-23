@@ -1,106 +1,79 @@
 # Changelog
 
-## Unreleased — One-button Library Sync and safety hardening
+This project follows [Semantic Versioning](https://semver.org/) and uses PEP
+440-compatible Python versions. Dates are added only when a release is
+published.
 
-* Made Library `s` the normal background **Sync Library** action.
-* Added incremental unchanged/new/changed/removed file classification, safe
-  catalogue backfill for Unknown tracks, changed-file identity invalidation,
-  removed-path retirement, cache-aware retries, and duplicate-run protection.
-* Preserved conservative Bandit (`94107`) and 10 Feet (`94102`) matcher
-  regressions, state-conflict safety, atomic restore, and local lyric-health
-  classification independent of catalogue identity.
-* Kept normal Sync state-only: it does not rewrite audio, sidecars, backups,
-  downloads, or rmpc configuration.
-* Verified 410 automated tests and 14 isolated recovery smoke tests at commit
-  `31ebaf2`.
+## [2.0.0b1] - Unreleased
 
-## Unreleased — 999 beta identity and packaging
+This is the first beta candidate for the redesigned `999` product. It is not a
+published release yet.
 
-* Made `999` the primary product name and console entry point while retaining
-  `juice-lyrics` as an alias to the same CLI implementation.
-* Kept the internal `juice_lyrics` package, `juice-wrld-lyrics` distribution,
-  and `juice-lyrics` XDG storage namespace stable for compatibility.
-* Made no-argument startup open the existing TUI and kept startup read-only with
-  respect to rmpc configuration and deprecated centralized lyrics paths.
-* Clarified setup responsibilities: `config init` writes starter configuration,
-  `setup` synchronizes the library, and only explicit `rmpc setup` changes rmpc.
-* Added isolated entry-point, first-run, storage compatibility, shell, and
-  editable-install verification.
-* Verified 318 automated tests with isolated temporary HOME/XDG paths.
+### User experience
 
-## Unreleased — Native M4A library support
+- Made `999` the primary command while retaining `juice-lyrics` as a legacy
+  alias and preserving the existing `juice-lyrics` XDG data namespace.
+- Added the keyboard-first Textual interface for Dashboard, Browse, Library,
+  Downloads, and Settings, with global Help and consistent confirmations.
+- Made **Sync Library** the routine one-button Library workflow and added
+  focused Issues, Duplicates, Missing Library, backup/restore, manual match,
+  and metadata-repair views.
 
-* Added recursive, case-insensitive `.m4a` library discovery without broadening
-  support to other MP4-family extensions.
-* Added native M4A title, artist, album, and duration reading through Mutagen.
-* Reused the normal version/title/path/duration matcher and conservatively leaves
-  M4A files without title or artist metadata unmatched.
-* Added standard plain-text MP4 `©lyr` embedding while preserving unrelated atoms,
-  the media payload, and the original audio format.
-* Kept synchronized M4A timing in the authoritative adjacent `.lrc`; no
-  proprietary timing atom or conversion is used.
-* Extended verification/status, state, backup/restore, retention recognition,
-  and rmpc sidecar notification to local M4A files.
-* Verified 310 automated tests with isolated temporary HOME/XDG paths.
+### Library and lyrics
 
-## Unreleased — Native FLAC library support
+- Added native recursive MP3, FLAC, and M4A discovery and format-aware
+  metadata, lyric, status, backup, restore, and verification behavior.
+- Standardized synchronized external lyrics as atomic adjacent
+  same-basename `.lrc` files. No audio conversion or centralized lyric output
+  occurs.
+- Added conservative catalogue backfill, manual identity locks, explicit
+  identity rebuild, stale-state cleanup, and regression coverage for Bandit
+  (`94107`) and 10 Feet (`94102`).
+- Added transactional metadata repair for selected fields with backup,
+  preservation checks, state-conflict protection, rollback, and post-edit
+  manual-lock rebinding.
 
-* Added recursive, case-insensitive MP3 and FLAC library discovery.
-* Added native FLAC title, artist, album, and duration reading through Mutagen.
-* Reused version/title/path/duration matching for FLAC and conservatively leaves
-  FLAC files without title or artist metadata unmatched.
-* Added standard plain-text Vorbis `LYRICS` embedding while preserving unrelated
-  FLAC metadata and the audio stream; no audio conversion occurs.
-* Kept synchronized FLAC timing in the authoritative adjacent `.lrc` because
-  FLAC/Vorbis comments have no interoperable ID3 SYLT equivalent.
-* Extended library sync, verification/status, state, backup/restore, and rmpc
-  sidecar notification to local FLAC files.
-* Generalized rolling backup recognition and restore for FLAC without changing
-  the newest-10 retention policy or invalidating historical MP3 manifests.
-* Verified 298 automated tests with isolated temporary HOME/XDG paths.
+### Downloads and integration
 
-## Unreleased — 2026-08-25
+- Added explicit catalogue browsing, a durable download queue, safe resume,
+  response/size/checksum validation, retry, and post-processing.
+- Kept queue addition separate from confirmed download execution.
+- Added optional rmpc verification/setup and sidecar notification without
+  rewriting rmpc configuration during normal startup or Library Sync.
 
-### Live API path resolution and backend polish
+### Operations and distribution
 
-* Resolved live Juice WRLD API `path` resources into authorized download URLs (`/files/download/?path=...`) with correct URL encoding and destination filename extraction.
-* Preserved default HTTPS security policy with opt-in HTTP fallback.
-* Fixed CLI `Settings` vs `Path` regression in `library.scanner.find_mp3s()`, restoring stability across `status`, `setup`, `sync`, `scan`, `embed`, `verify`, and `rmpc` commands.
-* Fixed safe era metadata formatting in `search` and `info` commands.
-* Added multi-index selection (`--index 1,2,4`), manifest-based bulk acquisition (`acquire manifest`), retry (`acquire retry`), and job deletion (`acquire delete`).
-* Verified end-to-end live API acquisition and CLI workflows.
-* Reached 80 automated unit and integration tests passing.
+- Added bounded read-only `999 doctor` diagnostics with an optional sanitized
+  support report.
+- Added generated Bash, Zsh, and Fish completion from the actual CLI tree.
+- Added deterministic wheel/sdist contents and clean-install acceptance for
+  both console scripts without depending on the source checkout.
+- Added incremental snapshot reuse and state-safety checks to avoid redundant
+  hashing, metadata reads, API searches, and state writes.
 
-### Existing acquisition milestones
+### Compatibility and limitations
 
-* Added the acquisition resource resolver for explicitly selected resources.
-* Added HTTPS-by-default URL validation and safe destination filename handling.
-* Added propagation/validation of expected size and SHA-256 metadata.
-* Added acquisition resolver tests; the project test suite then passed 11 tests.
-* Added duplicate detection for existing resources using checksum, safe destination checks, and title/version matching; the project test suite then passed 15 tests.
-* Added persistent acquisition jobs backed by atomic JSON saves, per-item progress/state, job listing/lookup/deletion, and recovery of interrupted transient states; the project test suite then passed 20 tests.
-* Added a conservative sequential acquisition job runner.
-* Added duplicate checks before download, atomic per-item persistence, progress callbacks, and failure isolation.
-* Added runner tests; the project test suite then passed 23 tests.
-* Added the first integrated acquisition CLI workflow: `acquire search`, `acquire add`, `acquire jobs`, and `acquire run`.
-* Acquisition does not silently crawl the catalogue.
-* Added CLI workflow tests; the project test suite then passed 26 tests.
-* Added post-download integration for acquired MP3s.
-* Reused the established synced/plain lyric embedding and verification pipeline.
-* Generated rmpc-compatible `.lrc` files for acquired files with synced lyrics.
-* Post-processing failures are persisted as job failures.
+- Existing configuration, state, cache, backups, queue, and history remain in
+  the `juice-lyrics` XDG namespace; no automatic migration is required.
+- Acquisition/post-processing remains MP3-focused. FLAC and M4A support is for
+  existing local-library files.
+- Active download cancellation is not included in this beta candidate.
 
-## Unreleased — Architecture
+## [1.4.0] - 2026-08-25
 
-* Began separating reusable engine code from the CLI entrypoint.
-* Added dedicated API, library matching/scanning, lyrics, rmpc, backup, config, and state modules.
-* Kept existing CLI commands compatible through adapters.
+### Backend and acquisition baseline
 
-## Unreleased — Acquisition foundation
+- Resolved live Juice WRLD API path resources into authorized download URLs
+  with correct encoding and filename extraction.
+- Preserved HTTPS-by-default transport with explicit HTTP fallback.
+- Added safe catalogue search/info commands, multi-index and manifest queueing,
+  persistent acquisition jobs, sequential execution, retry, and deletion.
+- Added `.part` downloads, resume, size/checksum validation, maximum-size
+  protection, destination checks, and atomic finalization.
+- Added MP3 lyric post-processing with ID3 SYLT/USLT and rmpc-compatible LRC
+  generation.
+- Established the initial API, scanner, matching, lyrics, rmpc, backup,
+  configuration, state, and acquisition service boundaries.
 
-* Added an isolated `acquisition/` package.
-* Added acquisition item/result/state models.
-* Added explicit-selection manifests.
-* Added a generic HTTPS downloader with temporary `.part` files, retries, optional resume, size/checksum validation, maximum-size protection, and atomic finalization.
-* Added acquisition foundation tests.
-* Kept acquisition transport independent from lyrics/rmpc post-processing.
+[2.0.0b1]: https://github.com/NotAI-fr/juice-lyrics/compare/v1.4.0-backend-complete...v2-redesign
+[1.4.0]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v1.4.0-backend-complete

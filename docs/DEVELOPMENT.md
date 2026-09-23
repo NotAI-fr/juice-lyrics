@@ -2,7 +2,9 @@
 
 ## Baseline
 
-The 1.4.0 release is the known-good functional baseline.
+The `main` branch and `v1.4.0-backend-complete` tag are the stable v1.4
+baseline. Development of the redesigned product remains on `v2-redesign`; its
+current unreleased beta candidate version is `2.0.0b1`.
 
 Run:
 

@@ -15,6 +15,7 @@ code and tests if a later working tree disagrees with this document.
 - Python package: `juice_lyrics`
 - Distribution: `juice-wrld-lyrics`
 - XDG storage namespace: `juice-lyrics`
+- Unreleased beta candidate: `2.0.0b1` (no release or tag yet)
 - One-button Sync baseline: `31ebaf2` (410 tests plus 14 isolated recovery
   smoke tests, compileall, and `git diff --check`).
 - Manual identity-lock milestone verification: 424 full-suite tests and 34
@@ -66,6 +67,13 @@ code and tests if a later working tree disagrees with this document.
   the checkout passed imports, both console scripts, help/version/Doctor,
   completion generation, TUI launch/exit, reinstall, uninstall, and reinstall
   checks. Their temporary application HOME/XDG roots remained untouched.
+- GitHub/beta-readiness preparation selected `2.0.0b1`, consolidated the
+  changelog, added a synthetic-data TUI preview and explicit release checklist,
+  and kept `main` as the stable v1.4 default branch. The isolated build produced
+  correctly versioned wheel/sdist artifacts; 34 focused tests passed with one
+  Fish-environment skip and the full suite passed 533 tests with the same skip.
+  Publishing, tagging, and merging remain deliberately undone pending manual
+  acceptance and the new GitHub workflow result.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -370,8 +378,9 @@ The installable distribution remains `juice-wrld-lyrics`; its primary console
 script is `999`, the `juice-lyrics` console script remains a compatibility
 alias, and the import/XDG namespaces remain `juice_lyrics` and `juice-lyrics`.
 The package version has one code authority (`juice_lyrics.__version__`) and is
-resolved dynamically into wheel/sdist metadata. No beta version bump was made
-as part of packaging acceptance.
+resolved dynamically into wheel/sdist metadata. The v2 development branch now
+uses the PEP 440 prerelease version `2.0.0b1`; this distinguishes its artifacts
+from stable v1.4 without claiming that a release has been published.
 
 `python -m build` produces a platform-independent wheel and a source
 distribution containing the runtime Python packages, README, license, and
@@ -391,6 +400,27 @@ invoked isolated `999`/`juice-lyrics` script is now reported instead of a stale
 same-named command elsewhere on `PATH`. Bash and Zsh parsed installed generated
 completion successfully. Fish generation passed deterministic coverage, but
 the acceptance host does not have Fish installed for an external syntax pass.
+
+## GitHub and beta readiness
+
+The branch README now leads with beta status, the normal user workflow, an
+actual TUI screenshot rendered from synthetic data, safety boundaries, and
+source-independent installation guidance. It clearly identifies the project as
+unofficial and states that no music or lyrics are distributed. The screenshot
+contains only generic paths/counts and no real user data.
+
+`docs/CHANGELOG.md` has one coherent `2.0.0b1` prerelease section instead of
+several competing Unreleased milestone headings. The executable release gate is
+`docs/BETA_RELEASE_CHECKLIST.md`: it covers version/date consistency, clean
+artifacts, isolated installs, manual media safety acceptance, privacy review,
+release notes/checksums, and explicit stop conditions.
+
+GitHub's default branch remains `main`, presenting the stable v1.4 baseline.
+The v2 presentation is prepared on `v2-redesign`; it must be reviewed through a
+pull request before any merge. No release, tag, package upload, or branch merge
+has been performed. The repository description/topics are populated, Issues
+are enabled, and GitHub detects the MIT license. The repository is currently
+private; any visibility change is an explicit remaining release decision.
 
 ## Final performance and reliability acceptance
 
@@ -430,8 +460,9 @@ and stale State/Catalogue Issues do not remain after the controlled edit.
   Remove it only as a small tested code-cleanup change.
 - The old `lyrics_dir` configuration is compatibility-only and does not migrate
   historical centralized files.
-- Public GitHub presentation and the beta release still need their dedicated
-  final passes. No package has been published and no release tag exists.
+- The beta still needs the manual acceptance and release procedure in
+  `docs/BETA_RELEASE_CHECKLIST.md`. No package has been published and no release
+  tag exists.
 - Metadata repair has safe TUI selection/apply integration and passed isolated
   real-copy acceptance for MP3, FLAC, and M4A. Wider beta use should remain
   conservative because tag combinations in the wild are unbounded.
@@ -448,8 +479,9 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. GitHub presentation/distribution
-2. Beta release
+1. Complete manual beta acceptance
+2. Review and merge `v2-redesign` through a pull request
+3. Create the approved beta pre-release and attach verified artifacts
 
 ## Resume safely
 

@@ -25,7 +25,7 @@ def test_distribution_metadata_has_one_version_authority_and_current_entry_point
     assert project["tool"]["setuptools"]["dynamic"]["version"] == {
         "attr": "juice_lyrics.__version__"
     }
-    assert __version__ == "1.4.0"
+    assert __version__ == "2.0.0b1"
     assert project["project"]["scripts"] == {
         "999": "juice_lyrics.cli:main",
         "juice-lyrics": "juice_lyrics.cli:main",
@@ -42,6 +42,7 @@ def test_distribution_metadata_uses_current_license_and_bounded_dependencies():
         "mutagen>=1.47,<2.0",
         "textual>=1.0,<2.0",
     ]
+    assert "Development Status :: 4 - Beta" in project["project"]["classifiers"]
 
 
 def test_source_distribution_manifest_excludes_repository_only_material():

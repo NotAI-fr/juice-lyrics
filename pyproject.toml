@@ -19,6 +19,7 @@ authors = [
 ]
 keywords = ["juice-wrld", "lyrics", "mp3", "flac", "m4a", "id3", "sylt", "uslt", "rmpc"]
 classifiers = [
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.11",
@@ -26,7 +27,9 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
   "Operating System :: POSIX :: Linux",
+  "Topic :: Multimedia :: Sound/Audio",
 ]
 
 [project.scripts]

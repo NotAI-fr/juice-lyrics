@@ -11,6 +11,7 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Python package: `juice_lyrics`
 - Distribution: `juice-wrld-lyrics`
 - XDG storage namespace: `juice-lyrics` (do not rename or duplicate it)
+- Current beta candidate version: `2.0.0b1` (not yet released or tagged)
 - Active development branch: `v2-redesign`
 - Purpose: a Linux CLI/TUI for a local Juice WRLD library, catalogue browsing,
   safe lyric maintenance, downloads, backups, and optional rmpc integration.
@@ -79,6 +80,8 @@ git diff --check
 For packaging milestones, build with `python -m build` and clean-install both
 the wheel and sdist in temporary environments outside the checkout. Never test
 installation by replacing the user's real pipx environment.
+For release preparation, follow `docs/BETA_RELEASE_CHECKLIST.md`. Do not merge
+to `main`, create a tag/release, or publish a package without explicit approval.
 
 Normal Library use is `999` → Library → `s` (**Sync Library**). Press `?` for
 the implemented key map. Common safe routine work should be automatic/simple;
