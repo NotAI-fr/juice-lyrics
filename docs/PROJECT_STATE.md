@@ -72,8 +72,9 @@ code and tests if a later working tree disagrees with this document.
   and kept `main` as the stable v1.4 default branch. The isolated build produced
   correctly versioned wheel/sdist artifacts; 34 focused tests passed with one
   Fish-environment skip and the full suite passed 533 tests with the same skip.
-  Publishing, tagging, and merging remain deliberately undone pending manual
-  acceptance and the new GitHub workflow result.
+  GitHub's Ubuntu 24.04 matrix also passed the full checks on Python 3.11 and
+  3.14. Publishing, tagging, and merging remain deliberately undone pending
+  manual acceptance.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
