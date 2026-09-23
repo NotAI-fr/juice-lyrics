@@ -5,10 +5,66 @@ Target: `2.0.0b1` (PEP 440) / Git tag `v2.0.0b1`.
 This checklist prepares a release; it does not authorize publishing, tagging,
 or merging. `main` remains the stable v1.4 baseline until the beta is accepted.
 
+## Focused acceptance evidence — 2026-09-23
+
+Automation is appropriate for repository/version checks, guarded test suites,
+isolated builds and installs, generated completion syntax, generated media
+fixtures, read-only live catalogue requests, queue creation that does not run a
+download, and before/after integrity manifests. Human involvement remains
+required for visual/keyboard UX judgment, an actual explicitly approved
+temporary download, GitHub rendering and privacy review, local rmpc setup,
+support-report disclosure review, repository visibility, and an independent
+pipx tester.
+
+Verified in this pass:
+
+- Starting point was clean `v2-redesign` at `55b4b4b`, equal to
+  `origin/v2-redesign`. The existing pipx commands at
+  `~/.local/share/pipx/venvs/juice-wrld-lyrics/bin/` were inspected only; both
+  reported `999 2.0.0b1` and were not replaced.
+- Live `999 search Bandit --refresh` returned the released recording as
+  `94107`. A live isolated acquisition search and queue add created one pending
+  job under `/tmp` and no media file. This exposed and fixed incorrect
+  positional forwarding of acquisition `--refresh`, which had sent
+  `page=True` and received HTTP 404.
+- The isolated focused workflow pass covered Browse/Downloads, confirmed
+  whole-queue control flow with non-network executors, Sync new/changed/
+  unchanged/removed/offline behavior, manual locks, Issues, Duplicates,
+  Missing Library, MP3/FLAC/M4A metadata repair, backup/restore, and the
+  Bandit/10 Feet matcher regressions: **256 passed**.
+- The post-fix full suite passed **534 tests with one understood skip** because
+  Fish is not installed. `compileall` and `git diff --check` passed.
+- Fresh wheel and sdist builds were inspected and installed independently
+  outside the checkout. Both commands, help/version, Doctor, imports,
+  Bash/Zsh/Fish completion generation, Bash/Zsh syntax, and wheel
+  force-reinstall/uninstall/reinstall passed. Fish syntax and independent
+  artifact `q` exit still need an installed Fish shell/manual terminal check.
+- Both artifact TUIs visibly launched against empty temporary libraries. The
+  automated suite covers normal launch/quit, but this pass's PTY harness could
+  not reliably inject `q`; manual launch/navigation/exit remains below.
+- The synthetic screenshot was visually inspected and searched for embedded
+  sensitive strings; it contains only synthetic counts and `Music/Juice WRLD`.
+  Artifact contents contain the license, README, metadata, and runtime modules
+  with no tests, docs, caches, bytecode, secrets, or checkout paths.
+- Before/after manifests confirmed no change to `/home/nobloat/Music` or the
+  real `juice-lyrics` config, data (including state/backups/queue), or cache.
+
+Remaining manual acceptance:
+
+- Run the installed app in a normal terminal and judge Help, navigation,
+  pagination/details, queue/Retry, confirmed temporary download, and quit.
+- Retry live `10 Feet` identification and confirm `94102`; two requests in this
+  pass received HTTP 530, while the deterministic matcher regression passed.
+- Exercise the Library workflows below on user-approved disposable copies,
+  including one representative MP3, FLAC, and M4A plus a visible restore.
+- Review rmpc verify/setup separately, inspect a support report before sharing,
+  preview README links/image on GitHub, decide repository visibility, and get
+  an independent supported-Linux pipx install/upgrade report.
+
 ## 1. Repository and metadata
 
 - [ ] `v2-redesign` is clean, pushed, and reviewed against `main`.
-- [ ] `juice_lyrics.__version__`, `999 --version`, wheel metadata, and the
+- [x] `juice_lyrics.__version__`, `999 --version`, wheel metadata, and the
       changelog all say `2.0.0b1`.
 - [ ] The changelog heading has the actual release date instead of
       `Unreleased`.
@@ -16,9 +72,9 @@ or merging. `main` remains the stable v1.4 baseline until the beta is accepted.
       attached wheel, not the moving development branch. Before any package-
       index publication, give its long description an immutable public image
       URL or omit the screenshot there.
-- [ ] The synthetic screenshot contains no username, home path, token, state,
+- [x] The synthetic screenshot contains no username, home path, token, state,
       song list, or real-library data.
-- [ ] Distribution contents contain the license, README, metadata, and every
+- [x] Distribution contents contain the license, README, metadata, and every
       runtime module, with no tests, caches, secrets, or checkout paths.
 
 ## 2. Automated release candidate checks
@@ -32,15 +88,15 @@ git diff --check
 python -m build
 ```
 
-- [ ] Full test suite passes with only understood environment skips.
-- [ ] Wheel and sdist install independently in new environments outside the
+- [x] Full test suite passes with only understood environment skips.
+- [x] Wheel and sdist install independently in new environments outside the
       checkout, with no source tree on `PYTHONPATH`.
-- [ ] `999 --help`, `999 --version`, `juice-lyrics --version`, and
+- [x] `999 --help`, `999 --version`, `juice-lyrics --version`, and
       `999 doctor` work from both artifacts.
 - [ ] TUI launches and exits from both artifacts.
-- [ ] Bash/Zsh/Fish completion generation succeeds; syntax is checked where
+- [x] Bash/Zsh/Fish completion generation succeeds; syntax is checked where
       the shell is installed.
-- [ ] Force-reinstall, uninstall, and reinstall leave the commands and imports
+- [x] Force-reinstall, uninstall, and reinstall leave the commands and imports
       in the expected state without touching application XDG data.
 - [ ] The GitHub `Verify` workflow passes on supported oldest/current Python
       versions for the release pull request.

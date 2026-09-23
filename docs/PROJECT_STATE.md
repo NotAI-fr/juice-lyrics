@@ -75,6 +75,16 @@ code and tests if a later working tree disagrees with this document.
   GitHub's Ubuntu 24.04 matrix also passed the full checks on Python 3.11 and
   3.14. Publishing, tagging, and merging remain deliberately undone pending
   manual acceptance.
+- A focused beta acceptance pass on 2026-09-23 used only temporary HOME/XDG
+  roots, generated media fixtures, and an isolated live queue. It fixed
+  `acquire search --refresh` incorrectly forwarding refresh as `page=True`.
+  The focused pass completed 256 tests; the post-fix suite completed 534 tests
+  with the expected missing-Fish skip. Fresh wheel/sdist installs, command and
+  completion smoke checks, compileall, and diff hygiene passed. Before/after
+  manifests proved the real music, config, state/backups/queue, and cache were
+  unchanged. Live Bandit returned `94107`; live 10 Feet remained manual after
+  two HTTP 530 responses. Detailed evidence and the remaining human checks are
+  recorded in `docs/BETA_RELEASE_CHECKLIST.md`.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.

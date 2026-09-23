@@ -496,6 +496,41 @@ def test_cli_acquire_search_with_api_path_shows_downloadable(tmp_path, monkeypat
     assert "NO DOWNLOAD URL" not in output
 
 
+def test_cli_acquire_search_forwards_filters_and_refresh_without_changing_page(
+    tmp_path, monkeypatch, capsys
+):
+    import juice_lyrics.cli as cli
+
+    calls = []
+
+    def search(
+        settings,
+        query,
+        *,
+        category=None,
+        era=None,
+        page=1,
+        page_size=50,
+        refresh=False,
+    ):
+        calls.append((query, category, era, page, page_size, refresh))
+        return {"results": []}
+
+    monkeypatch.setattr(cli, "search_api_advanced", search)
+    args = cli.build_parser().parse_args([
+        "--path", str(tmp_path),
+        "acquire", "search", "Bandit",
+        "--category", "released",
+        "--era", "Mainstream",
+        "--refresh",
+    ])
+    settings = cli.load_settings(str(tmp_path), None)
+
+    assert cli.command_acquire(args, settings, False) == 1
+    assert calls == [("Bandit", "released", "Mainstream", 1, 50, True)]
+    assert "No API results found." in capsys.readouterr().out
+
+
 def test_cli_acquire_add_with_live_api_path_creates_job(tmp_path, monkeypatch, capsys):
     import juice_lyrics.cli as cli
 
@@ -1268,4 +1303,3 @@ def test_state_synchronization_failure_marks_acquisition_item_failed(tmp_path, m
     assert loaded is not None
     assert loaded.items[0].state is AcquisitionState.FAILED
     assert "Failed to synchronize library state" in (loaded.items[0].error or "")
-

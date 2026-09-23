@@ -1287,7 +1287,13 @@ def _acquisition_resource_url(resource: dict[str, Any], api_base: str = DEFAULT_
 
 
 def command_acquire_search(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    data = search_api_advanced(settings, args.query, args.category, args.era, args.refresh)
+    data = search_api_advanced(
+        settings,
+        args.query,
+        category=args.category,
+        era=args.era,
+        refresh=args.refresh,
+    )
     results = data.get("results", []) if isinstance(data, dict) else []
     if not isinstance(results, list) or not results:
         print("No API results found.")
