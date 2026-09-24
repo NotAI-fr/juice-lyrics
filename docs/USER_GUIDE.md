@@ -114,7 +114,8 @@ contact the catalogue merely to display the list. Each affected track appears
 once with its combined catalogue, lyric, verification, metadata, or state
 reasons. From an issue, use `c` for manual matching, `l` for the existing
 selected lyric-refresh preview, `v` to verify, or `s` to Sync Library. A valid
-manual lock stays healthy; if a catalogue-backed action later observes that its
+manual lock stays out of follow-ups; if a catalogue-backed action later
+observes that its
 chosen recording is unavailable, the lock is preserved and an Issue explains
 the problem.
 
@@ -139,7 +140,7 @@ Library action.
 **Fully covered** describes local lyric health, not catalogue identity. A FLAC
 or M4A file is fully covered when it has embedded plain lyrics and its adjacent
 `.lrc` contains timestamped lyric lines. MP3 keeps its existing synchronized
-embedded-lyrics requirement. A healthy track may still show **Catalogue match:
+embedded-lyrics requirement. A locally covered track may still show **Catalogue match:
 Unknown**; that only means automatic refresh cannot identify a safe catalogue
 record yet. It appears in Issues as an identity decision, not as a claim that
 the existing lyrics are broken.

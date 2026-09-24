@@ -5,6 +5,55 @@ Target: `2.0.0b1` (PEP 440) / Git tag `v2.0.0b1`.
 This checklist prepares a release; it does not authorize publishing, tagging,
 or merging. `main` remains the stable v1.4 baseline until the beta is accepted.
 
+## Real-library correctness evidence — 2026-09-24
+
+This pass started from clean `v2-redesign` at `b3e740a`, equal to
+`origin/v2-redesign`. The installed pipx commands were inspected only: `999`
+and `juice-lyrics` both reported `2.0.0b1`; neither was replaced.
+
+The real library diagnostic was strictly read-only and made no catalogue
+requests. Before/after SHA-256 and filesystem-metadata manifests confirmed each
+diagnostic made no changes to real music, config, data (including state,
+backups, and queue), or cache. Concurrent external activity added eight MP3s
+during the long test run; no pre-existing music entry changed, and the final read-only
+snapshot was stable. Sanitized final aggregate findings:
+
+- 195 readable tracks: 83 MP3, 43 FLAC, and 69 M4A; zero scan warnings,
+  unreadable/damaged containers, missing required title/artist metadata,
+  unavailable durations, or verification errors.
+- 141 tracks were fully covered and 185 had no local lyric follow-up. The ten
+  local lyric follow-ups were nine optional unmanaged embedded lyrics and one
+  invalid existing LRC; none was evidence of damaged audio.
+- 76 tracks had Unknown catalogue identity. State classified 121 current, 40
+  new, 34 changed, and zero invalid tracks. All 76 Unknown checks were due;
+  none was hidden by a retry TTL or an API-unavailable marker.
+- The old UI produced 76 `!` rows even though every row was warning severity
+  and there were zero genuine errors.
+  It also replaced the Sync action on new/changed Unknown tracks with manual
+  matching. Those misleading behaviors are fixed: warnings use `~`, `!` is
+  error-only, the headline separates follow-ups/errors/local lyrics/Unknown
+  identity, and new/changed rows retain the Sync action.
+- Normal Sync can record the 74 new/changed paths and attempt 76 due Unknown
+  identities when the catalogue is available. It does not repair the
+  ten lyric/LRC conditions, modify media, or delete historical state. There
+  were zero explicit safe stale-state cleanup candidates among 235 stored
+  records.
+- Offline/provider-wide 503, 530, Cloudflare tunnel, DNS, and invalid-JSON
+  failures now stop repeated requests for the rest of that Sync pass. Local
+  health remains available, pending/Unknown counts are reported, and trusted
+  identities and state are not erased. Ambiguous or genuinely empty searches
+  still remain conservatively Unknown and use the normal retry TTL.
+
+Focused regressions passed **141 tests**. The one required post-change full
+suite passed **540 tests with one understood skip** because Fish is not
+installed. `compileall` and `git diff --check` passed.
+
+Remaining human judgment is unchanged: visually assess the revised Library
+labels/markers and keyboard flow in a normal terminal; perform an explicitly
+approved temporary download; retry live 10 Feet when the provider is healthy;
+review rmpc setup and a support report; preview GitHub presentation/privacy;
+and obtain an independent supported-Linux pipx installation report.
+
 ## Focused acceptance evidence — 2026-09-23
 
 Automation is appropriate for repository/version checks, guarded test suites,

@@ -85,7 +85,7 @@ def test_new_audio_is_discovered_identified_and_unchanged_repeat_skips_work(tmp_
         settings, previous_snapshot=first.snapshot, state_file=state_file, dependencies=deps
     )
 
-    assert second.summary == "Library is up to date"
+    assert second.summary == "Local library is up to date"
     assert counts == before
 
     saved = json.loads(state_file.read_text(encoding="utf-8"))
@@ -100,7 +100,7 @@ def test_new_audio_is_discovered_identified_and_unchanged_repeat_skips_work(tmp_
         dependencies=deps,
     )
 
-    assert third.summary == "Library is up to date"
+    assert third.summary == "Local library is up to date"
     assert counts == before_unrelated_change
     assert json.loads(state_file.read_text(encoding="utf-8"))["unrelated_custom_state"] == {
         "keep": True
@@ -192,6 +192,9 @@ def test_offline_sync_preserves_state_and_local_health(tmp_path):
     result = sync_library_index(Settings(music_dir=music), state_file=state_file, dependencies=deps)
 
     assert result.error is not None and result.snapshot.total_track_count == 1
+    assert "Catalogue identification unavailable" in result.summary
+    assert "1 changed pending" in result.summary
+    assert "1 catalogue unknown" in result.summary
     assert result.snapshot.tracks[0].match_status is LibraryMatchStatus.UNMATCHED
     assert state_file.read_bytes() == before
     assert path.read_bytes() == b"audio"
@@ -232,7 +235,8 @@ def test_empty_search_stays_unknown_and_is_not_repeated_within_cache_ttl(tmp_pat
 
     second = sync_library_index(settings, previous_snapshot=first.snapshot, state_file=state_file, dependencies=deps)
 
-    assert second.unknown == 1 and second.summary == "Library is up to date"
+    assert second.unknown == 1
+    assert second.summary == "Local library up to date · 1 catalogue unknown"
     assert counts == before
     assert path.read_bytes() == b"audio"
 
@@ -386,3 +390,44 @@ def test_one_catalogue_failure_does_not_lose_other_safe_matches(tmp_path):
         "New.mp3": LibraryMatchStatus.MATCHED,
         "Old.mp3": LibraryMatchStatus.UNMATCHED,
     }
+
+
+@pytest.mark.parametrize(
+    "provider_error",
+    (
+        "API returned HTTP 503: Service Unavailable",
+        "API returned HTTP 530: Origin DNS Error",
+        "Cloudflare Tunnel failure",
+        "The API returned invalid JSON",
+    ),
+)
+def test_provider_wide_failure_stops_repeated_catalogue_requests(
+    tmp_path, provider_error
+):
+    music = tmp_path / "music"
+    music.mkdir()
+    for name in ("One.mp3", "Two.mp3", "Three.mp3"):
+        (music / name).write_bytes(name.encode())
+    state_file = tmp_path / "state.json"
+    calls = []
+
+    def unavailable(settings, query, refresh=False):
+        calls.append(query)
+        raise RuntimeError(provider_error)
+
+    result = sync_library_index(
+        Settings(music_dir=music),
+        state_file=state_file,
+        dependencies=_dependencies(
+            state_file,
+            searcher=unavailable,
+            counts=_counts(),
+        ),
+    )
+
+    assert calls == ["One"]
+    assert result.failed == 3
+    assert result.unknown == 3
+    assert "3 new pending" in result.summary
+    assert "3 catalogue unknown" in result.summary
+    assert not state_file.exists()

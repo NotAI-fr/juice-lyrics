@@ -267,8 +267,8 @@ Example:
 
 Library
 
-315 tracks · 300 healthy · 15 issues
-Fully covered 287 · Catalogue unknown 6 · MP3 170 · FLAC 85 · M4A 60
+315 tracks · 15 follow-ups · 2 errors
+Lyrics to improve 9 · Fully covered 287 · Catalogue unknown 6 · MP3 170 · FLAC 85 · M4A 60
 
 Rental.flac
 Catalogue match  ✓

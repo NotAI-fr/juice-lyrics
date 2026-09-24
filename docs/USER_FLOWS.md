@@ -415,11 +415,11 @@ Summary:
 Library synced
 
 181 tracks
-4 new
-1 changed
+4 new recorded
+1 changed refreshed
 2 removed
 37 newly matched
-15 need attention
+15 catalogue unknown
 
 
 ---
@@ -428,7 +428,10 @@ Sync runs in the background without confirmation. It avoids expensive work for
 unchanged files, identifies only confident Unknowns, retires removed paths in
 state, and refreshes local health. It never edits audio, embedded lyrics,
 sidecars, backups, downloads, or rmpc configuration. Offline or ambiguous
-catalogue results remain Unknown without making the local Library unusable.
+catalogue results remain Unknown without making the local Library unusable. The
+Library headline separately reports follow-ups, genuine errors, local lyrics to
+improve, and catalogue-Unknown tracks; an Unknown identity is not presented as
+damaged audio.
 
 To change lyrics, the separate `m` action first presents a non-mutating
 maintenance preview and uses cancel-first confirmation before applying changes.

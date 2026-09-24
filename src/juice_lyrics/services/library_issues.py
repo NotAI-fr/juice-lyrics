@@ -113,7 +113,8 @@ def _issue_for_track(track: LibraryTrack) -> LibraryIssue | None:
         _append_once(details, "No catalogue identity has been established safely.")
         if summary is None:
             summary = "Catalogue match unknown"
-        action = LibraryIssueAction.MANUAL_MATCH
+        if action is None:
+            action = LibraryIssueAction.MANUAL_MATCH
 
     metadata_problem = (
         "metadata is missing" in warning
@@ -144,9 +145,15 @@ def _issue_for_track(track: LibraryTrack) -> LibraryIssue | None:
 
     if track.lyric_status is LibraryLyricStatus.NONE:
         categories.append(LibraryIssueCategory.LYRICS)
-        _append_once(details, "Supported embedded lyrics are missing or could not be read.")
+        if verification_problem:
+            _append_once(details, "Supported embedded lyrics could not be verified.")
+        else:
+            _append_once(
+                details,
+                "No 999-managed embedded lyrics are present; this does not mean the audio is damaged.",
+            )
         if not verification_problem:
-            summary = summary or "Embedded lyrics missing"
+            summary = summary or "Optional lyrics are not managed yet"
         if action is None or action is LibraryIssueAction.VERIFY:
             action = LibraryIssueAction.REFRESH_LYRICS
     if track.lrc_status is LibraryLrcStatus.INVALID:

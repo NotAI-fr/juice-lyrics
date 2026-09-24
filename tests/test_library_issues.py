@@ -90,6 +90,29 @@ def test_unknown_track_is_one_actionable_catalogue_issue(tmp_path):
     assert issue.action is LibraryIssueAction.MANUAL_MATCH
 
 
+@pytest.mark.parametrize(
+    "state_status",
+    (LibraryStateStatus.NEW, LibraryStateStatus.CHANGED),
+)
+def test_unknown_new_or_changed_track_tells_user_to_sync_first(tmp_path, state_status):
+    track = _track(
+        tmp_path,
+        "Pending.flac",
+        media_format="FLAC",
+        match_status=LibraryMatchStatus.UNMATCHED,
+        matched_title=None,
+        state_status=state_status,
+    )
+
+    issue = _health(tmp_path, track).issues[0]
+
+    assert issue.categories == (
+        LibraryIssueCategory.STATE,
+        LibraryIssueCategory.CATALOGUE,
+    )
+    assert issue.action is LibraryIssueAction.SYNC
+
+
 def test_valid_manual_lock_is_healthy_but_observed_unavailable_lock_is_issue(tmp_path):
     locked = _track(
         tmp_path,
@@ -141,6 +164,8 @@ def test_missing_lyrics_invalid_lrc_and_verification_failure_are_single_rows(tmp
     assert len(health.issues) == 3
     assert health.issues[0].categories == (LibraryIssueCategory.LYRICS,)
     assert health.issues[0].severity is LibraryIssueSeverity.WARNING
+    assert health.issues[0].summary == "Optional lyrics are not managed yet"
+    assert "does not mean the audio is damaged" in health.issues[0].details[0]
     assert health.issues[1].categories == (LibraryIssueCategory.LYRICS,)
     assert health.issues[2].categories == (
         LibraryIssueCategory.VERIFICATION,

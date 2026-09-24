@@ -33,6 +33,7 @@ from ...services.library_issues import (
     LibraryIssue,
     LibraryIssueAction,
     LibraryIssueCategory,
+    LibraryIssueSeverity,
     get_library_health,
 )
 from ...services.library_duplicates import (
@@ -124,7 +125,7 @@ _FILTER_OPTIONS = (
     ("Synced lyrics", LibraryFilter.SYNCED.value),
     ("Plain lyrics", LibraryFilter.PLAIN.value),
     ("No lyrics", LibraryFilter.NO_LYRICS.value),
-    ("Needs attention", LibraryFilter.ATTENTION.value),
+    ("Lyrics to improve", LibraryFilter.ATTENTION.value),
 )
 
 
@@ -452,10 +453,10 @@ class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
         issues = self.health.issues
         self.query_one("#library-issues-summary", Static).update(
             f"{self.health.snapshot.total_track_count} tracks · "
-            f"{self.health.healthy_count} healthy · {self.health.issue_count} issues"
+            f"{self.health.healthy_count} issue-free · {self.health.issue_count} follow-ups"
         )
         if not issues:
-            self.query_one("#library-issues-list", Static).update("Library is healthy")
+            self.query_one("#library-issues-list", Static).update("No follow-ups")
             self.query_one("#library-issues-detail", Static).update(
                 "No library issues found.\n\nSync Library will keep this view current."
             )
@@ -1102,7 +1103,8 @@ class MaintenanceDialog(ModalScreen[LibrarySyncPlan | None]):
         problems = self.plan.unresolved_files + self.plan.no_lyrics_files + self.plan.analysis_failures
         count = self.plan.ready_files
         body = (
-            f"{count + problems} song{'s' if count + problems != 1 else ''} need attention\n\n"
+            f"{count} song{'s' if count != 1 else ''} can be updated · "
+            f"{problems} cannot be updated now\n\n"
             f"{self.plan.synced_files:2}  Synced lyrics available\n"
             f"{self.plan.plain_files:2}  Plain lyrics available\n"
             f"{self.plan.unresolved_files:2}  Could not be matched\n"
@@ -1472,8 +1474,9 @@ class LibraryScreen(HubScreen):
 
     def compose_content(self) -> Iterable[Widget]:
         yield Static(
-            "0 tracks · 0 healthy · 0 issues\n"
-            "Fully covered 0 · Catalogue unknown 0 · MP3 0 · FLAC 0 · M4A 0",
+            "0 tracks · 0 follow-ups · 0 errors\n"
+            "Lyrics to improve 0 · Fully covered 0 · Catalogue unknown 0 · "
+            "MP3 0 · FLAC 0 · M4A 0",
             id="library-summary",
             markup=False,
         )
@@ -1779,9 +1782,13 @@ class LibraryScreen(HubScreen):
             self._set_status(completion[0], error=completion[1])
         elif action == "verify":
             health = get_library_health(outcome.snapshot)
+            errors = sum(
+                issue.severity is LibraryIssueSeverity.ERROR
+                for issue in health.issues
+            )
             self._set_status(
-                f"Verification complete · {health.healthy_count} healthy · "
-                f"{health.issue_count} issues"
+                f"Verification complete · {health.issue_count} follow-ups · "
+                f"{errors} errors"
             )
             if outcome.snapshot.needs_attention_count:
                 self.query_one("#library-filter", Select).value = LibraryFilter.ATTENTION.value
@@ -1852,7 +1859,7 @@ class LibraryScreen(HubScreen):
             self.query_one("#library-preview", Static).update(
                 f"Preview failed: {outcome.error or 'Unknown preview error'} · Preview only — no files changed"
             )
-            self._set_status("Sync preview unavailable.", error=True)
+            self._set_status("Maintenance preview unavailable.", error=True)
             self._render_details()
             return
         self.preview = outcome.plan
@@ -1912,9 +1919,13 @@ class LibraryScreen(HubScreen):
         if snapshot is None:
             return
         health = get_library_health(snapshot)
+        errors = sum(
+            issue.severity is LibraryIssueSeverity.ERROR for issue in health.issues
+        )
         self.query_one("#library-summary", Static).update(
-            f"{snapshot.total_track_count} tracks · {health.healthy_count} healthy · "
-            f"{health.issue_count} issues\nFully covered {snapshot.fully_covered_count} · "
+            f"{snapshot.total_track_count} tracks · {health.issue_count} follow-ups · "
+            f"{errors} errors\nLyrics to improve {snapshot.needs_attention_count} · "
+            f"Fully covered {snapshot.fully_covered_count} · "
             f"Catalogue unknown {snapshot.unmatched_count} · "
             f"MP3 {snapshot.format_count('MP3')} · "
             f"FLAC {snapshot.format_count('FLAC')} · M4A {snapshot.format_count('M4A')}"
@@ -1953,20 +1964,26 @@ class LibraryScreen(HubScreen):
 
     def _render_tracks(self) -> None:
         self.query_one("#library-tracks-title", Static).update(
-            f"Tracks · {len(self.filtered_tracks)} of {self.snapshot.total_track_count if self.snapshot else 0}"
+            f"Tracks · {len(self.filtered_tracks)} of "
+            f"{self.snapshot.total_track_count if self.snapshot else 0} · ! error · ~ follow-up"
         )
         if not self.filtered_tracks:
             message = "No tracks match the local search or filter." if self.snapshot and self.snapshot.tracks else "No supported audio tracks found."
             self.query_one("#library-tracks", Static).update(message)
             return
         lines = []
-        issue_references = {
-            issue.track.reference
+        issues_by_reference = {
+            issue.track.reference: issue
             for issue in get_library_health(self.snapshot).issues
-        } if self.snapshot is not None else set()
+        } if self.snapshot is not None else {}
         for index, track in enumerate(self.filtered_tracks):
             marker = ">" if index == self.selected_index else " "
-            attention = "!" if track.reference in issue_references else " "
+            issue = issues_by_reference.get(track.reference)
+            attention = (
+                "!"
+                if issue is not None and issue.severity is LibraryIssueSeverity.ERROR
+                else "~" if issue is not None else " "
+            )
             lines.append(
                 f"{marker}{attention} {track.title[:30]:30} · {_match_label(track):9} · "
                 f"{_lyric_label(track.lyric_status):13} · LRC {_lrc_label(track.lrc_status)}"
@@ -2013,7 +2030,7 @@ class LibraryScreen(HubScreen):
             lines.extend(("", f"Warning        {track.warning}"))
         if track.match_status is LibraryMatchStatus.UNMATCHED:
             lines.extend(("", "Automatic refresh requires a catalogue match."))
-        lines.extend(("", "Sync preview", _track_preview_text(self.preview, track.path)))
+        lines.extend(("", "Lyric maintenance preview", _track_preview_text(self.preview, track.path)))
         details.update(Text("\n".join(lines), overflow="ellipsis"))
 
     def _update_position(self) -> None:
@@ -2536,7 +2553,7 @@ class LibraryScreen(HubScreen):
         updated_word = "song" if result.updated_files == 1 else "songs"
         message = f"Library updated · {result.updated_files} {updated_word} updated"
         if remaining:
-            message += f" · {remaining} still need attention"
+            message += f" · {remaining} could not be updated"
         if result.warnings:
             message += f" · {result.warnings[0]}"
         self._completion_message = (message, bool(result.failed_files))
@@ -2673,7 +2690,7 @@ def _coverage_label(track: LibraryTrack) -> str:
     if track.fully_covered:
         return "Fully covered"
     if track.lyric_status is LibraryLyricStatus.NONE:
-        return "Missing lyrics"
+        return "No managed lyrics"
     if track.lrc_status in {LibraryLrcStatus.MISSING, LibraryLrcStatus.INVALID}:
         return "Synced LRC needs attention"
     if track.lyric_status is LibraryLyricStatus.PLAIN:
@@ -2690,7 +2707,7 @@ def _duration(seconds: float | None) -> str:
 
 def _track_preview_text(plan: LibrarySyncPlan | None, path: Path) -> str:
     if plan is None:
-        return "  Not generated. Press s for a read-only preview."
+        return "  Not generated. Press l for this song or m for the library."
     track = next((item for item in plan.tracks if item.path == path), None)
     if track is None:
         return "  Track was not present in the latest preview."

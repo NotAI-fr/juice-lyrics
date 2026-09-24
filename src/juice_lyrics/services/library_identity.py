@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Any
 
 from ..api.client import search_song_names
@@ -53,6 +54,26 @@ def _state_bytes(path: Path) -> bytes | None:
         return None
 
 
+def _provider_unavailable(exc: Exception) -> bool:
+    """Recognize provider-wide failures that should trip the Sync circuit breaker."""
+
+    message = (str(exc) or type(exc).__name__).casefold()
+    http_status = re.search(r"api returned http\s+(\d{3})", message)
+    if http_status is not None and int(http_status.group(1)) >= 500:
+        return True
+    return any(
+        marker in message
+        for marker in (
+            "could not reach the juice wrld api",
+            "cloudflare",
+            "tunnel failure",
+            "tunnel error",
+            "temporary failure in name resolution",
+            "the api returned invalid json",
+        )
+    )
+
+
 def backfill_catalogue_identities(
     settings: Settings,
     tracks: Sequence[LibraryTrack],
@@ -78,7 +99,7 @@ def backfill_catalogue_identities(
     errors: list[str] = []
     failed_paths: list[str] = []
 
-    for track in tracks:
+    for index, track in enumerate(tracks):
         _, existing = resolve_state_entry(files, track.relative_path, relative_paths)
         try:
             if (
@@ -128,6 +149,16 @@ def backfill_catalogue_identities(
             failed += 1
             errors.append(f"{track.filename}: {str(exc) or type(exc).__name__}")
             failed_paths.append(str(track.relative_path))
+            if _provider_unavailable(exc):
+                remaining = tracks[index + 1 :]
+                failed += len(remaining)
+                failed_paths.extend(str(item.relative_path) for item in remaining)
+                if remaining:
+                    errors.append(
+                        f"Catalogue provider unavailable; skipped {len(remaining)} remaining "
+                        f"track{'s' if len(remaining) != 1 else ''}."
+                    )
+                break
 
     if identified:
         if _state_bytes(state_path) != original_state:

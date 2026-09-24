@@ -383,7 +383,7 @@ def test_issues_opens_from_snapshot_without_rescan_or_api_and_reaches_manual_mat
             assert app.screen.__class__.__name__ == "LibraryIssuesDialog"
             assert snapshot_calls == ["snapshot"]
             assert searches == []
-            assert "2 issues" in _text(app, "#library-issues-summary")
+            assert "2 follow-ups" in _text(app, "#library-issues-summary")
             assert "Catalogue" in _text(app, "#library-issues-list")
             assert "Catalogue match unknown" in _text(app, "#library-issues-detail")
 
@@ -436,21 +436,21 @@ def test_issues_empty_state_and_sync_replaces_health_immediately(tmp_path):
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            assert "1 issues" in _text(app, "#library-summary")
+            assert "1 follow-ups" in _text(app, "#library-summary")
             await pilot.press("s")
             if screen._index_sync_worker is not None:
                 await screen._index_sync_worker.wait()
             await pilot.pause()
-            assert "1 healthy · 0 issues" in _text(app, "#library-summary")
+            assert "0 follow-ups · 0 errors" in _text(app, "#library-summary")
             await pilot.press("a")
             assert "No library issues found" in _text(app, "#library-issues-detail")
             await pilot.press("escape", "s")
             if screen._index_sync_worker is not None:
                 await screen._index_sync_worker.wait()
             await pilot.pause()
-            assert "0 healthy · 1 issues" in _text(app, "#library-summary")
+            assert "1 follow-ups · 0 errors" in _text(app, "#library-summary")
             await pilot.press("a")
-            assert "Embedded lyrics" in _text(app, "#library-issues-detail")
+            assert "Optional lyrics" in _text(app, "#library-issues-detail")
 
     asyncio.run(scenario())
 
@@ -1005,9 +1005,10 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             assert screen.__class__.__name__ == "LibraryScreen"
             summary = _text(app, "#library-summary")
             assert "3 tracks" in summary and "Catalogue unknown 1" in summary
-            assert "1 healthy" in summary and "2 issues" in summary
+            assert "2 follow-ups" in summary and "0 errors" in summary
             assert "MP3 3" in summary and "FLAC 0" in summary and "M4A 0" in summary
             rows = _text(app, "#library-tracks")
+            assert "~" in rows and "!" not in rows
             assert rows.index("A Synced") < rows.index("B Plain") < rows.index("C Unknown")
             assert "Synced lyrics" in rows and "Plain lyrics" in rows and "No lyrics" in rows
             assert "LRC Present" in rows and "LRC Missing" in rows
@@ -1018,6 +1019,8 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             assert "Catalogue match Unknown" in details and "No lyrics" in details
             assert "Library state  New" in details and "Library issue  New track" in details
             assert "Recorded LRC is missing" in details
+            assert "Lyric maintenance preview" in details
+            assert "Press l for this song or m for the library" in details
             await pilot.press("up", "k", "end", "home")
             assert screen.selected_track.reference == synced.reference
 
@@ -1291,7 +1294,7 @@ def test_refresh_catalogue_failure_keeps_healthy_local_coverage_visible(tmp_path
             await pilot.pause()
             assert "Catalogue identification unavailable" in _text(app, "#library-status")
             assert "Fully covered 1" in _text(app, "#library-summary")
-            assert "1 issues" in _text(app, "#library-summary")
+            assert "1 follow-ups" in _text(app, "#library-summary")
             assert "Catalogue match Unknown" in _text(app, "#library-details")
 
     asyncio.run(scenario())
@@ -1454,7 +1457,7 @@ def test_library_summary_is_format_aware_and_flac_m4a_can_be_fully_covered(tmp_p
             screen = await _open_library(app, pilot)
             summary = _text(app, "#library-summary")
             assert "Fully covered 3" in summary
-            assert "3 healthy" in summary and "0 issues" in summary
+            assert "0 follow-ups" in summary and "0 errors" in summary
             assert "MP3 1" in summary and "FLAC 1" in summary and "M4A 1" in summary
             await pilot.press("down")
             assert "Coverage       Fully covered" in _text(app, "#library-details")
@@ -1485,7 +1488,7 @@ def test_healthy_unmatched_flac_is_covered_without_lyric_attention(tmp_path):
             screen = await _open_library(app, pilot)
             summary = _text(app, "#library-summary")
             assert "Fully covered 1" in summary
-            assert "1 issues" in summary
+            assert "1 follow-ups" in summary
             assert "Catalogue unknown 1" in summary
             details = _text(app, "#library-details")
             assert "Catalogue match Unknown" in details

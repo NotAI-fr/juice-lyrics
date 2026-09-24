@@ -85,6 +85,27 @@ code and tests if a later working tree disagrees with this document.
   unchanged. Live Bandit returned `94107`; live 10 Feet remained manual after
   two HTTP 530 responses. Detailed evidence and the remaining human checks are
   recorded in `docs/BETA_RELEASE_CHECKLIST.md`.
+- A read-only real-library correctness audit on 2026-09-24 started from clean
+  `v2-redesign` at `b3e740a`. The first stable snapshot found 187 readable
+  tracks; concurrent external activity added eight MP3s during the later test run, so a
+  final stable read-only snapshot found 195 (83 MP3, 43 FLAC, 69 M4A), with no
+  scan/container/required-metadata failures, 141 fully covered tracks, ten
+  local lyric follow-ups, 76 catalogue-Unknown tracks, 40 new state paths, and
+  34 changed state paths. No pre-existing music entry changed. The old UI
+  rendered all 76 combined follow-up rows as `!`, which misleadingly made
+  conservative Unknown identity and stale state look like
+  damaged media. The Library now separates follow-ups, genuine errors, lyrics
+  to improve, full coverage, and Unknown identity; `!` is error-only and `~`
+  marks a non-error follow-up. Sync summaries say what was recorded/refreshed,
+  what remains Unknown, and whether catalogue checks failed. New/changed
+  Unknown rows correctly recommend Sync before manual matching. A provider-
+  wide 503/530, Cloudflare tunnel, DNS, or invalid-JSON failure now stops the
+  current backfill pass instead of making one doomed request per track, while
+  preserving every established identity and keeping the local snapshot usable.
+  Before/after manifests proved each diagnostic was read-only and that config,
+  data/state/backups/queue, and cache were unchanged. Focused verification
+  passed 141 tests; the full suite passed 540 with the expected missing-Fish
+  skip, followed by compileall and diff hygiene.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -148,11 +169,13 @@ failure.
 
 ## Library health and maintenance
 
-Catalogue identity and local lyric health are separate axes. A healthy track
+Catalogue identity and local lyric health are separate axes. A locally covered track
 may be catalogue Unknown without needing lyric attention. An adjacent `.lrc`
 counts as synchronized only when it contains genuine timestamped lyric lines.
 
-The Library headline reports total tracks, healthy tracks, and issue rows. `a`
+The Library headline reports total tracks, follow-up rows, genuine errors,
+local lyrics to improve, and catalogue-Unknown tracks separately. Warning rows
+use `~`; `!` is reserved for errors. `a`
 opens **Issues** immediately from the current snapshot: opening it performs no
 scan, hash, or API request. There is at most one row per track, combining
 catalogue, lyrics, verification, metadata, and state reasons. Unknown identities

@@ -42,14 +42,24 @@ class LibraryIndexSyncResult:
     @property
     def summary(self) -> str:
         if self.error:
-            return f"Library scan complete · {self.error}"
+            parts = ["Library scan complete", self.error]
+            if self.new:
+                parts.append(f"{self.new} new pending")
+            if self.changed:
+                parts.append(f"{self.changed} changed pending")
+            if self.unknown:
+                parts.append(f"{self.unknown} catalogue unknown")
+            return " · ".join(parts)
         if not (self.new or self.changed or self.removed or self.identified or self.failed):
-            return "Library is up to date"
+            if self.unknown:
+                return f"Local library up to date · {self.unknown} catalogue unknown"
+            return "Local library is up to date"
         parts = [f"Library synced · {self.snapshot.total_track_count} tracks"]
         for count, label in (
-            (self.new, "new"), (self.changed, "changed"),
+            (self.new, "new recorded"), (self.changed, "changed refreshed"),
             (self.removed, "removed"), (self.identified, "newly matched"),
-            (self.failed, "could not be checked"),
+            (self.unknown, "catalogue unknown"),
+            (self.failed, "catalogue checks failed"),
         ):
             if count:
                 parts.append(f"{count} {label}")
