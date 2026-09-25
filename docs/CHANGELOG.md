@@ -4,10 +4,9 @@ This project follows [Semantic Versioning](https://semver.org/) and uses PEP
 440-compatible Python versions. Dates are added only when a release is
 published.
 
-## [2.0.0b1] - Unreleased
+## [2.0.0b1] - 2026-09-25
 
-This is the first beta candidate for the redesigned `999` product. It is not a
-published release yet.
+This is the first beta release of the redesigned `999` product.
 
 ### User experience
 
@@ -75,5 +74,5 @@ published release yet.
 - Established the initial API, scanner, matching, lyrics, rmpc, backup,
   configuration, state, and acquisition service boundaries.
 
-[2.0.0b1]: https://github.com/NotAI-fr/juice-lyrics/compare/v1.4.0-backend-complete...v2-redesign
+[2.0.0b1]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b1
 [1.4.0]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v1.4.0-backend-complete

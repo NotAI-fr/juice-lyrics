@@ -4,9 +4,9 @@ A terminal-native Juice WRLD music hub for Linux, with cautious lyrics
 management for local MP3, FLAC, and M4A libraries and synchronized `.lrc`
 sidecars for rmpc.
 
-> **Beta candidate:** `2.0.0b1` is prepared on `v2-redesign` for acceptance.
+> **Beta release:** `2.0.0b1` is the first beta of the redesigned `999`.
 > Keep a separate backup of valuable media and review every confirmed repair.
-> No release or package-registry publication has happened yet.
+> This release is distributed from its immutable Git tag, not a package index.
 
 999 uses the Juice WRLD API as a catalogue and lyrics source. MP3 supports
 plain and synchronized embedded lyrics; FLAC and M4A use standard plain lyric
@@ -288,28 +288,27 @@ The tool follows XDG locations for its config, cache, state, and backups.
 ### Recommended pipx install
 
 ```bash
-pipx install "git+https://github.com/NotAI-fr/juice-lyrics.git@v2-redesign"
+pipx install "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b1"
 command -v 999
 999 --version
 999 doctor
 ```
 
 The distribution remains named `juice-wrld-lyrics` for update compatibility.
-Until a release is published, the command above installs the current
-`v2-redesign` branch into pipx without depending on the source checkout after
-installation. If pipx already has an older or stale copy, replace it
-deliberately:
+The command above installs the immutable `v2.0.0b1` tag into pipx without
+depending on the source checkout after installation. If pipx already has an
+older or stale copy, replace it deliberately:
 
 ```bash
-pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2-redesign"
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b1"
 hash -r
 command -v 999
 999 --version
 999 doctor
 ```
 
-Repeating the `--force` command is the deterministic upgrade path while using
-the development branch. Installing a locally built wheel is also supported:
+Repeating the `--force` command is the deterministic upgrade or reinstall path
+for this beta. Installing a locally built wheel is also supported:
 
 ```bash
 pipx install --force /absolute/path/to/juice_wrld_lyrics-2.0.0b1-py3-none-any.whl

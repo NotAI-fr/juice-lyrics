@@ -185,9 +185,9 @@ Remaining manual acceptance:
 - [ ] `v2-redesign` is clean, pushed, and reviewed against `main`.
 - [x] `juice_lyrics.__version__`, `999 --version`, wheel metadata, and the
       changelog all say `2.0.0b1`.
-- [ ] The changelog heading has the actual release date instead of
+- [x] The changelog heading has the actual release date instead of
       `Unreleased`.
-- [ ] README installation commands point to the intended immutable tag or
+- [x] README installation commands point to the intended immutable tag or
       attached wheel, not the moving development branch. Before any package-
       index publication, give its long description an immutable public image
       URL or omit the screenshot there.
