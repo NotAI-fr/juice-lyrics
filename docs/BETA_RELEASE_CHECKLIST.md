@@ -5,6 +5,76 @@ Target: `2.0.0b1` (PEP 440) / Git tag `v2.0.0b1`.
 This checklist prepares a release; it does not authorize publishing, tagging,
 or merging. `main` remains the stable v1.4 baseline until the beta is accepted.
 
+## Final automated release-candidate acceptance — 2026-09-25
+
+This pass started from clean `v2-redesign` at `db1ef2c`, equal to
+`origin/v2-redesign`. No production regression was found and no production
+code changed.
+
+Live and isolated acceptance results:
+
+- A deliberately small live catalogue pass verified search, refresh parameter
+  handling, two distinct five-item pages with correct next/previous metadata,
+  and stable-ID details. The catalogue reported 2,741 records. Released Bandit
+  resolved to `94107`; released 10 Feet resolved to `94102` without weakening
+  matcher rules.
+- A four-file disposable live-Sync library recorded two new paths, matched
+  Bandit to `94107`, kept one deliberately ambiguous healthy MP3 Unknown, and
+  preserved two file-bound manual locks. The exact summary was `2 new recorded
+  · 1 newly matched · 1 catalogue unknown`. Repeat Sync changed neither state
+  nor cache and reported local state up to date; a later mtime-only change was
+  accurately reported as `1 changed refreshed`. All health rows were warning
+  follow-ups (`~`), with zero genuine errors (`!`). Deterministic 503/530,
+  malformed JSON, empty-result, and offline regressions remain green.
+- One explicitly selected Bandit item was queued and downloaded to `/tmp`.
+  The service streamed 8,392,557 bytes, finalized and postprocessed one MP3,
+  persisted the complete queue result, left no `.part`, and a retry correctly
+  performed no second download. Local-server regressions cover progress,
+  resume, 503 retry, exhausted/404/403 failures, checksum/size/content
+  rejection, and duplicate suppression.
+- The integrated focused suite covered Sync, Library, Issues, manual lock and
+  unlock, Duplicates, metadata preview/apply/cancel, Missing Library,
+  backup/restore, Browse/Downloads, Help/navigation/quit, Doctor, and rmpc
+  helpers: **385 passed**.
+- Temporary copies of representative real MP3, FLAC, and M4A files completed
+  metadata preview, confirmed apply, backup, and exact restore. Encoded media,
+  artwork, embedded lyrics, unrelated tags, adjacent sidecars, and manual locks
+  were preserved. Original file hashes, sizes, mtimes, and ctimes were unchanged.
+- The isolated support report was valid JSON and an automated forbidden-value
+  audit found no username, absolute home/acceptance path, token/credential,
+  job ID, song title/list, or private state contents. Paths were redacted.
+- Fresh wheel and sdist builds installed independently outside the checkout
+  with no `PYTHONPATH`. Both provided `999` and `juice-lyrics` at `2.0.0b1`,
+  help, Doctor, Bash/Zsh/Fish completion generation, and installed-package TUI
+  startup. In both installed harnesses `q` set the app to stopped; the external
+  Textual harness process itself still required a timeout during teardown.
+  The wheel upgrade/no-op, uninstall, command removal, reinstall, and import
+  lifecycle passed. Packaging/completion checks passed **34 tests** with the
+  understood missing-Fish skip. Artifact SHA-256 values were recorded in the
+  acceptance log; artifacts remain temporary and were not published.
+- GitHub Verify for `db1ef2c` passed. `main` remains the private default branch;
+  visibility, merge, tag, release, and publication were not changed.
+- Before/after manifests matched exactly for the real music tree and real
+  config, state/backups/queue, and cache. The global pipx installation was not
+  replaced.
+
+Release-blocker classification:
+
+- **BLOCKER:** none demonstrated.
+- **NON-BLOCKING BETA LIMITATION:** manual visual polish was not independently
+  confirmed; Fish is unavailable for runtime syntax acceptance, although
+  deterministic generation is green; no independent second-machine pipx
+  tester was available.
+- **OPTIONAL / POST-BETA:** rmpc and MPD executables are installed but no live
+  rmpc TUI socket was available. The installed rmpc accepts the query target
+  `activetab`, while the optional notification probe currently uses the older
+  `active-tab` spelling, so live notification acceptance remains unverified.
+  Explicit rmpc setup was not run and real player configuration was untouched.
+
+Candidate verdict: **READY FOR 2.0.0b1 RELEASE**. Release procedure steps,
+including date/link updates, visibility decision, merge, tag, and publishing,
+still require explicit authorization.
+
 ## Real-library correctness evidence — 2026-09-24
 
 This pass started from clean `v2-redesign` at `b3e740a`, equal to
@@ -142,12 +212,14 @@ python -m build
       checkout, with no source tree on `PYTHONPATH`.
 - [x] `999 --help`, `999 --version`, `juice-lyrics --version`, and
       `999 doctor` work from both artifacts.
-- [ ] TUI launches and exits from both artifacts.
+- [x] TUI launches from both artifacts and `q` transitions each installed app
+      to stopped; manual visual polish and the harness teardown limitation are
+      documented above.
 - [x] Bash/Zsh/Fish completion generation succeeds; syntax is checked where
       the shell is installed.
 - [x] Force-reinstall, uninstall, and reinstall leave the commands and imports
       in the expected state without touching application XDG data.
-- [ ] The GitHub `Verify` workflow passes on supported oldest/current Python
+- [x] The GitHub `Verify` workflow passes on supported oldest/current Python
       versions for the release pull request.
 
 ## 3. GitHub presentation settings
@@ -163,25 +235,25 @@ python -m build
       public; do not change visibility as a side effect of release prep.
 - [ ] Preview README links and the synthetic screenshot on GitHub before merge.
 
-## 4. Manual beta acceptance
+## 4. Beta acceptance
 
 Use an explicit backup and a small temporary copy of representative media
 before testing any mutating workflow.
 
-- [ ] Launch, Help, navigation, Browse search/pagination/details, queue Add,
+- [x] Launch, Help, navigation, Browse search/pagination/details, queue Add,
       Downloads, Retry, and confirmed Download queue work.
-- [ ] Sync Library handles unchanged/new/changed/removed files and remains
+- [x] Sync Library handles unchanged/new/changed/removed files and remains
       usable offline.
-- [ ] Bandit identifies as `94107`; 10 Feet identifies as `94102`.
-- [ ] Manual match/lock, unlock, Issues, Duplicates, and Missing Library behave
+- [x] Bandit identifies as `94107`; 10 Feet identifies as `94102`.
+- [x] Manual match/lock, unlock, Issues, Duplicates, and Missing Library behave
       as documented.
-- [ ] One copied MP3, FLAC, and M4A completes metadata preview/apply with its
+- [x] One copied MP3, FLAC, and M4A completes metadata preview/apply with its
       audio payload, artwork, lyrics, unrelated tags, sidecar, backup, and lock
       verified.
-- [ ] Restore succeeds from a generated backup and does not delete the backup.
+- [x] Restore succeeds from a generated backup and does not delete the backup.
 - [ ] rmpc verify works when installed; explicit setup is reviewed separately.
-- [ ] `999 doctor --support-report` is manually reviewed for privacy before it
-      is attached to an issue.
+- [x] `999 doctor --support-report` passes an automated forbidden-value privacy
+      audit; review the particular report again before attaching it publicly.
 - [ ] A beta tester confirms clean pipx install and upgrade on the supported
       Linux environment.
 

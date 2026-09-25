@@ -87,7 +87,8 @@ code and tests if a later working tree disagrees with this document.
   recorded in `docs/BETA_RELEASE_CHECKLIST.md`.
 - A read-only real-library correctness audit on 2026-09-24 started from clean
   `v2-redesign` at `b3e740a`. The first stable snapshot found 187 readable
-  tracks; concurrent external activity added eight MP3s during the later test run, so a
+  tracks; concurrent external activity added eight MP3s during the later test
+  run, so a
   final stable read-only snapshot found 195 (83 MP3, 43 FLAC, 69 M4A), with no
   scan/container/required-metadata failures, 141 fully covered tracks, ten
   local lyric follow-ups, 76 catalogue-Unknown tracks, 40 new state paths, and
@@ -106,6 +107,25 @@ code and tests if a later working tree disagrees with this document.
   data/state/backups/queue, and cache were unchanged. Focused verification
   passed 141 tests; the full suite passed 540 with the expected missing-Fish
   skip, followed by compileall and diff hygiene.
+- Final automated release-candidate acceptance on 2026-09-25 started from
+  clean `db1ef2c`. A small live pass confirmed catalogue pagination/details,
+  Bandit `94107`, 10 Feet `94102`, one isolated completed download, and an
+  actual isolated Sync that matched Bandit, retained an ambiguous Unknown,
+  preserved manual locks, avoided repeat work, reported a changed path, and
+  produced zero genuine health errors. The integrated Library/Browse/download/
+  repair/backup/TUI/Doctor pass completed 385 tests. Representative real MP3,
+  FLAC, and M4A copies preserved encoded audio, artwork, lyrics, unrelated
+  tags, sidecars, and locks through metadata apply plus exact restore; the
+  originals remained byte/stat identical. Wheel and sdist clean installs,
+  command/completion checks, and wheel lifecycle passed outside the checkout;
+  34 packaging/completion tests passed with the expected missing-Fish skip.
+  The support report passed a forbidden-value privacy audit, GitHub Verify for
+  `db1ef2c` was green, and before/after manifests proved real music and all real
+  application XDG data were unchanged. No functional release blocker was
+  demonstrated. Remaining limitations are manual visual polish, absent Fish
+  runtime acceptance, no independent second-machine tester, and optional live
+  rmpc notification acceptance. Detailed evidence and classification are in
+  `docs/BETA_RELEASE_CHECKLIST.md`.
 
 Test totals are checkpoint evidence, not a permanent promise. Run the current
 suite before reporting a later code milestone.
@@ -169,8 +189,8 @@ failure.
 
 ## Library health and maintenance
 
-Catalogue identity and local lyric health are separate axes. A locally covered track
-may be catalogue Unknown without needing lyric attention. An adjacent `.lrc`
+Catalogue identity and local lyric health are separate axes. A locally covered
+track may be catalogue Unknown without needing lyric attention. An adjacent `.lrc`
 counts as synchronized only when it contains genuine timestamped lyric lines.
 
 The Library headline reports total tracks, follow-up rows, genuine errors,
