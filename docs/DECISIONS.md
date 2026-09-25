@@ -1,0 +1,239 @@
+# Project Decisions
+
+This document records important architectural and product decisions.
+
+The purpose is to prevent future redesigns from accidentally removing important behaviour.
+
+---
+
+# Lyrics Architecture
+
+## Embedded lyrics remain supported
+
+The application should preserve lyrics inside MP3, FLAC, and M4A files when possible.
+
+Reasons:
+
+- Embedded lyrics travel with the file.
+- Android music players commonly support embedded ID3 lyrics.
+- Users may move files between devices.
+- The MP3 should remain self-contained.
+
+Supported embedded formats:
+
+- ID3 SYLT:
+  - Synchronized lyrics with timestamps.
+  - Preferred when synced lyrics are available.
+
+- ID3 USLT:
+  - Plain unsynchronized lyrics.
+  - Used when only normal text lyrics are available.
+
+- FLAC Vorbis `LYRICS`:
+  - Standard plain-text embedded lyrics.
+  - Used for plain lyrics and as a plain-text representation when synchronized
+    source lyrics are available.
+  - FLAC has no sane interoperable equivalent to ID3 SYLT. Timing is not
+    invented or stored in a proprietary comment; the adjacent `.lrc` is authoritative.
+
+- M4A/MP4 `©lyr`:
+  - Standard plain-text embedded lyrics.
+  - Used for plain lyrics and as a plain-text representation when synchronized
+    source lyrics are available.
+  - M4A has no interoperable equivalent to ID3 SYLT. Timing remains in the
+    adjacent `.lrc`, not in a proprietary MP4 atom.
+
+---
+
+# LRC Files and rmpc
+
+rmpc does not read embedded ID3 lyrics.
+
+rmpc currently relies on external `.lrc` lyric files.
+
+Audio and external synchronized lyrics stay together. Every LRC destination is
+derived from the finalized audio path (`song.mp3`, `song.flac`, or `song.m4a` -> `song.lrc`) rather than a
+global directory, title metadata, historical state, or rmpc configuration.
+Read-only operations and plans create nothing. LRC writes generate complete
+content first and atomically replace the adjacent sidecar where practical.
+
+The old `lyrics_dir` setting remains accepted for configuration compatibility,
+but is deprecated and does not direct current output. Existing centralized LRC
+files are not moved automatically; migration remains a separate explicit task.
+
+Therefore:
+
+- SYLT lyrics should generate `.lrc` files.
+- USLT-only lyrics should remain embedded but cannot produce valid `.lrc` files.
+
+Reason:
+
+An LRC file requires timestamped lines.
+
+Example:
+
+
+[00:12.00] First lyric line
+[00:15.00] Second lyric line
+
+
+Plain lyrics do not contain timing information.
+
+The application must never invent timestamps to make LRC files.
+
+---
+
+# Lyrics Priority
+
+The lyric pipeline should behave like this:
+
+API synced lyrics
+        |
+        v
+Embed SYLT
+        |
+        v
+Generate LRC for rmpc
+
+
+API plain lyrics only
+        |
+        v
+Embed USLT
+        |
+        v
+No LRC generated
+
+---
+
+# Player Choice
+
+rmpc remains the preferred desktop player integration.
+
+Reasons:
+
+- Lightweight.
+- Fast.
+- Terminal UI fits the Linux workflow.
+- Highly configurable.
+- Works well with custom Linux setups.
+
+The application should support rmpc without making it the only playback target.
+
+---
+
+# UX Principle
+
+Technical details should not leak unnecessarily to users.
+
+Avoid showing:
+
+- SYLT
+- USLT
+- job UUIDs
+- internal API terminology
+
+Prefer:
+
+- Synced Lyrics
+- Plain Lyrics
+- Downloads
+- Queue
+- Library
+
+## Downloads are a track queue
+
+Persistent acquisition jobs remain the durable backend mechanism for
+resumability, validation, recovery, and CLI compatibility. They are not the
+normal user-facing model. Frontends present one flat download queue containing
+individual songs and hide job UUIDs from ordinary workflows.
+
+Completed entries remain in durable storage but do not clutter the active
+queue. Failed entries remain visible and actionable until a future retry or
+remove action resolves them. Internal references may appear only in an advanced
+troubleshooting detail.
+
+Adding to the queue, Download selected, Retry, Remove, and completed-history
+cleanup are immediate because they are explicit or record-only actions.
+Sequential Download queue and bulk waiting/failed cleanup retain cancel-first
+confirmation. Active download cancellation remains unimplemented.
+
+Browse selection is an in-memory set keyed by stable catalogue song ID. Marks
+may span pages only within one logical search and are cleared when the search or
+server-side filters change. Batch Add revalidates queue and destination
+duplicates immediately before one atomic persistent write; it never starts a
+download. Durable acquisition jobs remain hidden behind this song-oriented
+operation.
+
+The backend can remain technical while the user interface becomes friendly.
+
+## Catalogue identity and state cleanup
+
+Catalogue identity is stored in the existing state file but is not a prerequisite
+for recognizing healthy local lyrics. One-button Library Sync may backfill a
+confident identity through the normal matcher; it must not manufacture lyric
+state or change media. Clearly stale external state records are ignored during
+normal lookup and deleted only by an explicit preview-first cleanup that makes a
+state backup. Legitimate historical relative keys are not speculatively
+deduplicated.
+
+Normal Sync is safe routine work and therefore starts immediately. It detects
+unchanged, new, changed, and removed current-library paths, avoids expensive
+work for unchanged files, retires removed paths without deleting historical
+records, and cannot run twice concurrently. It never rewrites audio, lyrics,
+backups, downloads, or rmpc configuration.
+
+A full catalogue-identity rebuild is an explicit recovery operation, not a
+library reset. It removes/replaces only `song_id` and `api_name` for current
+tracks after rerunning the conservative matcher. Preview is read-only; apply
+builds the result in memory, preserves isolated-failure identities, creates a
+complete state backup, and performs one atomic state write. Stale and
+non-current historical records are not deleted by the rebuild.
+
+An explicit manual catalogue choice is stored with `identity_source =
+"manual"` and `identity_locked = true`, tied to the current file hash.
+Automatic operations preserve a valid lock. Changed/replaced audio invalidates
+it; ordinary rebuild preserves it; only the advanced `--include-locked`
+rebuild option may override it. Unlocking clears identity/provenance fields so a
+later Sync can reconsider the track, while lyric and custom state survive.
+
+Duration remains a primary matching safeguard. The configured tolerance is the
+normal trusted range. A small catalogue-duration discrepancy is eligible only
+for a normal released candidate with exact base title, no extra version or
+named variant, and exact or recognized-edition-compatible album/path evidence.
+The grace is bounded to two seconds beyond configured tolerance, five seconds
+absolute, and two percent of local duration, and carries a score penalty.
+
+---
+
+# Backend Stability
+
+The current modular backend should be preserved.
+
+Major systems:
+
+- API client
+- lyrics engine
+- acquisition system
+- downloader
+- library matching
+- rmpc integration
+- backup system
+
+Future redesigns should build on these systems rather than replacing them.
+
+---
+
+# Product Identity and Compatibility
+
+- Product name: `999`
+- Primary executable: `999`
+- Legacy compatibility executable: `juice-lyrics`
+- Python package: `juice_lyrics`
+- Distribution name: `juice-wrld-lyrics`
+- XDG storage namespace: `juice-lyrics`
+
+Both executable names call the same CLI implementation. Existing configuration,
+cache, state, queue records, and backups are not renamed or duplicated. Normal
+startup never rewrites rmpc configuration. Only explicit `999 rmpc setup` or
+the cancel-first **Library → Player → Set up rmpc** action may do that.

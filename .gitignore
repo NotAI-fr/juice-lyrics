@@ -4,6 +4,16 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.pyright/
+.DS_Store
+*.swp
+*.swo
 dist/
 build/
 *.egg-info/

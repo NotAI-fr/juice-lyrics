@@ -1,6 +1,9 @@
 from pathlib import Path
+import argparse
 import sys
 import tempfile
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -56,13 +59,14 @@ def test_command_status_with_settings(tmp_path, capsys, monkeypatch):
     import juice_lyrics.cli as cli
     from juice_lyrics.config.settings import Settings
 
-    settings = Settings(music_dir=tmp_path)
+    settings = Settings(music_dir=tmp_path, lyrics_dir=tmp_path / "central-lyrics")
     # Empty directory status
     rc = cli.command_status(settings, use_color=False)
     assert rc == 0
     out = capsys.readouterr().out
     assert "Library Status" in out
-    assert "MP3 files:            0" in out
+    assert "External lyrics:      Beside each song (.lrc)" in out
+    assert "Audio files:          0" in out
 
     # Status with an MP3 file
     mp3 = tmp_path / "track.mp3"
@@ -71,7 +75,7 @@ def test_command_status_with_settings(tmp_path, capsys, monkeypatch):
     rc = cli.command_status(settings, use_color=False)
     assert rc == 0
     out = capsys.readouterr().out
-    assert "MP3 files:            1" in out
+    assert "Audio files:          1" in out
     assert "Embedded synced:      1" in out
 
 
@@ -152,6 +156,194 @@ def test_command_guide(capsys):
     rc = cli.command_guide()
     assert rc == 0
     out = capsys.readouterr().out
-    assert "juice-lyrics quick guide" in out
-    assert "juice-lyrics acquire search" in out
-    assert "juice-lyrics sync" in out
+    assert "999 quick guide" in out
+    assert "999 sync --dry-run" in out
+    assert "999 rmpc setup" in out
+    assert "juice-lyrics" not in out
+
+
+def test_config_show_preserves_missing_and_existing_cli_behavior(tmp_path, monkeypatch, capsys):
+    import argparse
+    import juice_lyrics.cli as cli
+
+    config = tmp_path / "config.toml"
+    monkeypatch.setattr(cli, "CONFIG_FILE", config)
+    args = argparse.Namespace(action="show")
+
+    assert cli.command_config(args) == 0
+    output = capsys.readouterr().out
+    assert "No config. Defaults are in use." in output
+    assert str(config) in output
+
+    content = 'music_dir = "/music"\ntimeout = 20\n'
+    config.write_text(content, encoding="utf-8")
+    assert cli.command_config(args) == 0
+    shown = capsys.readouterr().out
+    assert content.strip() in shown
+    assert "External lyrics: beside each song (.lrc)" in shown
+
+
+def test_lyrics_directory_default_config_override_and_unknown_keys(tmp_path, monkeypatch, capsys):
+    import juice_lyrics.cli as cli
+    from juice_lyrics.config.settings import DEFAULT_LYRICS_DIR, Settings
+
+    config = tmp_path / "config.toml"
+    monkeypatch.setattr(cli, "CONFIG_FILE", config)
+
+    assert DEFAULT_LYRICS_DIR == Path.home() / "Music" / "lyrics"
+    assert Settings().lyrics_dir == DEFAULT_LYRICS_DIR
+    assert cli.load_settings().lyrics_dir == DEFAULT_LYRICS_DIR
+    assert not config.exists()
+
+    config.write_text('rmpc_lyrics_dir = "~/ignored-legacy-suggestion"\n', encoding="utf-8")
+    assert cli.load_settings().lyrics_dir == DEFAULT_LYRICS_DIR
+
+    config.write_text(
+        'lyrics_dir = "~/shared-lyrics"\nunknown_future_key = "ignored"\n',
+        encoding="utf-8",
+    )
+    loaded = cli.load_settings()
+    assert loaded.lyrics_dir == Path.home() / "shared-lyrics"
+    assert config.read_text(encoding="utf-8").endswith('unknown_future_key = "ignored"\n')
+    assert cli.command_config(argparse.Namespace(action="show"), loaded) == 0
+    shown = capsys.readouterr().out
+    assert "Deprecated lyrics_dir (ignored for LRC output)" in shown
+    assert "External lyrics: beside each song (.lrc)" in shown
+
+    missing_lyrics = tmp_path / "not-created" / "lyrics"
+    config.write_text(f'lyrics_dir = "{missing_lyrics}"\n', encoding="utf-8")
+    assert cli.load_settings().lyrics_dir == missing_lyrics
+    assert not missing_lyrics.exists()
+
+    config.unlink()
+    cli.write_default_config()
+    assert "lyrics_dir" not in config.read_text(encoding="utf-8")
+
+
+def test_rmpc_setup_indexes_music_tree_without_creating_legacy_lyrics_directory(
+    tmp_path, monkeypatch
+):
+    import argparse
+    import juice_lyrics.cli as cli
+    from juice_lyrics.config.settings import Settings
+
+    rmpc_config = tmp_path / "rmpc" / "config.ron"
+    rmpc_config.parent.mkdir()
+    rmpc_config.write_text("()", encoding="utf-8")
+    configured_lyrics = tmp_path / "Music" / "lyrics"
+    configured = []
+
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/rmpc")
+    monkeypatch.setattr(cli, "find_mp3s", lambda settings: [])
+    monkeypatch.setattr(
+        cli,
+        "patch_rmpc_config",
+        lambda path, lyrics: configured.append((path, lyrics)) or tmp_path / "rmpc.bak",
+    )
+    monkeypatch.setattr(cli, "notify_rmpc_index", lambda paths: 0)
+    monkeypatch.setattr(cli, "rmpc_running", lambda: False)
+
+    result = cli.command_rmpc_setup(
+        argparse.Namespace(config=str(rmpc_config), lyrics_dir=None, yes=True, refresh=False),
+        Settings(music_dir=tmp_path / "music", lyrics_dir=configured_lyrics),
+        False,
+    )
+
+    assert result == 0
+    assert configured == [(rmpc_config, tmp_path / "music")]
+    assert not configured_lyrics.exists()
+
+
+def test_config_init_and_missing_library_setup_dispatch_remain_compatible(tmp_path, monkeypatch):
+    import argparse
+    import juice_lyrics.cli as cli
+    from juice_lyrics.config.settings import Settings
+
+    calls = []
+    monkeypatch.setattr(cli, "write_default_config", lambda force: calls.append(force))
+    assert cli.command_config(argparse.Namespace(action="init", force=True)) == 0
+    assert calls == [True]
+
+    missing = tmp_path / "missing-library"
+    with pytest.raises(RuntimeError, match="Music directory does not exist"):
+        cli.command_setup(
+            argparse.Namespace(yes=True, refresh=False),
+            Settings(music_dir=missing),
+            use_color=False,
+        )
+    assert not missing.exists()
+
+
+def test_library_setup_never_rewrites_rmpc_configuration(tmp_path, monkeypatch):
+    import juice_lyrics.cli as cli
+    from juice_lyrics.config.settings import Settings
+
+    rmpc_config = tmp_path / "rmpc" / "config.ron"
+    rmpc_config.parent.mkdir()
+    rmpc_config.write_text("original rmpc configuration", encoding="utf-8")
+    monkeypatch.setattr(cli, "DEFAULT_RMPC_CONFIG", rmpc_config)
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/usr/bin/rmpc")
+    monkeypatch.setattr(
+        cli,
+        "patch_rmpc_config",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("rmpc rewritten")),
+    )
+    monkeypatch.setattr(cli, "find_mp3s", lambda settings: [])
+    calls = []
+    monkeypatch.setattr(
+        cli,
+        "embed_batch",
+        lambda settings, files, use_color, refresh, dry_run, yes, with_rmpc: (
+            calls.append((files, with_rmpc)) or 0
+        ),
+    )
+
+    result = cli.command_setup(
+        argparse.Namespace(yes=True, refresh=False),
+        Settings(music_dir=tmp_path),
+        use_color=False,
+    )
+
+    assert result == 0
+    assert calls == [([], True)]
+    assert rmpc_config.read_text(encoding="utf-8") == "original rmpc configuration"
+
+
+def test_state_clean_cli_is_preview_first_then_reports_backup(tmp_path, monkeypatch, capsys):
+    import juice_lyrics.cli as cli
+    from juice_lyrics.config.settings import Settings
+
+    music = tmp_path / "Music"
+    music.mkdir()
+    state_file = tmp_path / "state.json"
+    stale = "/tmp/pytest-of-someone/pytest-8/test_case/Song.flac"
+    state_file.write_text(
+        __import__("json").dumps(
+            {
+                "files": {
+                    stale: {"song_id": 1},
+                    "24 Hours.mp3": {"song_id": 94760, "api_name": "24 Hours"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "STATE_FILE", state_file)
+
+    assert cli.command_state(
+        argparse.Namespace(action="clean", yes=False), Settings(music_dir=music), False
+    ) == 0
+    preview = capsys.readouterr().out
+    assert stale in preview
+    assert "Preview only" in preview
+    assert stale in state_file.read_text(encoding="utf-8")
+
+    assert cli.command_state(
+        argparse.Namespace(action="clean", yes=True), Settings(music_dir=music), False
+    ) == 0
+    output = capsys.readouterr().out
+    assert "Removed: 1" in output
+    assert "State backup:" in output
+    cleaned = state_file.read_text(encoding="utf-8")
+    assert stale not in cleaned
+    assert "24 Hours" in cleaned

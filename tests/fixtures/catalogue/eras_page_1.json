@@ -1,0 +1,19 @@
+{
+  "count": 34,
+  "next": "http://juicewrldapi.com/juicewrld/eras/?page=2&page_size=100",
+  "previous": null,
+  "results": [
+    {
+      "id": 109,
+      "name": "WOD",
+      "description": "WRLD On Drugs era",
+      "time_frame": "(August 2018-December 2018)"
+    },
+    {
+      "id": 110,
+      "name": "DRFL",
+      "description": "Death Race For Love era",
+      "time_frame": "(May 2018-March 2019)"
+    }
+  ]
+}

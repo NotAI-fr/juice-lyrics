@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from .. import __version__
@@ -41,28 +42,91 @@ def api_get(url: str, timeout: int) -> Any:
         raise RuntimeError("The API returned invalid JSON") from exc
 
 
-def search_songs(settings: Settings, query: str, *, category: str | None = None, era: str | None = None, refresh: bool = False) -> dict[str, Any]:
-    params = [f"search={quote(query)}", "page_size=50"]
-    if category:
-        params.append(f"category={quote(category)}")
-    if era:
-        params.append(f"era={quote(era)}")
-    cache_name = "advanced_" + cache_key("|".join(params)) + ".json"
+def _cached_get(settings: Settings, url: str, cache_name: str, refresh: bool) -> Any:
     cache_file = CACHE_DIR / cache_name
     ensure_cache()
     ttl = settings.cache_ttl_hours * 3600
     if not refresh and cache_file.exists() and time.time() - cache_file.stat().st_mtime <= ttl:
         try:
-            cached = json.loads(cache_file.read_text(encoding="utf-8"))
-            if isinstance(cached, dict):
-                return cached
+            return json.loads(cache_file.read_text(encoding="utf-8"))
         except Exception:
             pass
-    data = api_get(f"{settings.songs_endpoint}?{'&'.join(params)}", settings.timeout)
-    result = data if isinstance(data, dict) else {"results": []}
-    cache_file.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    data = api_get(url, settings.timeout)
+    cache_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     time.sleep(settings.delay)
+    return data
+
+
+def search_songs(
+    settings: Settings,
+    query: str,
+    *,
+    category: str | None = None,
+    era: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    params: list[tuple[str, str | int]] = [
+        ("search", query),
+        ("page_size", page_size),
+        ("page", page),
+    ]
+    if category:
+        params.append(("category", category))
+    if era:
+        params.append(("era", era))
+    query_string = urlencode(params)
+    # API filter values are case-sensitive (for example, ``DRFL`` works while
+    # ``drfl`` does not), so the cache identity must preserve the exact query.
+    query_digest = hashlib.sha256(query_string.encode("utf-8")).hexdigest()[:24]
+    cache_name = f"catalogue_v3_{query_digest}.json"
+    data = _cached_get(
+        settings,
+        f"{settings.songs_endpoint}?{query_string}",
+        cache_name,
+        refresh,
+    )
+    result = data if isinstance(data, dict) else {"results": []}
     return result
+
+
+def get_categories(settings: Settings, *, refresh: bool = False) -> dict[str, Any]:
+    """Return the API's canonical category values and display labels."""
+
+    data = _cached_get(
+        settings,
+        settings.api_base.rstrip("/") + "/categories/",
+        "catalogue_categories_v1.json",
+        refresh,
+    )
+    return data if isinstance(data, dict) else {"categories": []}
+
+
+def get_eras(settings: Settings, *, refresh: bool = False) -> list[dict[str, Any]]:
+    """Read every small era-metadata page without using the song catalogue."""
+
+    eras: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        query_string = urlencode({"page": page, "page_size": 100})
+        data = _cached_get(
+            settings,
+            settings.api_base.rstrip("/") + f"/eras/?{query_string}",
+            f"catalogue_eras_v1_page_{page}.json",
+            refresh,
+        )
+        if not isinstance(data, dict):
+            break
+        values = data.get("results", [])
+        if isinstance(values, list):
+            eras.extend(value for value in values if isinstance(value, dict))
+        if not data.get("next"):
+            break
+        page += 1
+        if page > 20:
+            raise RuntimeError("Era metadata pagination exceeded the safety limit")
+    return eras
 
 
 def search_song_names(settings: Settings, title: str, *, refresh: bool = False) -> list[dict[str, Any]]:

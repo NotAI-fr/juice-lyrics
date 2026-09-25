@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,8 +22,12 @@ from mutagen.id3 import ID3, ID3NoHeaderError, SYLT, USLT, Encoding
 from mutagen.mp3 import MP3
 
 from . import __version__
+from .config.settings import DEFAULT_LYRICS_DIR
+from .identity import PRODUCT_NAME, STORAGE_NAMESPACE
+from .lyrics.sidecar import sidecar_lrc_path
+from .services.shell_completion import generate_completion
 
-APP_NAME = "juice-lyrics"
+APP_NAME = PRODUCT_NAME
 DEFAULT_API_BASE = "https://juicewrldapi.com/juicewrld"
 DEFAULT_MUSIC_DIR = Path.home() / "Music" / "Juice WRLD" / "Unreleased"
 DEFAULT_DESCRIPTION = "Juice WRLD API"
@@ -58,18 +63,18 @@ def xdg_dir(name: str, fallback: Path) -> Path:
 CONFIG_HOME = xdg_dir("XDG_CONFIG_HOME", Path.home() / ".config")
 CACHE_HOME = xdg_dir("XDG_CACHE_HOME", Path.home() / ".cache")
 DATA_HOME = xdg_dir("XDG_DATA_HOME", Path.home() / ".local" / "share")
-CONFIG_FILE = CONFIG_HOME / APP_NAME / "config.toml"
-CACHE_DIR = CACHE_HOME / APP_NAME
-DATA_DIR = DATA_HOME / APP_NAME
+CONFIG_FILE = CONFIG_HOME / STORAGE_NAMESPACE / "config.toml"
+CACHE_DIR = CACHE_HOME / STORAGE_NAMESPACE
+DATA_DIR = DATA_HOME / STORAGE_NAMESPACE
 BACKUP_DIR = DATA_DIR / "backups"
 STATE_FILE = DATA_DIR / "state.json"
-DEFAULT_RMPC_LYRICS_DIR = DEFAULT_MUSIC_DIR.parent / "lyrics"
 DEFAULT_RMPC_CONFIG = CONFIG_HOME / "rmpc" / "config.ron"
 
 
 class Settings:
     def __init__(self) -> None:
         self.music_dir = DEFAULT_MUSIC_DIR
+        self.lyrics_dir = DEFAULT_LYRICS_DIR
         self.api_base = DEFAULT_API_BASE
         self.timeout = DEFAULT_TIMEOUT
         self.delay = DEFAULT_DELAY
@@ -103,6 +108,9 @@ def load_settings(path_override: str | None = None, api_override: str | None = N
             data = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
             if data.get("music_dir"):
                 settings.music_dir = Path(str(data["music_dir"])).expanduser()
+            if data.get("lyrics_dir"):
+                settings.lyrics_dir = Path(str(data["lyrics_dir"])).expanduser()
+                settings.lyrics_dir_explicit = True
             settings.api_base = str(data.get("api_base", settings.api_base)).rstrip("/")
             settings.timeout = int(data.get("timeout", settings.timeout))
             settings.delay = float(data.get("delay", settings.delay))
@@ -232,8 +240,8 @@ def search_api(settings: Settings, title: str, refresh: bool = False) -> list[di
     return results
 
 
-def search_api_advanced(settings: Settings, query: str, category: str | None = None, era: str | None = None, refresh: bool = False) -> dict[str, Any]:
-    params = [f"search={quote(query)}", "page_size=50"]
+def search_api_advanced(settings: Settings, query: str, category: str | None = None, era: str | None = None, page: int = 1, page_size: int = 50, refresh: bool = False) -> dict[str, Any]:
+    params = [f"search={quote(query)}", f"page_size={page_size}", f"page={page}"]
     if category:
         params.append(f"category={quote(category)}")
     if era:
@@ -479,30 +487,6 @@ def read_mp3_metadata(path: Path, fallback: dict[str, Any]) -> dict[str, str]:
     return {"artist": artist, "title": title, "album": album, "length": f"{minutes:02d}:{seconds:02d}.{centiseconds:02d}"}
 
 
-def write_lrc(path: Path, analysis: dict[str, Any], out_dir: Path) -> Path:
-    synced = analysis.get("synced") or []
-    candidate = analysis.get("candidate") or {}
-    if not synced:
-        raise ValueError("No synchronized lyrics available")
-    meta = read_mp3_metadata(path, candidate)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{path.stem}.lrc"
-    lines = [f"[ar:{meta['artist'].replace(']', '}')}]", f"[ti:{meta['title'].replace(']', '}')}]"]
-    if meta["album"]:
-        lines.append(f"[al:{meta['album'].replace(']', '}')}]")
-    lines.append(f"[length:{meta['length']}]")
-    lines.append("")
-    for text, timestamp_ms in synced:
-        cs = max(0, int(round(timestamp_ms / 10)))
-        minutes, remainder = divmod(cs, 6000)
-        seconds, centiseconds = divmod(remainder, 100)
-        lines.append(f"[{minutes:02d}:{seconds:02d}.{centiseconds:02d}] {text}")
-    tmp = out_file.with_suffix(".lrc.tmp")
-    tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    tmp.replace(out_file)
-    return out_file
-
-
 def patch_rmpc_config(config_path: Path, lyrics_dir: Path) -> Path:
     if not config_path.exists():
         raise RuntimeError(f"rmpc config not found: {config_path}")
@@ -548,17 +532,21 @@ def notify_rmpc_index(paths: list[Path]) -> int:
     return count
 
 
-def configured_rmpc_lyrics_dir() -> Path:
-    return DEFAULT_RMPC_LYRICS_DIR
-
-
 def write_state_entry(state: dict[str, Any], path: Path, settings: Settings, analysis: dict[str, Any], lrc_path: Path | None) -> None:
     relative = str(path.relative_to(settings.music_dir))
     state.setdefault("files", {})[relative] = {
         "sha256": sha256_file(path),
         "song_id": analysis["candidate"].get("id") if analysis.get("candidate") else None,
         "api_name": analysis["candidate"].get("name") if analysis.get("candidate") else None,
-        "lyric_type": "SYLT" if analysis.get("synced") else ("USLT" if analysis.get("plain") else "NONE"),
+        "lyric_type": (
+            "FLAC_LYRICS_SYNCED" if analysis.get("synced") else "FLAC_LYRICS_PLAIN"
+        ) if path.suffix.casefold() == ".flac" else (
+            (
+                "M4A_LYRICS_SYNCED" if analysis.get("synced") else "M4A_LYRICS_PLAIN"
+            ) if path.suffix.casefold() == ".m4a" else (
+                "SYLT" if analysis.get("synced") else ("USLT" if analysis.get("plain") else "NONE")
+            )
+        ),
         "lrc": str(lrc_path) if lrc_path else None,
         "updated": now_iso(),
     }
@@ -577,16 +565,18 @@ def state_is_current(state: dict[str, Any], path: Path, settings: Settings, want
     valid, _ = verify_file(path)
     if not valid:
         return False
-    if want_rmpc and entry.get("lyric_type") == "SYLT":
-        lrc = Path(entry.get("lrc") or "")
-        if not lrc.is_file():
+    if want_rmpc and entry.get("lyric_type") in {
+        "SYLT",
+        "FLAC_LYRICS_SYNCED",
+        "M4A_LYRICS_SYNCED",
+    }:
+        if not sidecar_lrc_path(path).is_file():
             return False
     return True
 
 
 def embed_batch(settings: Settings, files: list[Path], use_color: bool, refresh: bool, dry_run: bool, yes: bool, with_rmpc: bool) -> int:
     state = load_state()
-    lyric_dir = configured_rmpc_lyrics_dir() if with_rmpc else None
     work: list[dict[str, Any]] = []
     skipped_unchanged = 0
     for index, path in enumerate(files, 1):
@@ -637,7 +627,7 @@ def embed_batch(settings: Settings, files: list[Path], use_color: bool, refresh:
         if not sys.stdin.isatty():
             print("Non-interactive mode: use --yes to confirm synchronization.")
             return 2
-        if input(f"Apply lyrics to {len(ready)} changed/new MP3(s)? [y/N] ").strip().lower() not in {"y", "yes"}:
+        if input(f"Apply lyrics to {len(ready)} changed/new audio file(s)? [y/N] ").strip().lower() not in {"y", "yes"}:
             print("Cancelled. No files changed.")
             return 0
     backup_root = make_backup_root()
@@ -657,7 +647,7 @@ def embed_batch(settings: Settings, files: list[Path], use_color: bool, refresh:
                 raise RuntimeError(f"verification failed: {message}")
             lrc_path = None
             if with_rmpc and analysis["synced"]:
-                lrc_path = write_lrc(path, analysis, lyric_dir)  # type: ignore[arg-type]
+                lrc_path = write_lrc(path, analysis)
                 generated_lrc.append(lrc_path)
             write_state_entry(state, path, settings, analysis, lrc_path)
             manifest.append({"file": str(path), "sha256_before": original_hash, "lyric_type": lyric_type, "verification": message})
@@ -703,14 +693,45 @@ from .library.scanner import find_mp3s as _find_mp3s
 from .backup.manager import make_backup_root as _make_backup_root, backup_file as _backup_file, write_manifest as _write_manifest, restore_backup as _restore_backup
 from .state import load_state as _load_state, save_state as _save_state, sha256_file as _sha256_file
 from .rmpc.integration import patch_rmpc_config as _patch_rmpc_config, rmpc_running as _rmpc_running, notify_rmpc_index as _notify_rmpc_index
+from .services.library_status import get_library_status
+from .services.catalogue import get_song_details, search_catalogue
+from .services.acquisition_queue import get_queue_snapshot
+from .services.library_sync import (
+    LibrarySyncOptions,
+    MatchOutcome,
+    SyncEventKind,
+    execute_library_sync,
+    plan_library_sync,
+)
+from .services.state_maintenance import (
+    execute_stale_state_cleanup,
+    plan_stale_state_cleanup,
+)
+from .services.identity_rebuild import (
+    execute_catalogue_identity_rebuild,
+    plan_catalogue_identity_rebuild,
+)
+from .services.doctor import (
+    DoctorStatus,
+    render_support_report,
+    run_doctor,
+)
 
 
 def search_api(settings: Settings, title: str, refresh: bool = False) -> list[dict[str, Any]]:
     return _api_search_song_names(settings, title, refresh=refresh)
 
 
-def search_api_advanced(settings: Settings, query: str, category: str | None = None, era: str | None = None, refresh: bool = False) -> dict[str, Any]:
-    return _api_search_songs(settings, query, category=category, era=era, refresh=refresh)
+def search_api_advanced(settings: Settings, query: str, category: str | None = None, era: str | None = None, page: int = 1, page_size: int = 50, refresh: bool = False) -> dict[str, Any]:
+    return _api_search_songs(
+        settings,
+        query,
+        category=category,
+        era=era,
+        page=page,
+        page_size=page_size,
+        refresh=refresh,
+    )
 
 
 def get_song(settings: Settings, song_id: int) -> dict[str, Any]:
@@ -741,8 +762,14 @@ rmpc_running = _rmpc_running
 notify_rmpc_index = _notify_rmpc_index
 
 
-def write_lrc(path: Path, analysis: dict[str, Any], out_dir: Path) -> Path:
-    return _write_lrc(path, analysis.get("synced") or [], analysis.get("candidate") or {}, out_dir)
+def write_lrc(
+    path: Path,
+    analysis: dict[str, Any],
+    out_dir: Path | None = None,
+) -> Path:
+    """Write a sidecar LRC; ``out_dir`` is ignored for CLI compatibility."""
+
+    return _write_lrc(path, analysis.get("synced") or [], analysis.get("candidate") or {})
 
 
 def load_settings(path_override: str | None = None, api_override: str | None = None) -> Settings:
@@ -753,6 +780,9 @@ def load_settings(path_override: str | None = None, api_override: str | None = N
             data = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
             if data.get("music_dir"):
                 settings.music_dir = Path(str(data["music_dir"])).expanduser()
+            if data.get("lyrics_dir"):
+                settings.lyrics_dir = Path(str(data["lyrics_dir"])).expanduser()
+                settings.lyrics_dir_explicit = True
             settings.api_base = str(data.get("api_base", settings.api_base)).rstrip("/")
             settings.timeout = int(data.get("timeout", settings.timeout))
             settings.delay = float(data.get("delay", settings.delay))
@@ -767,7 +797,7 @@ def load_settings(path_override: str | None = None, api_override: str | None = N
     return settings
 
 def command_setup(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    print_header("juice-lyrics First-Time Setup", use_color)
+    print_header("999 Library Setup", use_color)
     print(f"Library: {settings.music_dir}")
     if not settings.music_dir.is_dir():
         raise RuntimeError(f"Music directory does not exist: {settings.music_dir}")
@@ -777,61 +807,117 @@ def command_setup(args: argparse.Namespace, settings: Settings, use_color: bool)
         if not sys.stdin.isatty():
             print("Non-interactive mode: use --yes to confirm setup.")
             return 2
-        print("\nSetup will use the library, embed lyrics, and configure rmpc when detected.")
+        print("\nSetup will synchronize lyrics in the library.")
+        print("It will not change rmpc configuration; use `999 rmpc setup` for that.")
         if input("Continue? [Y/n] ").strip().lower() not in {"", "y", "yes"}:
             print("Cancelled.")
             return 0
-    if rmpc_available:
-        patch_rmpc_config(DEFAULT_RMPC_CONFIG, DEFAULT_RMPC_LYRICS_DIR)
-        DEFAULT_RMPC_LYRICS_DIR.mkdir(parents=True, exist_ok=True)
     files = find_mp3s(settings)
     return embed_batch(settings, files, use_color, args.refresh, False, True, rmpc_available)
 
 
 def command_sync(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    files = find_mp3s(settings)
     rmpc_enabled = args.no_rmpc is False
-    if rmpc_enabled and shutil.which("rmpc") is not None and DEFAULT_RMPC_CONFIG.exists():
-        DEFAULT_RMPC_LYRICS_DIR.mkdir(parents=True, exist_ok=True)
-        # Ensure the config points at our folder, but do not rewrite it on every sync.
-        text = DEFAULT_RMPC_CONFIG.read_text(encoding="utf-8")
-        if str(DEFAULT_RMPC_LYRICS_DIR) not in text:
-            patch_rmpc_config(DEFAULT_RMPC_CONFIG, DEFAULT_RMPC_LYRICS_DIR)
-    elif rmpc_enabled:
+    if rmpc_enabled and not (shutil.which("rmpc") is not None and DEFAULT_RMPC_CONFIG.exists()):
         rmpc_enabled = False
-    return embed_batch(settings, files, use_color, args.refresh, args.dry_run, args.yes, rmpc_enabled)
+    options = LibrarySyncOptions.from_settings(
+        settings,
+        dry_run=args.dry_run,
+        refresh=args.refresh,
+        rmpc_enabled=rmpc_enabled,
+        lyrics_dir=None,
+        rmpc_config_path=DEFAULT_RMPC_CONFIG if rmpc_enabled else None,
+        state_file=STATE_FILE,
+    )
+
+    def scan_progress(event):
+        if event.kind is SyncEventKind.TRACK_INSPECTED and event.path is not None:
+            suffix = " (unchanged)" if event.message == "unchanged" else ""
+            print(f"\rScanning: [{event.index:>2}/{event.total}] {event.path.name:<42}{suffix}", end="", flush=True)
+        elif event.kind is SyncEventKind.TRACK_FAILED and event.path is not None:
+            print()
+            print(colorize(f"✗ {event.path.name} — {event.message}", RED, use_color))
+
+    plan = plan_library_sync(options, progress=scan_progress)
+    if plan.total_files:
+        print("\r" + " " * 100 + "\r", end="")
+    print_header("Library Sync", use_color)
+    print(f"Changed/new:     {plan.changed_or_new_files}")
+    print(f"Unchanged:       {plan.unchanged_files}")
+    print(f"Ready:           {plan.ready_files}")
+    print(f"  Synced:        {plan.synced_files}")
+    print(f"  Plain fallback: {plan.plain_files}")
+    if rmpc_enabled:
+        print(f"rmpc LRC ready:  {plan.synced_files}")
+    print(f"Unresolved:      {plan.unresolved_files}")
+    print(f"No lyrics:       {plan.no_lyrics_files}")
+    unresolved = [track for track in plan.tracks if track.outcome is MatchOutcome.UNRESOLVED]
+    no_lyrics = [track for track in plan.tracks if track.outcome is MatchOutcome.NO_LYRICS]
+    if unresolved:
+        print(colorize("Unresolved:", YELLOW, use_color))
+        for track in unresolved:
+            print(f"  - {track.path.name}")
+    if no_lyrics:
+        print(colorize("No lyrics:", YELLOW, use_color))
+        for track in no_lyrics:
+            print(f"  - {track.path.name}")
+    if args.dry_run:
+        sidecars = [track.lrc_path for track in plan.tracks if track.lrc_path is not None]
+        if sidecars:
+            print("LRC sidecars:")
+            for sidecar in sidecars:
+                print(f"  - {sidecar}")
+        print(colorize("\nDry run: no files changed.", CYAN, use_color))
+        return 0
+    if not plan.ready_files:
+        execute_library_sync(plan)
+        print("Nothing needs updating.")
+        return 0
+    if not args.yes:
+        if not sys.stdin.isatty():
+            print("Non-interactive mode: use --yes to confirm synchronization.")
+            return 2
+        if input(f"Apply lyrics to {plan.ready_files} changed/new audio file(s)? [y/N] ").strip().lower() not in {"y", "yes"}:
+            print("Cancelled. No files changed.")
+            return 0
+
+    def execution_progress(event):
+        if event.kind is SyncEventKind.TRACK_COMPLETED and event.path is not None:
+            print(colorize(f"✓ {event.path.name}", GREEN, use_color) + f" → {event.message}")
+        elif event.kind is SyncEventKind.TRACK_FAILED and event.path is not None:
+            print(colorize(f"✗ {event.path.name} — {event.message}", RED, use_color))
+
+    result = execute_library_sync(plan, progress=execution_progress)
+    print()
+    print(colorize("Sync complete", BOLD, use_color))
+    print(f"  Updated:        {result.updated_files}")
+    print(f"  Unchanged:      {plan.unchanged_files}")
+    print(f"  rmpc LRC files: {result.lrc_files_generated}")
+    if result.rmpc_notifications:
+        print(f"  rmpc notified:  {result.rmpc_notifications}")
+    print(f"  Errors:         {result.processing_failed_files}")
+    print(f"  Backup:         {result.backup_path}")
+    return 1 if result.processing_failed_files else 0
 
 
 def command_status(settings: Settings, use_color: bool) -> int:
-    files = find_mp3s(settings)
-    state = load_state()
-    synced = plain = missing = stale = 0
-    lrc = 0
-    for path in files:
-        valid, msg = verify_file(path)
-        if valid:
-            if msg.startswith("SYLT"):
-                synced += 1
-            else:
-                plain += 1
-        else:
-            missing += 1
-        rel = str(path.relative_to(settings.music_dir))
-        entry = state.get("files", {}).get(rel)
-        if not entry or entry.get("sha256") != sha256_file(path):
-            stale += 1
-        if entry and entry.get("lrc") and Path(entry["lrc"]).is_file():
-            lrc += 1
+    status = get_library_status(
+        settings,
+        state_file=STATE_FILE,
+        backup_dir=BACKUP_DIR,
+        verifier=verify_file,
+    )
     print_header("Library Status", use_color)
-    print(f"Library:              {settings.music_dir}")
-    print(f"MP3 files:            {len(files)}")
-    print(f"Embedded synced:      {synced}")
-    print(f"Embedded plain:       {plain}")
-    print(f"Missing/invalid:      {missing}")
-    print(f"rmpc LRC files:       {lrc}")
-    print(f"New/changed for sync: {stale}")
-    print(f"Backups:              {len([p for p in BACKUP_DIR.iterdir() if p.is_dir()]) if BACKUP_DIR.exists() else 0}")
-    return 1 if missing else 0
+    print(f"Library:              {status.library_path}")
+    print("External lyrics:      Beside each song (.lrc)")
+    print(f"Audio files:          {status.track_count}")
+    print(f"Embedded synced:      {status.embedded_synced_count}")
+    print(f"Embedded plain:       {status.embedded_plain_count}")
+    print(f"Missing/invalid:      {status.missing_or_invalid_count}")
+    print(f"rmpc LRC files:       {status.rmpc_lrc_count}")
+    print(f"New/changed for sync: {status.new_or_changed_count}")
+    print(f"Backups:              {status.backup_count}")
+    return 1 if status.missing_or_invalid_count else 0
 
 
 def command_scan(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
@@ -858,13 +944,22 @@ def command_scan(args: argparse.Namespace, settings: Settings, use_color: bool) 
         counts[kind] += 1
     if files:
         print("\r" + " " * 100 + "\r", end="")
-    print(f"Synced: {counts['SYNCED']}  Plain: {counts['PLAIN']}  No lyrics: {counts['NONE']}  Uncertain: {counts['?']}")
+    print(
+        f"Synced: {counts['SYNCED']}  Plain: {counts['PLAIN']}  "
+        f"No lyrics: {counts['NONE']}  Catalogue uncertain: {counts['?']}"
+    )
     return 1 if counts["?"] else 0
 
 
 def command_search(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    data = search_api_advanced(settings, args.query, args.category, args.era, args.refresh)
-    results = data.get("results", [])
+    results = search_catalogue(
+        settings,
+        args.query,
+        category=args.category,
+        era=args.era,
+        refresh=args.refresh,
+        searcher=search_api_advanced,
+    )
     print_header(f'Juice WRLD API Search: "{args.query}"', use_color)
     if args.category or args.era:
         filters = []
@@ -874,47 +969,36 @@ def command_search(args: argparse.Namespace, settings: Settings, use_color: bool
     if not results:
         print("No results.")
         return 0
-    for idx, song in enumerate(results, 1):
-        synced = bool(str(song.get("synced_lyrics") or "").strip())
-        plain = bool(str(song.get("lyrics") or "").strip())
-        lyrics = "SYNCED" if synced else ("PLAIN" if plain else "NONE")
-        path = str(song.get("path") or "")
-        era_val = song.get("era")
-        era_str = era_val.get("name", "") if isinstance(era_val, dict) else str(era_val or "")
-        print(f"{idx:>2}. {song.get('name', 'Unknown')}  [{song.get('category', '?')}]  [{lyrics}]")
-        print(f"    id={song.get('id')}  era={era_str}  length={song.get('length') or '?'}")
-        if path:
-            print(f"    {path}")
+    for song in results:
+        print(f"{song.selection_index:>2}. {song.title or 'Unknown'}  [{song.category or '?'}]  [{song.lyrics.value.upper()}]")
+        print(f"    id={song.song_id}  era={song.era or ''}  length={song.length or '?'}")
+        if song.media_path:
+            print(f"    {song.media_path}")
     return 0
 
 
 def command_info(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    results = search_api(settings, args.query, refresh=args.refresh)
-    if not results:
+    details = get_song_details(
+        settings,
+        args.query,
+        selection_index=args.index,
+        refresh=args.refresh,
+        searcher=search_api,
+        details_fetcher=get_song,
+    )
+    if details is None:
         print("No results.")
         return 1
-    candidate = results[0]
-    if args.index:
-        if args.index < 1 or args.index > len(results):
-            raise RuntimeError("--index is outside the result list")
-        candidate = results[args.index - 1]
-    if candidate.get("id"):
-        try:
-            candidate = get_song(settings, int(candidate["id"]))
-        except Exception:
-            pass
-    print_header(str(candidate.get("name", "Song")), use_color)
-    era_val = candidate.get("era")
-    era_str = era_val.get("name", "") if isinstance(era_val, dict) else str(era_val or "")
+    print_header(details.title or "Song", use_color)
     fields = [
-        ("ID", candidate.get("id")),
-        ("Category", candidate.get("category")),
-        ("Era", era_str),
-        ("Length", candidate.get("length")),
-        ("Artist", candidate.get("credited_artists")),
-        ("Producers", candidate.get("producers")),
-        ("Path", candidate.get("path")),
-        ("Lyrics", "synced" if candidate.get("synced_lyrics") else ("plain" if candidate.get("lyrics") else "none")),
+        ("ID", details.song_id),
+        ("Category", details.category),
+        ("Era", details.era),
+        ("Length", details.length),
+        ("Artist", ", ".join(details.artists)),
+        ("Producers", ", ".join(details.producers)),
+        ("Path", details.media_path),
+        ("Lyrics", details.lyrics.value),
     ]
     for key, value in fields:
         if value not in (None, ""):
@@ -925,40 +1009,36 @@ def command_info(args: argparse.Namespace, settings: Settings, use_color: bool) 
 def command_guide() -> int:
     print(f"""{APP_NAME} quick guide
 
-FIRST TIME
-  juice-lyrics setup
+OPEN THE APP
+  999
 
 NORMAL USE
-  juice-lyrics sync
-  juice-lyrics status
+  999 status
+  999 sync --dry-run
+  999 sync
 
-ACQUISITION
-  juice-lyrics acquire search "rental"
-  juice-lyrics acquire add "rental" --index 1
-  juice-lyrics acquire manifest manifest.txt
-  juice-lyrics acquire jobs
-  juice-lyrics acquire run <job-id>
-  juice-lyrics acquire retry <job-id>
-  juice-lyrics acquire delete <job-id>
+OPTIONAL SETUP
+  999 config init
+  999 rmpc setup
 
 CHECK / TROUBLESHOOT
-  juice-lyrics scan
-  juice-lyrics verify
-  juice-lyrics doctor
-  juice-lyrics guide
+  999 verify
+  999 rmpc verify
+  999 doctor
+  999 guide
 
 FIND SONGS IN THE API
-  juice-lyrics search "rental"
-  juice-lyrics search --category unreleased --era DRFL "moncler"
-  juice-lyrics info "rental"
+  999 search "rental"
+  999 search --category unreleased --era DRFL "moncler"
+  999 info "rental"
 
 UNDO
-  juice-lyrics restore
+  999 restore
 
 WHAT SYNC DOES
-  1. Matches new/changed MP3s to the API.
-  2. Prefers synced lyrics (SYLT).
-  3. Falls back to normal embedded lyrics (USLT).
+  1. Matches new/changed MP3, FLAC, and M4A files to the API.
+  2. Prefers synchronized lyrics and adjacent LRC files.
+  3. Embeds supported lyrics without converting audio.
   4. Generates .lrc files for rmpc when synced lyrics exist.
   5. Backs up files before changing them.
   6. Verifies the result.
@@ -999,29 +1079,68 @@ def command_restore(args: argparse.Namespace, settings: Settings, use_color: boo
         if input("Restore this backup? [y/N] ").strip().lower() not in {"y", "yes"}:
             print("Cancelled."); return 0
     count = restore_backup(root, settings.music_dir)
-    print(f"Restored {count} MP3s.")
+    print(f"Restored {count} audio file(s).")
     return 0
 
 
 def command_doctor(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    print_header("juice-lyrics Doctor", use_color)
-    problems = 0
-    print(f"Version: {__version__}\nPython:  {sys.version.split()[0]}\nMutagen: OK\nLibrary: {settings.music_dir}")
-    if not settings.music_dir.is_dir(): problems += 1; print(colorize("  Library directory does not exist", RED, use_color))
-    try:
-        api_get(settings.api_base.rstrip("/") + "/", settings.timeout); print("API:     OK")
-    except Exception as exc:
-        problems += 1; print(colorize(f"API:     FAILED ({exc})", RED, use_color))
-    print(f"Config:  {CONFIG_FILE}\nCache:   {CACHE_DIR}\nState:   {STATE_FILE}\nBackups: {BACKUP_DIR}")
-    return 1 if problems else 0
+    report = run_doctor(
+        settings,
+        config_path=CONFIG_FILE,
+        state_file=STATE_FILE,
+        cache_dir=CACHE_DIR,
+        backup_dir=BACKUP_DIR,
+        rmpc_config_path=DEFAULT_RMPC_CONFIG,
+    )
+    support_text = render_support_report(report)
+    if args.support_report:
+        print(support_text)
+    else:
+        print_header("999 Doctor", use_color)
+        colors = {
+            DoctorStatus.PASS: GREEN,
+            DoctorStatus.WARN: YELLOW,
+            DoctorStatus.FAIL: RED,
+        }
+        for check in report.checks:
+            prefix = colorize(f"{check.status.value:<4}", colors[check.status], use_color)
+            print(f"{prefix}  {check.label}: {check.detail}")
+            if check.suggestion:
+                print(f"      Suggestion: {check.suggestion}")
+        print(f"\nSummary: {report.passed} PASS · {report.warned} WARN · {report.failed} FAIL")
+        print("No audio, state, cache, configuration, backups, downloads, or rmpc settings were changed.")
+    if args.save_report:
+        destination = Path(args.save_report).expanduser()
+        temporary: Path | None = None
+        try:
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+            )
+            os.close(descriptor)
+            temporary = Path(temporary_name)
+            temporary.write_text(support_text + "\n", encoding="utf-8")
+            temporary.replace(destination)
+        except OSError as exc:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            raise RuntimeError(f"Could not save support report: {exc}") from exc
+        if not args.support_report:
+            print(f"Sanitized support report saved to {destination}")
+    return 1 if report.failed else 0
 
 
-def command_config(args: argparse.Namespace) -> int:
+def command_config(args: argparse.Namespace, settings: Settings | None = None) -> int:
     if args.action == "init":
         write_default_config(args.force); print(f"Created {CONFIG_FILE}"); return 0
     if args.action == "show":
-        if CONFIG_FILE.exists(): print(CONFIG_FILE.read_text(encoding="utf-8"))
-        else: print(f"No config. Defaults are in use.\n{CONFIG_FILE}")
+        effective = settings or load_settings()
+        if CONFIG_FILE.exists():
+            print(CONFIG_FILE.read_text(encoding="utf-8").rstrip())
+        else:
+            print(f"No config. Defaults are in use.\n{CONFIG_FILE}")
+        if effective.lyrics_dir_explicit:
+            print(f"Deprecated lyrics_dir (ignored for LRC output): {effective.lyrics_dir}")
+        print("External lyrics: beside each song (.lrc)")
         return 0
     raise RuntimeError("Unknown config action")
 
@@ -1033,19 +1152,80 @@ def command_cache(args: argparse.Namespace) -> int:
     raise RuntimeError("Unknown cache action")
 
 
+def command_state(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
+    if args.action == "clean":
+        plan = plan_stale_state_cleanup(settings, state_file=STATE_FILE)
+        print_header("Stale State Cleanup", use_color)
+        print(f"State: {plan.state_file}")
+        if not plan.stale_keys:
+            print("No clearly stale external records found. No changes made.")
+            return 0
+        print(f"Clearly stale records: {plan.stale_count}")
+        for key in plan.stale_keys:
+            print(f"  - {key}")
+        if not args.yes:
+            print("\nPreview only. Run `999 state clean --yes` to back up state and remove these records.")
+            return 0
+        result = execute_stale_state_cleanup(plan)
+        print(f"\nRemoved: {result.removed_count}")
+        print(f"State backup: {result.backup_path}")
+        print("Audio and LRC files were not changed.")
+        return 0
+    if args.action == "rebuild-identities":
+        plan = plan_catalogue_identity_rebuild(settings, state_file=STATE_FILE)
+        print_header("Catalogue Identity Rebuild", use_color)
+        print(f"State:               {plan.state_file}")
+        print(f"Current tracks:      {plan.current_tracks}")
+        print(f"Existing identities: {plan.existing_identities}")
+        print(f"Currently unknown:   {plan.currently_unknown}")
+        print(f"Manual locks kept:   {plan.locked_identities}")
+        print(f"Stale records ignored: {len(plan.stale_keys)}")
+        if not args.yes:
+            print("\nNo changes made. Run `999 state rebuild-identities --yes` to rebuild safely.")
+            return 0
+        result = execute_catalogue_identity_rebuild(
+            plan,
+            refresh=args.refresh,
+            include_locked=args.include_locked,
+        )
+        if result.aborted:
+            print(f"\nRebuild aborted safely: {result.abort_reason}")
+            return 1
+        print("\nCatalogue rebuild complete")
+        print(f"Matched:              {result.matched}")
+        print(f"Unknown:              {result.unknown}")
+        print(f"Changed identities:   {result.changed_identities}")
+        print(f"Unchanged identities: {result.unchanged_identities}")
+        print(f"Failed, preserved:    {result.failed_preserved}")
+        print(f"Stale ignored:        {result.stale_ignored}")
+        print(f"State backup:         {result.backup_path or 'Not needed'}")
+        changes = result.changes if args.details else result.changes[:10]
+        if changes:
+            print("\nIdentity changes:")
+            for change in changes:
+                old = f"{change.old_song_id} ({change.old_api_name or 'Unknown'})" if change.old_song_id is not None else "Unknown"
+                new = f"{change.new_song_id} ({change.new_api_name or 'Unknown'})" if change.new_song_id is not None else "Unknown"
+                print(f"  {change.path}: {old} -> {new}")
+            if not args.details and len(result.changes) > len(changes):
+                print(f"  … {len(result.changes) - len(changes)} more; rerun with --details to show all")
+        print("Audio, embedded lyrics, sidecars, and rmpc configuration were not changed.")
+        return 0
+    raise RuntimeError("Unknown state action")
+
+
 def command_rmpc_setup(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
     config_path = Path(args.config).expanduser() if args.config else DEFAULT_RMPC_CONFIG
-    lyrics_dir = Path(args.lyrics_dir).expanduser() if args.lyrics_dir else DEFAULT_RMPC_LYRICS_DIR
-    if not lyrics_dir.is_absolute(): lyrics_dir = lyrics_dir.resolve()
+    music_root = Path(settings.music_dir).expanduser()
+    if not music_root.is_absolute():
+        music_root = music_root.resolve()
     if shutil.which("rmpc") is None: raise RuntimeError("rmpc was not found in PATH")
     if not config_path.exists(): raise RuntimeError(f"rmpc config not found: {config_path}")
     print_header("rmpc Lyrics Setup", use_color)
-    print(f"Library:     {settings.music_dir}\nLRC folder:  {lyrics_dir}\nrmpc config: {config_path}\n")
+    print(f"Library:     {settings.music_dir}\nExternal lyrics: beside each song\nrmpc config: {config_path}\n")
     if not args.yes:
         if not sys.stdin.isatty(): print("Non-interactive mode: use --yes."); return 2
         if input("Create LRC files and update rmpc config? [y/N] ").strip().lower() not in {"y", "yes"}:
             print("Cancelled. No changes made."); return 0
-    lyrics_dir.mkdir(parents=True, exist_ok=True)
     analyses = []
     files = find_mp3s(settings)
     for i, path in enumerate(files, 1):
@@ -1055,32 +1235,33 @@ def command_rmpc_setup(args: argparse.Namespace, settings: Settings, use_color: 
     generated = []
     for a in analyses:
         if not a.get("synced"): continue
-        generated.append(write_lrc(a["path"], a, lyrics_dir))
+        generated.append(write_lrc(a["path"], a))
         print(colorize(f"✓ {a['path'].name}", GREEN, use_color) + " → LRC")
-    backup = patch_rmpc_config(config_path, lyrics_dir)
+    backup = patch_rmpc_config(config_path, music_root)
     indexed = notify_rmpc_index(generated)
-    print(f"\nrmpc setup complete\n  LRC files:     {len(generated)}\n  Lyrics folder: {lyrics_dir}\n  Config backup: {backup}")
+    print(f"\nrmpc setup complete\n  LRC files:     {len(generated)}\n  Indexed tree:  {music_root}\n  Config backup: {backup}")
     if indexed: print(f"  rmpc notified: {indexed}")
     elif not rmpc_running(): print("  rmpc: not currently running; start/restart it to load the setup")
     return 0
 
 
 def command_rmpc_sync(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    lyrics_dir = Path(args.lyrics_dir).expanduser() if args.lyrics_dir else DEFAULT_RMPC_LYRICS_DIR
-    lyrics_dir.mkdir(parents=True, exist_ok=True)
     generated = []
     for path in find_mp3s(settings):
         a = analyse(settings, path, args.refresh)
         if not a.get("synced"): continue
-        generated.append(write_lrc(path, a, lyrics_dir))
+        generated.append(write_lrc(path, a))
         print(colorize(f"✓ {path.name}", GREEN, use_color))
     print(f"Generated: {len(generated)}   Notified: {notify_rmpc_index(generated)}")
     return 0
 
 
 def command_rmpc_verify(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    lyrics_dir = Path(args.lyrics_dir).expanduser() if args.lyrics_dir else DEFAULT_RMPC_LYRICS_DIR
-    files = sorted(lyrics_dir.glob("*.lrc")) if lyrics_dir.is_dir() else []
+    files = [
+        sidecar_lrc_path(path)
+        for path in find_mp3s(settings)
+        if sidecar_lrc_path(path).is_file()
+    ]
     good = bad = 0
     for path in files:
         text = path.read_text(encoding="utf-8")
@@ -1106,7 +1287,13 @@ def _acquisition_resource_url(resource: dict[str, Any], api_base: str = DEFAULT_
 
 
 def command_acquire_search(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
-    data = search_api_advanced(settings, args.query, args.category, args.era, args.refresh)
+    data = search_api_advanced(
+        settings,
+        args.query,
+        category=args.category,
+        era=args.era,
+        refresh=args.refresh,
+    )
     results = data.get("results", []) if isinstance(data, dict) else []
     if not isinstance(results, list) or not results:
         print("No API results found.")
@@ -1129,7 +1316,7 @@ def command_acquire_search(args: argparse.Namespace, settings: Settings, use_col
     if shown == 0:
         print("No usable API results found.")
         return 1
-    print("\nUse: juice-lyrics acquire add \"<query>\" --index <number(s)>")
+    print("\nUse: 999 acquire add \"<query>\" --index <number(s)>")
     return 0
 
 
@@ -1253,7 +1440,7 @@ def command_acquire_add(args: argparse.Namespace, settings: Settings, use_color:
         print(f"Items ({len(items)}):")
         for item in items:
             print(f"  - {item.title} → {item.destination}")
-    print(f"\nRun it with: juice-lyrics acquire run {job.job_id}")
+    print(f"\nRun it with: 999 acquire run {job.job_id}")
     return 0
 
 
@@ -1323,21 +1510,21 @@ def command_acquire_manifest(args: argparse.Namespace, settings: Settings, use_c
         print(colorize("\nUnresolved / Skipped entries:", YELLOW, use_color))
         for u in unresolved:
             print(f"  - {u}")
-    print(f"\nRun it with: juice-lyrics acquire run {job.job_id}")
+    print(f"\nRun it with: 999 acquire run {job.job_id}")
     return 0
 
 
 def command_acquire_jobs(args: argparse.Namespace, settings: Settings, use_color: bool) -> int:
     store = JobStore()
-    jobs = store.list()
-    if not jobs:
+    snapshot = get_queue_snapshot(store.path)
+    if not snapshot.jobs:
         print("No acquisition jobs.")
         return 0
     print_header("Acquisition jobs", use_color)
-    for job in jobs:
-        print(f"  {job.job_id} — {job.state.value} — {len(job.items)} item(s)")
-        for entry in job.items:
-            print(f"      {entry.state.value:<14} {entry.item.title} → {entry.item.destination}")
+    for job in snapshot.jobs:
+        print(f"  {job.job_id} — {job.stored_state} — {job.total_item_count} item(s)")
+        for item in job.items:
+            print(f"      {item.stored_state:<14} {item.title} → {item.destination}")
     return 0
 
 
@@ -1348,10 +1535,11 @@ def _run_acquisition_job(job: AcquisitionJob, store: JobStore, settings: Setting
 
     print_header(title, use_color)
     def postprocess(result):
+        if result.postprocessing_retry:
+            print(f"\n  Retrying post-processing from existing finalized file: {result.item.destination}")
         integration = integrate_downloaded_mp3(
             result.item,
             song_fetcher=lambda song_id: _api_get_song(settings, song_id),
-            lyrics_dir=configured_rmpc_lyrics_dir(),
             settings=settings,
         )
         if integration.message:
@@ -1443,15 +1631,23 @@ def command_acquire(args: argparse.Namespace, settings: Settings, use_color: boo
         return command_acquire_delete(args, settings, use_color)
     raise RuntimeError("Unknown acquisition action")
 
+
+def command_tui(settings: Settings) -> int:
+    """Launch the 999 terminal interface."""
+
+    from .tui import run_tui
+
+    return run_tui(settings)
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog=APP_NAME, description="Manage lyrics metadata and rmpc LRC files for local MP3 libraries.")
+    parser = argparse.ArgumentParser(prog=APP_NAME, description="Manage lyrics metadata and rmpc LRC files for local MP3, FLAC, and M4A libraries.")
     parser.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")
-    parser.add_argument("--path", help="MP3 library directory (overrides config).")
+    parser.add_argument("--path", help="Music library directory (overrides config).")
     parser.add_argument("--api-base", help="Override the API base URL.")
     parser.add_argument("--no-color", action="store_true")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
 
-    setup = sub.add_parser("setup", help="First-time setup: embed lyrics and configure rmpc when detected.")
+    setup = sub.add_parser("setup", help="Synchronize the current library without changing rmpc configuration.")
     setup.add_argument("--yes", action="store_true")
     setup.add_argument("--refresh", action="store_true")
 
@@ -1466,20 +1662,30 @@ def build_parser() -> argparse.ArgumentParser:
     scan = sub.add_parser("scan", help="Scan the API and report matches.")
     scan.add_argument("--refresh", action="store_true")
 
-    embed = sub.add_parser("embed", help="Low-level command: embed lyrics into MP3s.")
+    embed = sub.add_parser("embed", help="Low-level command: embed lyrics into supported audio files.")
     embed.add_argument("--yes", action="store_true")
     embed.add_argument("--dry-run", action="store_true")
     embed.add_argument("--refresh", action="store_true")
 
     verify = sub.add_parser("verify", help="Verify embedded lyrics.")
 
-    restore = sub.add_parser("restore", help="Restore a previous MP3 backup.")
+    restore = sub.add_parser("restore", help="Restore a previous audio backup.")
     restore.add_argument("--backup")
     restore.add_argument("--yes", action="store_true")
 
-    doctor = sub.add_parser("doctor", help="Check the installation and API connection.")
+    doctor = sub.add_parser("doctor", help="Run bounded, read-only installation and library diagnostics.")
+    doctor.add_argument("--support-report", action="store_true", help="Print a sanitized JSON support report.")
+    doctor.add_argument("--save-report", metavar="PATH", help="Deliberately save the sanitized support report to PATH.")
+
+    completion = sub.add_parser(
+        "completion",
+        help="Generate shell completion without loading application data.",
+    )
+    completion.add_argument("shell", choices=("bash", "zsh", "fish"))
 
     guide = sub.add_parser("guide", help="Show the built-in quick guide.")
+
+    sub.add_parser("tui", help="Launch the 999 terminal interface.")
 
     search = sub.add_parser("search", help="Search the public Juice WRLD song catalogue.")
     search.add_argument("query")
@@ -1492,7 +1698,7 @@ def build_parser() -> argparse.ArgumentParser:
     info.add_argument("--index", type=int, help="Choose a result from the search list (1-based).")
     info.add_argument("--refresh", action="store_true")
 
-    acquire = sub.add_parser("acquire", help="Explicitly select and acquire API media resources.")
+    acquire = sub.add_parser("acquire", help="Advanced download operations.")
     ac = acquire.add_subparsers(dest="action", required=True)
     acs = ac.add_parser("search", help="Search acquisition candidates without downloading anything.")
     acs.add_argument("query")
@@ -1524,14 +1730,14 @@ def build_parser() -> argparse.ArgumentParser:
     rs = rmpc.add_subparsers(dest="action", required=True)
     r1 = rs.add_parser("setup")
     r1.add_argument("--config")
-    r1.add_argument("--lyrics-dir")
+    r1.add_argument("--lyrics-dir", help="Deprecated compatibility option; sidecars are written beside songs.")
     r1.add_argument("--yes", action="store_true")
     r1.add_argument("--refresh", action="store_true")
     r2 = rs.add_parser("sync")
-    r2.add_argument("--lyrics-dir")
+    r2.add_argument("--lyrics-dir", help="Deprecated compatibility option; sidecars are written beside songs.")
     r2.add_argument("--refresh", action="store_true")
     r3 = rs.add_parser("verify")
-    r3.add_argument("--lyrics-dir")
+    r3.add_argument("--lyrics-dir", help="Deprecated compatibility option; sidecars are read beside songs.")
 
     config = sub.add_parser("config", help="Manage configuration.")
     cs = config.add_subparsers(dest="action", required=True)
@@ -1540,6 +1746,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     cache = sub.add_parser("cache", help="Manage API cache.")
     csub = cache.add_subparsers(dest="action", required=True); csub.add_parser("clear")
+
+    state = sub.add_parser("state", help="Inspect or safely maintain application state.")
+    state_sub = state.add_subparsers(dest="action", required=True)
+    state_clean = state_sub.add_parser("clean", help="Preview clearly stale external state records.")
+    state_clean.add_argument("--yes", action="store_true", help="Back up state and remove the listed stale records.")
+    rebuild = state_sub.add_parser(
+        "rebuild-identities",
+        help="Preview re-identifying current library files with the latest matcher.",
+    )
+    rebuild.add_argument("--yes", action="store_true", help="Back up state and apply the identity rebuild.")
+    rebuild.add_argument("--refresh", action="store_true", help="Refresh catalogue search responses instead of using valid cache entries.")
+    rebuild.add_argument("--details", action="store_true", help="Show every changed identity mapping.")
+    rebuild.add_argument(
+        "--include-locked",
+        action="store_true",
+        help="Advanced: reconsider manual locked identities too.",
+    )
     return parser
 
 
@@ -1547,8 +1770,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     use_color = not args.no_color and sys.stdout.isatty()
+    if args.command == "completion":
+        print(generate_completion(parser, args.shell), end="")
+        return 0
     try:
-        settings = load_settings(getattr(args, "path", None), getattr(args, "api_base", None))
+        try:
+            settings = load_settings(getattr(args, "path", None), getattr(args, "api_base", None))
+        except RuntimeError:
+            if args.command != "doctor":
+                raise
+            settings = Settings()
+            if getattr(args, "path", None):
+                settings.music_dir = Path(args.path).expanduser()
+            if getattr(args, "api_base", None):
+                settings.api_base = args.api_base.rstrip("/")
+        if args.command is None: return command_tui(settings)
         if args.command == "setup": return command_setup(args, settings, use_color)
         if args.command == "sync": return command_sync(args, settings, use_color)
         if args.command == "status": return command_status(settings, use_color)
@@ -1558,6 +1794,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "restore": return command_restore(args, settings, use_color)
         if args.command == "doctor": return command_doctor(args, settings, use_color)
         if args.command == "guide": return command_guide()
+        if args.command == "tui": return command_tui(settings)
         if args.command == "search": return command_search(args, settings, use_color)
         if args.command == "info": return command_info(args, settings, use_color)
         if args.command == "acquire": return command_acquire(args, settings, use_color)
@@ -1565,8 +1802,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.action == "setup": return command_rmpc_setup(args, settings, use_color)
             if args.action == "sync": return command_rmpc_sync(args, settings, use_color)
             if args.action == "verify": return command_rmpc_verify(args, settings, use_color)
-        if args.command == "config": return command_config(args)
+        if args.command == "config": return command_config(args, settings)
         if args.command == "cache": return command_cache(args)
+        if args.command == "state": return command_state(args, settings, use_color)
         parser.error("Unknown command")
     except KeyboardInterrupt:
         print("\nCancelled.", file=sys.stderr); return 130

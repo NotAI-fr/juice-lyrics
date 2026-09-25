@@ -1,34 +1,52 @@
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "juice-wrld-lyrics"
-version = "1.4.0"
-description = "Manage local lyrics metadata and rmpc LRC files for MP3 libraries"
+dynamic = ["version"]
+description = "999: a Juice WRLD music hub for Linux"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["mutagen>=1.47"]
-license = { text = "MIT" }
+dependencies = [
+  "mutagen>=1.47,<2.0",
+  "textual>=1.0,<2.0",
+]
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
   { name = "juice-wrld-lyrics contributors" }
 ]
-keywords = ["juice-wrld", "lyrics", "mp3", "id3", "sylt", "uslt", "rmpc"]
+keywords = ["juice-wrld", "lyrics", "mp3", "flac", "m4a", "id3", "sylt", "uslt", "rmpc"]
 classifiers = [
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
   "Operating System :: POSIX :: Linux",
+  "Topic :: Multimedia :: Sound/Audio",
 ]
 
 [project.scripts]
+999 = "juice_lyrics.cli:main"
 juice-lyrics = "juice_lyrics.cli:main"
 
 [project.urls]
-Homepage = "https://juicewrldapi.com/"
+Homepage = "https://github.com/NotAI-fr/juice-lyrics"
+Repository = "https://github.com/NotAI-fr/juice-lyrics"
+Issues = "https://github.com/NotAI-fr/juice-lyrics/issues"
+"Catalogue API" = "https://juicewrldapi.com/"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "juice_lyrics.__version__" }

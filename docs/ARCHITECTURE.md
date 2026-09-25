@@ -40,9 +40,15 @@ The API layer should not know about terminal prompts, MP3 tagging, or rmpc UI.
 
 ## Library layer
 
+The Library TUI is an orchestration frontend over the same scanner, status,
+sync, verification, backup/restore, and rmpc services used by the CLI. It never
+shells out to `999` and does not duplicate matching or media mutation rules.
+Planning and verification are read-only; applying a reviewed plan, restoring a
+backup, and configuring rmpc require explicit cancel-first confirmation.
+
 Responsibilities:
 
-* scan local MP3s
+* scan local MP3, FLAC, and M4A files recursively
 * extract metadata
 * duration handling
 * fingerprints/state
@@ -52,13 +58,36 @@ Responsibilities:
 
 Matching must remain version-aware, alias-aware, and duration-aware.
 
+Local lyric health and catalogue matchability are independent axes. Coverage
+uses format-aware embedded lyric verification plus an adjacent LRC that parses
+to at least one timestamped lyric line. A catalogue match is required to fetch
+or refresh lyrics, but is not required to recognize an already covered local
+track. Ordinary TUI maintenance protects fully covered unmatched tracks; an
+explicit per-track refresh may retry conservative matching without changing the
+file when no safe candidate is found.
+
+One-button Library Sync uses `services/library_index_sync.py` as the shared
+incremental orchestration boundary. It compares cheap filesystem fingerprints
+to classify unchanged, new, changed, and removed current-library paths; reuses
+safe snapshot/identity information for unchanged files; invalidates identity
+trust when file evidence changes; and offers new, changed, and Unknown MP3,
+FLAC, and M4A tracks to the normal conservative matcher. Confident identities
+are atomically merged without inferring lyric-processing state. Removed paths
+are retired rather than destructively deleting historical/custom state.
+
+The TUI runs Sync in a worker and prevents concurrent duplicate runs. Ordinary
+Sync does not mutate audio, lyrics, backups, downloads, or rmpc configuration.
+The older Refresh action remains a direct read-only local rescan.
+
 ## Lyrics layer
 
 Responsibilities:
 
 * parse API LRC-style `synced_lyrics`
-* produce SYLT frames
-* produce USLT frames
+* produce MP3 SYLT frames
+* produce MP3 USLT frames
+* write standard plain-text FLAC/Vorbis `LYRICS` comments
+* write standard plain-text M4A/MP4 `©lyr` atoms
 * verify lyric frames
 * write `.lrc` text when synchronized lyrics exist
 
@@ -68,11 +97,16 @@ It must never manufacture timestamps for plain lyrics.
 
 Responsibilities:
 
-* generate `.lrc` files for synced lyrics
+* generate same-basename `.lrc` sidecars beside audio for synced lyrics
 * locate/configure the user's rmpc config safely
 * preserve unrelated rmpc settings/layout/keybinds
 * trigger lyric re-indexing where supported
 * provide diagnostics
+
+The finalized audio path is authoritative for external lyrics. Historical state,
+rmpc configuration, and the deprecated `lyrics_dir` setting cannot redirect a
+new write. A generated sidecar is passed to rmpc's individual-path indexing
+boundary.
 
 ## Backup layer
 
@@ -96,11 +130,25 @@ Do not hard-code a particular user's home directory.
 
 ## State layer
 
+Catalogue identity rebuilds are explicit state-only transactions. Preview scans
+the current library without API calls or writes. Apply rematches every current
+track in memory, preserves non-identity fields, ignores stale external records,
+backs up the complete source state, and performs one atomic replacement. A
+provider-wide failure aborts; an isolated request failure preserves that
+track's prior identity.
+
 Track enough information to skip unchanged files safely.
 
 State should include a local file identity/fingerprint and enough processing information to know whether lyrics/rmpc output are current.
 
 Losing state must be recoverable: the application should be able to rescan and reconstruct it.
+
+Exact library-relative keys are authoritative. An older basename-only key may
+be read when both the local file and historical record are unambiguous; it is
+not automatically duplicated or deleted. Clearly stale nonexistent absolute
+external references are ignored by normal lookup and may be pruned only through
+the preview-first state cleanup service, which makes a safety copy and writes
+atomically.
 
 ## Acquisition layer
 
@@ -206,6 +254,11 @@ Responsibilities:
 
 Normal user commands should be easy to remember.
 
+The product and primary executable are named `999`. The legacy
+`juice-lyrics` console script resolves to the same `juice_lyrics.cli:main`
+function. The import namespace remains `juice_lyrics`, and persisted XDG paths
+remain under `juice-lyrics`; branding must not create a second storage tree.
+
 ## UI layer
 
 Long term, an interactive TUI can sit on top of the same services.
@@ -221,7 +274,7 @@ Both CLI and TUI should reuse the same API, acquisition, library, and lyrics ser
 * duration matching
 * SYLT first / USLT fallback
 * rmpc `.lrc` generation only for synced lyrics
-* backups before MP3 metadata changes
+* backups before MP3, FLAC, or M4A metadata changes
 * verification after writes
 * incremental sync
 
@@ -231,10 +284,15 @@ Acquisition owns transport and persistent job state.
 
 After a successfully acquired MP3 is written, the optional post-processing hook passes the file through the existing lyrics engine.
 
-Synced lyrics become ID3 SYLT and an rmpc `.lrc`.
+For MP3, synced lyrics become ID3 SYLT and a same-basename `.lrc` beside the audio.
 
-Plain lyrics become ID3 USLT.
+MP3 plain lyrics become ID3 USLT. FLAC embeds standard plain-text Vorbis
+`LYRICS`; synchronized timing remains in the adjacent `.lrc` because Vorbis
+comments have no interoperable equivalent to ID3 SYLT. M4A embeds standard
+plain-text MP4 `©lyr`; its synchronized timing likewise remains in the adjacent
+`.lrc`. No audio format is converted.
 
-Non-MP3 resources remain untouched for now.
+Acquisition post-processing remains MP3-only. Native FLAC and M4A support
+applies to existing local-library files.
 
 Post-processing errors fail the individual job item and are persisted.

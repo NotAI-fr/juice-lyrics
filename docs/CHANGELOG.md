@@ -1,47 +1,78 @@
 # Changelog
 
-## Unreleased — 2026-08-25
+This project follows [Semantic Versioning](https://semver.org/) and uses PEP
+440-compatible Python versions. Dates are added only when a release is
+published.
 
-### Live API path resolution and backend polish
+## [2.0.0b1] - 2026-09-25
 
-* Resolved live Juice WRLD API `path` resources into authorized download URLs (`/files/download/?path=...`) with correct URL encoding and destination filename extraction.
-* Preserved default HTTPS security policy with opt-in HTTP fallback.
-* Fixed CLI `Settings` vs `Path` regression in `library.scanner.find_mp3s()`, restoring stability across `status`, `setup`, `sync`, `scan`, `embed`, `verify`, and `rmpc` commands.
-* Fixed safe era metadata formatting in `search` and `info` commands.
-* Added multi-index selection (`--index 1,2,4`), manifest-based bulk acquisition (`acquire manifest`), retry (`acquire retry`), and job deletion (`acquire delete`).
-* Verified end-to-end live API acquisition and CLI workflows.
-* Reached 80 automated unit and integration tests passing.
+This is the first beta release of the redesigned `999` product.
 
-### Existing acquisition milestones
+### User experience
 
-* Added the acquisition resource resolver for explicitly selected resources.
-* Added HTTPS-by-default URL validation and safe destination filename handling.
-* Added propagation/validation of expected size and SHA-256 metadata.
-* Added acquisition resolver tests; the project test suite then passed 11 tests.
-* Added duplicate detection for existing resources using checksum, safe destination checks, and title/version matching; the project test suite then passed 15 tests.
-* Added persistent acquisition jobs backed by atomic JSON saves, per-item progress/state, job listing/lookup/deletion, and recovery of interrupted transient states; the project test suite then passed 20 tests.
-* Added a conservative sequential acquisition job runner.
-* Added duplicate checks before download, atomic per-item persistence, progress callbacks, and failure isolation.
-* Added runner tests; the project test suite then passed 23 tests.
-* Added the first integrated acquisition CLI workflow: `acquire search`, `acquire add`, `acquire jobs`, and `acquire run`.
-* Acquisition does not silently crawl the catalogue.
-* Added CLI workflow tests; the project test suite then passed 26 tests.
-* Added post-download integration for acquired MP3s.
-* Reused the established synced/plain lyric embedding and verification pipeline.
-* Generated rmpc-compatible `.lrc` files for acquired files with synced lyrics.
-* Post-processing failures are persisted as job failures.
+- Made `999` the primary command while retaining `juice-lyrics` as a legacy
+  alias and preserving the existing `juice-lyrics` XDG data namespace.
+- Added the keyboard-first Textual interface for Dashboard, Browse, Library,
+  Downloads, and Settings, with global Help and consistent confirmations.
+- Made **Sync Library** the routine one-button Library workflow and added
+  focused Issues, Duplicates, Missing Library, backup/restore, manual match,
+  and metadata-repair views.
 
-## Unreleased — Architecture
+### Library and lyrics
 
-* Began separating reusable engine code from the CLI entrypoint.
-* Added dedicated API, library matching/scanning, lyrics, rmpc, backup, config, and state modules.
-* Kept existing CLI commands compatible through adapters.
+- Added native recursive MP3, FLAC, and M4A discovery and format-aware
+  metadata, lyric, status, backup, restore, and verification behavior.
+- Standardized synchronized external lyrics as atomic adjacent
+  same-basename `.lrc` files. No audio conversion or centralized lyric output
+  occurs.
+- Added conservative catalogue backfill, manual identity locks, explicit
+  identity rebuild, stale-state cleanup, and regression coverage for Bandit
+  (`94107`) and 10 Feet (`94102`).
+- Added transactional metadata repair for selected fields with backup,
+  preservation checks, state-conflict protection, rollback, and post-edit
+  manual-lock rebinding.
 
-## Unreleased — Acquisition foundation
+### Downloads and integration
 
-* Added an isolated `acquisition/` package.
-* Added acquisition item/result/state models.
-* Added explicit-selection manifests.
-* Added a generic HTTPS downloader with temporary `.part` files, retries, optional resume, size/checksum validation, maximum-size protection, and atomic finalization.
-* Added acquisition foundation tests.
-* Kept acquisition transport independent from lyrics/rmpc post-processing.
+- Added explicit catalogue browsing, a durable download queue, safe resume,
+  response/size/checksum validation, retry, and post-processing.
+- Kept queue addition separate from confirmed download execution.
+- Added optional rmpc verification/setup and sidecar notification without
+  rewriting rmpc configuration during normal startup or Library Sync.
+
+### Operations and distribution
+
+- Added bounded read-only `999 doctor` diagnostics with an optional sanitized
+  support report.
+- Added generated Bash, Zsh, and Fish completion from the actual CLI tree.
+- Added deterministic wheel/sdist contents and clean-install acceptance for
+  both console scripts without depending on the source checkout.
+- Added incremental snapshot reuse and state-safety checks to avoid redundant
+  hashing, metadata reads, API searches, and state writes.
+
+### Compatibility and limitations
+
+- Existing configuration, state, cache, backups, queue, and history remain in
+  the `juice-lyrics` XDG namespace; no automatic migration is required.
+- Acquisition/post-processing remains MP3-focused. FLAC and M4A support is for
+  existing local-library files.
+- Active download cancellation is not included in this beta candidate.
+
+## [1.4.0] - 2026-08-25
+
+### Backend and acquisition baseline
+
+- Resolved live Juice WRLD API path resources into authorized download URLs
+  with correct encoding and filename extraction.
+- Preserved HTTPS-by-default transport with explicit HTTP fallback.
+- Added safe catalogue search/info commands, multi-index and manifest queueing,
+  persistent acquisition jobs, sequential execution, retry, and deletion.
+- Added `.part` downloads, resume, size/checksum validation, maximum-size
+  protection, destination checks, and atomic finalization.
+- Added MP3 lyric post-processing with ID3 SYLT/USLT and rmpc-compatible LRC
+  generation.
+- Established the initial API, scanner, matching, lyrics, rmpc, backup,
+  configuration, state, and acquisition service boundaries.
+
+[2.0.0b1]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b1
+[1.4.0]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v1.4.0-backend-complete

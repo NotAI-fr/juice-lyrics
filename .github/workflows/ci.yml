@@ -1,0 +1,33 @@
+name: Verify
+
+"on":
+  push:
+    branches: [v2-redesign]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install project and test tools
+        run: python -m pip install --upgrade pip build pytest && python -m pip install -e .
+      - name: Run tests
+        run: pytest -q
+      - name: Compile sources
+        run: python -m compileall -q src
+      - name: Check distributable artifacts
+        run: python -m build

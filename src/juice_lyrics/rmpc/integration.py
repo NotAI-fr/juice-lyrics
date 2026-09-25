@@ -2,8 +2,6 @@ from __future__ import annotations
 import re, shutil, subprocess
 from datetime import datetime
 from pathlib import Path
-from ..config.settings import DEFAULT_RMPC_CONFIG, DEFAULT_RMPC_LYRICS_DIR
-from ..lyrics.engine import write_lrc
 
 def rmpc_running()->bool:
     try: return subprocess.run(["rmpc","remote","query","active-tab"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=3,check=False).returncode==0
@@ -19,12 +17,12 @@ def notify_rmpc_index(paths:list[Path])->int:
         if r.returncode==0: count+=1
     return count
 
-def patch_rmpc_config(config_path:Path,lyrics_dir:Path)->Path:
+def patch_rmpc_config(config_path:Path,music_root:Path)->Path:
     if not config_path.exists(): raise RuntimeError(f"rmpc config not found: {config_path}")
     original=config_path.read_text(encoding="utf-8")
     backup=config_path.with_name(f"{config_path.name}.juice-lyrics-{datetime.now().strftime('%Y%m%d-%H%M%S')}.bak")
     shutil.copy2(config_path,backup)
-    escaped=str(lyrics_dir).replace("\\","\\\\").replace('"','\\"')
+    escaped=str(music_root).replace("\\","\\\\").replace('"','\\"')
     replacement=f'    lyrics_dir: Some("{escaped}"),'
     if re.search(r"(?m)^\s*lyrics_dir\s*:",original): updated=re.sub(r"(?m)^\s*lyrics_dir\s*:\s*[^,]+,",replacement,original,count=1)
     else: updated=original.replace("(","(\n"+replacement,1)
