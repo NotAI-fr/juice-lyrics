@@ -8,14 +8,16 @@ code and tests if a later working tree disagrees with this document.
 ## Repository checkpoint
 
 - Repository: `/home/nobloat/Downloads/juice-lyrics-codex`
-- Active development branch: `v2-redesign`
-- Stable pre-redesign branch/tag: `main` / `v1.4.0-backend-complete`
+- Active development branch: `main`; `v2-redesign` is retained at the accepted
+  release-candidate history.
+- Previous stable tag: `v1.4.0-backend-complete`
 - Product/primary executable: `999`
 - Compatibility executable: `juice-lyrics`
 - Python package: `juice_lyrics`
 - Distribution: `juice-wrld-lyrics`
 - XDG storage namespace: `juice-lyrics`
-- Unreleased beta candidate: `2.0.0b1` (no release or tag yet)
+- Released beta: `2.0.0b1`, annotated tag `v2.0.0b1`, release commit
+  `1d56661`, published as a GitHub pre-release on 2026-09-25.
 - One-button Sync baseline: `31ebaf2` (410 tests plus 14 isolated recovery
   smoke tests, compileall, and `git diff --check`).
 - Manual identity-lock milestone verification: 424 full-suite tests and 34
@@ -469,12 +471,14 @@ several competing Unreleased milestone headings. The executable release gate is
 artifacts, isolated installs, manual media safety acceptance, privacy review,
 release notes/checksums, and explicit stop conditions.
 
-GitHub's default branch remains `main`, presenting the stable v1.4 baseline.
-The v2 presentation is prepared on `v2-redesign`; it must be reviewed through a
-pull request before any merge. No release, tag, package upload, or branch merge
-has been performed. The repository description/topics are populated, Issues
-are enabled, and GitHub detects the MIT license. The repository is currently
-private; any visibility change is an explicit remaining release decision.
+GitHub's default branch is `main`, now containing the reviewed v2 history from
+PR #1. The annotated `v2.0.0b1` tag points to merge commit `1d56661`, and the
+GitHub release is an explicit pre-release with the wheel, sdist, and
+`SHA256SUMS` attached. Downloaded release assets matched the published hashes.
+The `v2-redesign` branch remains available. The repository description/topics
+are populated, Issues are enabled, and GitHub detects the MIT license. The
+repository remains private by explicit release decision; no package-index
+publication occurred.
 
 ## Final performance and reliability acceptance
 
@@ -514,9 +518,12 @@ and stale State/Catalogue Issues do not remain after the controlled edit.
   Remove it only as a small tested code-cleanup change.
 - The old `lyrics_dir` configuration is compatibility-only and does not migrate
   historical centralized files.
-- The beta still needs the manual acceptance and release procedure in
-  `docs/BETA_RELEASE_CHECKLIST.md`. No package has been published and no release
-  tag exists.
+- Manual visual polish has not been exhaustively reviewed, Fish runtime
+  validation was unavailable locally, independent second-machine pipx testing
+  has not occurred, and optional rmpc live notification remains unverified.
+  These are recorded non-blocking beta limitations. The isolated tagged-wheel
+  install passed; a post-release pipx-from-tag attempt in a disposable HOME
+  could not authenticate to the intentionally private repository.
 - Metadata repair has safe TUI selection/apply integration and passed isolated
   real-copy acceptance for MP3, FLAC, and M4A. Wider beta use should remain
   conservative because tag combinations in the wild are unbounded.
@@ -533,15 +540,15 @@ ambiguous/destructive work → explicit user decision
 Keep normal Library UX centered on **Sync Library** and **Issues**;
 advanced repair/recovery must not overwhelm normal use.
 
-1. Complete manual beta acceptance
-2. Review and merge `v2-redesign` through a pull request
-3. Create the approved beta pre-release and attach verified artifacts
+1. Collect beta feedback without weakening safety or conservative matching.
+2. Prioritize demonstrated reliability and usability defects.
+3. Keep new feature work out of the beta stabilization cycle.
 
 ## Resume safely
 
 ```bash
 cd /home/nobloat/Downloads/juice-lyrics-codex
-git switch v2-redesign
+git switch main
 git status --short
 pytest -q
 .venv/bin/999

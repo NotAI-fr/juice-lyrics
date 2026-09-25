@@ -2,8 +2,22 @@
 
 Target: `2.0.0b1` (PEP 440) / Git tag `v2.0.0b1`.
 
-This checklist prepares a release; it does not authorize publishing, tagging,
-or merging. `main` remains the stable v1.4 baseline until the beta is accepted.
+This checklist records the accepted candidate and completed release procedure.
+The explicit release operation was authorized and completed on 2026-09-25.
+
+## Release result — 2026-09-25
+
+- PR #1 merged `v2-redesign` into `main` without deleting the source branch.
+- Annotated tag `v2.0.0b1` points to release commit `1d56661`.
+- The GitHub release is marked pre-release and includes the tagged wheel,
+  sdist, and `SHA256SUMS`; downloaded assets re-verified locally.
+- The tagged wheel passed a fresh isolated install, version/help/Doctor,
+  Bash/Zsh/Fish completion generation, Bash/Zsh syntax, and TUI launch/quit.
+- Repository visibility remains private by explicit decision. No PyPI or other
+  package-index publication occurred.
+- The post-release pipx-from-tag check in a disposable HOME could not
+  authenticate to the private repository. The clean wheel install passed, and
+  the independent second-machine pipx check remains a non-blocking limitation.
 
 ## Final automated release-candidate acceptance — 2026-09-25
 
@@ -168,21 +182,15 @@ Verified in this pass:
 - Before/after manifests confirmed no change to `/home/nobloat/Music` or the
   real `juice-lyrics` config, data (including state/backups/queue), or cache.
 
-Remaining manual acceptance:
-
-- Run the installed app in a normal terminal and judge Help, navigation,
-  pagination/details, queue/Retry, confirmed temporary download, and quit.
-- Retry live `10 Feet` identification and confirm `94102`; two requests in this
-  pass received HTTP 530, while the deterministic matcher regression passed.
-- Exercise the Library workflows below on user-approved disposable copies,
-  including one representative MP3, FLAC, and M4A plus a visible restore.
-- Review rmpc verify/setup separately, inspect a support report before sharing,
-  preview README links/image on GitHub, decide repository visibility, and get
-  an independent supported-Linux pipx install/upgrade report.
+Subsequent final acceptance resolved the live `10 Feet`, temporary download,
+Library workflow, representative MP3/FLAC/M4A copy, and support-report checks.
+Remaining non-blocking limitations are exhaustive manual visual polish, Fish
+runtime validation, optional live rmpc notification, GitHub-rendered README
+preview, and an independent supported-Linux pipx install/upgrade report.
 
 ## 1. Repository and metadata
 
-- [ ] `v2-redesign` is clean, pushed, and reviewed against `main`.
+- [x] `v2-redesign` is clean, pushed, and reviewed against `main`.
 - [x] `juice_lyrics.__version__`, `999 --version`, wheel metadata, and the
       changelog all say `2.0.0b1`.
 - [x] The changelog heading has the actual release date instead of
@@ -231,8 +239,8 @@ python -m build
 - [x] Add concise topics such as `linux`, `python`, `tui`, `music-library`,
       `lyrics`, `mpd`, and `rmpc`.
 - [x] Confirm Issues are enabled and the repository license is detected as MIT.
-- [ ] Decide explicitly when the currently private repository should become
-      public; do not change visibility as a side effect of release prep.
+- [x] Keep the repository private for this release; any later visibility
+      change remains a separate explicit decision.
 - [ ] Preview README links and the synthetic screenshot on GitHub before merge.
 
 ## 4. Beta acceptance
@@ -257,19 +265,16 @@ before testing any mutating workflow.
 - [ ] A beta tester confirms clean pipx install and upgrade on the supported
       Linux environment.
 
-## 5. Release procedure — only after explicit approval
+## 5. Release procedure — completed after explicit approval
 
-1. Open and review a pull request from `v2-redesign` into `main`.
-2. Resolve acceptance findings on `v2-redesign`; rerun the checks above.
-3. Update the changelog date and replace moving-branch install examples with
-   `v2.0.0b1` release/tag instructions.
-4. Merge without rewriting published history.
-5. Create the annotated tag `v2.0.0b1` on the accepted merge commit.
-6. Build artifacts from a clean checkout of that tag and record SHA-256 sums.
-7. Create a GitHub **pre-release**, paste the changelog section, and attach the
-   wheel, sdist, and checksum file.
-8. Install once from the attached wheel and run `999 doctor` before announcing
-   the beta.
+- [x] Open and review a pull request from `v2-redesign` into `main`.
+- [x] Resolve acceptance findings and verify the release-candidate checks.
+- [x] Finalize the changelog date and immutable `v2.0.0b1` install links.
+- [x] Merge without rewriting published history.
+- [x] Create and push the annotated tag on the accepted merge commit.
+- [x] Build clean tagged artifacts and verify their SHA-256 sums.
+- [x] Create the GitHub **pre-release** with wheel, sdist, and checksum file.
+- [x] Install the tagged wheel in isolation and run `999 doctor`.
 
 Package-index publication is a separate explicit decision. Do not upload to
 PyPI merely because GitHub artifacts exist.
