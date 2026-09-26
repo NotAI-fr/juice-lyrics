@@ -12,7 +12,7 @@ Use this handoff order:
 
 ## Current checkpoint
 
-`999` is a Linux terminal music hub on branch `v2-redesign`. The primary
+`999` is a Linux terminal music hub developed on `main`. The primary
 executable is `999`; `juice-lyrics` remains a compatibility alias, the Python
 package remains `juice_lyrics`, and XDG data remains under `juice-lyrics`.
 

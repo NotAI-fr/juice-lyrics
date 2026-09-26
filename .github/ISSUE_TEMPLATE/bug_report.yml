@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a reproducible problem with 999
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the beta. Do not attach music, lyrics, credentials, private configuration/state, signed download URLs, or an unreviewed support report.
+  - type: input
+    id: version
+    attributes:
+      label: 999 version
+      description: Paste the output of `999 --version`.
+      placeholder: 999 2.0.0b1
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Linux and terminal environment
+      description: Distribution, Python version, terminal, and installation method.
+      placeholder: Fedora 42, Python 3.13, Kitty, pipx release wheel
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic names and paths where possible.
+      placeholder: |
+        1. Launch 999
+        2. Open Library
+        3. Press ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant diagnostics
+      description: Share only reviewed, redacted output from `999 doctor` or a sanitized support report.
+      render: shell
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I reviewed this report and removed private media, lyrics, paths, state, configuration, credentials, tokens, and signed URLs.
+          required: true

@@ -17,3 +17,28 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# Local application data, reports, credentials, and media must never be
+# committed. Tests create disposable fixtures outside the tracked tree.
+.env
+.env.*
+!.env.example
+config.toml
+state.json*
+acquisition_jobs.json*
+999-support*.json
+*.bak
+*.part
+*.mp3
+*.flac
+*.m4a
+*.lrc
+*.wav
+*.ogg
+*.opus
+*.aac
+*.wma
+*.mp4
+*.mkv
+*.mov
+*.avi

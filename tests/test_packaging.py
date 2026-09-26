@@ -74,7 +74,7 @@ def test_every_python_package_is_under_the_configured_source_tree():
 
 
 def test_runtime_sources_do_not_contain_a_checkout_specific_path():
-    forbidden = "/home/nobloat/Downloads/juice-lyrics-codex"
+    forbidden = str(PROJECT_ROOT)
 
     for source in (PROJECT_ROOT / "src" / "juice_lyrics").rglob("*.py"):
         assert forbidden not in source.read_text(encoding="utf-8"), source

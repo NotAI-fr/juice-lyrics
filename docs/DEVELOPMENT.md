@@ -2,9 +2,8 @@
 
 ## Baseline
 
-The `main` branch and `v1.4.0-backend-complete` tag are the stable v1.4
-baseline. Development of the redesigned product remains on `v2-redesign`; its
-current unreleased beta candidate version is `2.0.0b1`.
+The `main` branch contains the current beta. `v1.4.0-backend-complete` remains
+the previous stable tag, and `v2.0.0b1` is the current beta release tag.
 
 Run:
 
@@ -76,7 +75,7 @@ For a deterministic pipx installation that does not depend on the checkout
 after installation:
 
 ```bash
-pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2-redesign"
+pipx install --force "https://github.com/NotAI-fr/juice-lyrics/releases/download/v2.0.0b1/juice_wrld_lyrics-2.0.0b1-py3-none-any.whl"
 hash -r
 command -v 999
 999 --version
@@ -169,7 +168,7 @@ and restore support MP3, FLAC, and M4A.
 
 ## Source of truth and Git workflow
 
-The `v2-redesign` branch in this repository is the active development source
-of truth. Keep milestones inspectable, run the documented verification, and
-push completed work to `origin/v2-redesign`. Do not merge into `main`, tag, or
-publish a distribution as part of an ordinary development milestone.
+The `main` branch is the active development source of truth. Keep milestones
+inspectable, run the documented verification, and use reviewed pull requests
+for production changes. Do not tag or publish a distribution as part of an
+ordinary development milestone.

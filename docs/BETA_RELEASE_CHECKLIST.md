@@ -179,7 +179,7 @@ Verified in this pass:
   sensitive strings; it contains only synthetic counts and `Music/Juice WRLD`.
   Artifact contents contain the license, README, metadata, and runtime modules
   with no tests, docs, caches, bytecode, secrets, or checkout paths.
-- Before/after manifests confirmed no change to `/home/nobloat/Music` or the
+- Before/after manifests confirmed no change to the real music directory or
   real `juice-lyrics` config, data (including state/backups/queue), or cache.
 
 Subsequent final acceptance resolved the live `10 Feet`, temporary download,
@@ -283,6 +283,6 @@ PyPI merely because GitHub artifacts exist.
 
 Do not release if tests fail, artifact versions disagree, generated packages
 depend on the checkout, privacy review fails, or a mutating acceptance test
-cannot prove backup and preservation behavior. Fix on `v2-redesign`; do not
+cannot prove backup and preservation behavior. Fix on a development branch; do not
 move an existing tag. If a published beta is defective, document it and issue
 a new prerelease version rather than replacing its artifacts silently.

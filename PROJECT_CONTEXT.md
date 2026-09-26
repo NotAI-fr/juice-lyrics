@@ -3,18 +3,19 @@
 This file records durable human and product context. For the current technical
 checkpoint and roadmap, read `docs/PROJECT_STATE.md`.
 
-## User and environment
+## Target environment and audience
 
-- Primary platform: Arch Linux.
-- The user prefers lightweight keyboard-first Linux CLI/TUI tools and uses MPD
-  with rmpc.
-- The user can run documented commands but should not need Python knowledge or
-  internal terms such as job UUIDs, SYLT frames, or state records.
+- Primary platform: Linux; development and acceptance have primarily used Arch
+  Linux.
+- The product is designed for lightweight keyboard-first CLI/TUI workflows and
+  optional MPD/rmpc integration.
+- Users should not need Python knowledge or internal terms such as job UUIDs,
+  SYLT frames, or state records.
 - Defaults and error messages should be safe, direct, and understandable.
 
-The usual local collection is under `~/Music/Juice WRLD`, but every path is
-configurable. Automated work must never touch the user's real library or XDG
-state. Tests use temporary HOME/XDG roots.
+The default local collection is under `~/Music/Juice WRLD`, but every path is
+configurable. Automated work must never touch a developer's real library or
+XDG state. Tests use temporary HOME/XDG roots.
 
 ## Product identity
 

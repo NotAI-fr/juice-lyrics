@@ -2,7 +2,7 @@ name: Verify
 
 "on":
   push:
-    branches: [v2-redesign]
+    branches: [main]
   pull_request:
     branches: [main]
 

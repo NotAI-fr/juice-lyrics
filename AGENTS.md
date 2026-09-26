@@ -11,8 +11,8 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Python package: `juice_lyrics`
 - Distribution: `juice-wrld-lyrics`
 - XDG storage namespace: `juice-lyrics` (do not rename or duplicate it)
-- Current beta candidate version: `2.0.0b1` (not yet released or tagged)
-- Active development branch: `v2-redesign`
+- Current beta release: `2.0.0b1` / tag `v2.0.0b1`
+- Active development branch: `main`
 - Purpose: a Linux CLI/TUI for a local Juice WRLD library, catalogue browsing,
   safe lyric maintenance, downloads, backups, and optional rmpc integration.
 
@@ -23,8 +23,8 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Tests that use application paths must isolate `HOME`, `XDG_CONFIG_HOME`,
   `XDG_DATA_HOME`, and `XDG_CACHE_HOME`. Preserve the guard in
   `tests/conftest.py`.
-- Never run library operations against `/home/nobloat/Music` during automated
-  work.
+- Never run automated library operations against a developer's real music
+  directory.
 - Preserve atomic state/LRC writes, backup-before-media-mutation, restore
   rollback, state-conflict checks, and newest-10 valid backup retention.
 - Wrong confident catalogue matches are worse than `Unknown`. Do not weaken
