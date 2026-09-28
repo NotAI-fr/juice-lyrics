@@ -39,6 +39,9 @@ pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b1"
 ```
 
 Use `pipx install --force` with either command to switch between versions.
+Some pipx versions that use the `uv` backend do not replace an existing Git
+tag install in place. If pipx reports that it cannot switch, run
+`pipx uninstall juice-wrld-lyrics`, then install the other tag command.
 See [Troubleshooting](#troubleshooting) or [Uninstall](#uninstall) for help.
 
 ## Why 999?
