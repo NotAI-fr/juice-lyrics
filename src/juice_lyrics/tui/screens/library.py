@@ -1942,6 +1942,7 @@ class LibraryScreen(HubScreen):
         self.selected_index = 0
         self.preview: LibrarySyncPlan | None = None
         self._details_mode = False
+        self._details_action_index = 0
         self._snapshot_worker: Worker[SnapshotOutcome] | None = None
         self._identity_worker: Worker[IdentityOutcome] | None = None
         self._index_sync_worker: Worker[LibraryIndexSyncResult] | None = None
@@ -2423,6 +2424,7 @@ class LibraryScreen(HubScreen):
         self.set_focus(None)
         self.preview = None
         self._details_mode = False
+        self._details_action_index = 0
         self.remove_class("-details-mode")
         self._render_summary()
         self._apply_local_filter(preferred_reference=previous_reference)
@@ -2721,15 +2723,18 @@ class LibraryScreen(HubScreen):
             "",
             "Catalogue",
             f"  {'✓ Matched · ' + (track.matched_title or _match_label(track)) if track.match_status is LibraryMatchStatus.MATCHED else '? Needs your choice'}",
-            "  [Change Match]",
+            f"  {'>' if self._details_mode and self._details_action_index == 0 else ' '} [Change Match]",
             "",
             "Lyrics",
             f"  {'✓ ' + _lyric_label(track.lyric_status) if track.lyric_status is not LibraryLyricStatus.NONE else '✗ Missing lyrics'}",
-            "  [View / Replace Lyrics]" if track.lyric_status is not LibraryLyricStatus.NONE else "  [Add Lyrics]",
+            (
+                f"  {'>' if self._details_mode and self._details_action_index == 1 else ' '} "
+                + ("[View / Replace Lyrics]" if track.lyric_status is not LibraryLyricStatus.NONE else "[Add Lyrics]")
+            ),
             "",
             "Metadata",
             f"  {'~ Review available' if issue is not None and LibraryIssueCategory.METADATA in issue.categories else '✓ Good'}",
-            "  [Review Metadata]",
+            f"  {'>' if self._details_mode and self._details_action_index == 2 else ' '} [Review Metadata]",
         ]
         if track.lrc_status is not LibraryLrcStatus.MISSING or track.lrc_path:
             lines.append(f"Lyrics source  {_lrc_label(track.lrc_status)} · {track.lrc_path or 'embedded'}")
@@ -2737,7 +2742,10 @@ class LibraryScreen(HubScreen):
             lines.extend(("", f"Warning        {track.warning}"))
         if track.match_status is LibraryMatchStatus.UNMATCHED:
             lines.extend(("", "Use Change Match to choose the correct recording, or leave it unresolved."))
-        lines.extend(("", "Enter an action with a Add Lyrics · c Change Match · e Review Metadata · x More"))
+        lines.extend((
+            "",
+            f"  {'>' if self._details_mode and self._details_action_index == 3 else ' '} [More / Advanced]",
+        ))
         if self.preview is not None:
             lines.extend(("", "Preview · no changes until confirmed", _track_preview_text(self.preview, track.path)))
         details.update(Text("\n".join(lines), overflow="ellipsis"))
@@ -2746,7 +2754,7 @@ class LibraryScreen(HubScreen):
         if not self.filtered_tracks:
             self.query_one("#library-position", Static).update("/ Search · f Search Lyrics · r Refresh Library · m Maintenance · x More · ? Help")
             return
-        suffix = "Esc Back · a Add Lyrics · c Change Match · e Review Metadata · x More · ? Help" if self._details_mode else "/ Search · f Search Lyrics · r Refresh Library · m Maintenance · x More · ↑↓ Move · Enter Open Song · ? Help"
+        suffix = "↑↓ Choose · Enter Open · Esc Back · ? Help" if self._details_mode else "/ Search · f Search Lyrics · r Refresh Library · m Maintenance · x More · ↑↓ Move · Enter Open Song · ? Help"
         self.query_one("#library-position", Static).update(
             f"Track {self.selected_index + 1} of {len(self.filtered_tracks)} · {suffix}"
         )
@@ -2797,11 +2805,29 @@ class LibraryScreen(HubScreen):
         elif event.key == "escape" and self._details_mode:
             self._details_mode = False
             self.remove_class("-details-mode")
+            self._render_details()
             self._update_position()
+        elif event.key in ("down", "j") and self._details_mode:
+            self._details_action_index = min(3, self._details_action_index + 1)
+            self._render_details()
+        elif event.key in ("up", "k") and self._details_mode:
+            self._details_action_index = max(0, self._details_action_index - 1)
+            self._render_details()
+        elif event.key == "enter" and self._details_mode and self.selected_track is not None:
+            if self._details_action_index == 0:
+                self._change_match()
+            elif self._details_action_index == 1:
+                self.generate_preview(action="selected", selected_path=self.selected_track.path)
+            elif self._details_action_index == 2:
+                self._open_metadata_audit(self.selected_track)
+            else:
+                self._open_more()
         elif event.key == "enter" and self.selected_track is not None:
             self._details_mode = True
+            self._details_action_index = 0
             self.add_class("-details-mode")
             self.query_one("#library-details-scroll", VerticalScroll).scroll_home(animate=False, immediate=True)
+            self._render_details()
             self._update_position()
         elif event.key in ("down", "j"):
             self._select_track(self.selected_index + 1)

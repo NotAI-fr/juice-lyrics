@@ -77,12 +77,12 @@ real ready, skipped, optional, and error counts plus matches and lyric updates
 from that run. Optional improvements never block completion.
 
 Song Details gives the selected track's catalogue, lyrics, and metadata status.
-Use `a` to preview adding or refreshing lyrics, `c` to choose a catalogue
-recording, and `e` to preview metadata repair. Use `x` for occasional tools
-such as Issues, duplicate review, Missing Library, verification, backups,
-player integration, and advanced catalogue rebuild. More / Advanced supports
-arrow-key navigation and Enter; letter shortcuts are optional accelerators.
-These tools are not run automatically during Maintenance.
+Use the arrow keys and Enter to choose Change Match, Add or Replace Lyrics,
+Review Metadata, or More / Advanced. More contains occasional tools such as
+Issues, duplicate review, Missing Library, verification, backups, player
+integration, and advanced catalogue rebuild; it also supports arrow-key
+navigation and Enter. Letter shortcuts remain optional accelerators. These
+tools are not run automatically during Maintenance.
 
 Sync keeps unchanged tracks fast and checks eligible unknown tracks against
 the catalogue. Only confident identities are saved. A catalogue outage does

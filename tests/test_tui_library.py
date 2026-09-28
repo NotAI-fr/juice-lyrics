@@ -1134,7 +1134,7 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             assert "? Needs your choice" in details and "✗ Missing lyrics" in details
             assert "Metadata\n  ✓ Good" in details
             assert "Recorded LRC is missing" in details
-            assert "a Add Lyrics" in details and "c Change Match" in details
+            assert "[Add Lyrics]" in details and "[Change Match]" in details
             await pilot.press("up", "k", "end", "home")
             assert screen.selected_track.reference == synced.reference
 
@@ -1877,6 +1877,30 @@ def test_more_advanced_supports_arrow_and_enter_navigation(tmp_path):
             assert "> Duplicates" in _text(app, "#library-more-options")
             await pilot.press("enter")
             assert app.screen.__class__.__name__ == "LibraryDuplicatesDialog"
+
+    asyncio.run(scenario())
+
+
+def test_song_details_supports_contextual_arrow_and_enter_actions(tmp_path):
+    root = tmp_path / "music"
+    track = _track(
+        root, "Song.mp3", lyric=LibraryLyricStatus.NONE,
+        lrc=LibraryLrcStatus.NONE,
+    )
+
+    async def scenario():
+        app = _app(tmp_path, lambda settings: _snapshot(root, track))
+        async with app.run_test() as pilot:
+            await _open_library(app, pilot)
+            await pilot.press("enter")
+            assert "> [Change Match]" in _text(app, "#library-details")
+            assert "↑↓ Choose · Enter Open" in _text(app, "#library-position")
+            await pilot.press("down")
+            assert "> [Add Lyrics]" in _text(app, "#library-details")
+            await pilot.press("down")
+            assert "> [Review Metadata]" in _text(app, "#library-details")
+            await pilot.press("down", "enter")
+            assert app.screen.__class__.__name__ == "LibraryMoreDialog"
 
     asyncio.run(scenario())
 
