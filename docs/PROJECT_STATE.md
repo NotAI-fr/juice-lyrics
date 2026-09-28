@@ -38,6 +38,17 @@ Lyrics Search has no CLI command; it is available in the TUI and through the
 shared search service. It is included in `v2.0.0b2` and is not part of the
 previous `v2.0.0b1` fallback.
 
+## Unreleased development: 2.0.0b3.dev0
+
+`feature/library-maintenance-ux` is experimental work based on `main`; it is
+not part of either published beta. This milestone is reorganizing the Library
+around Search, Search Lyrics, Refresh Library, Maintenance, and task-oriented
+Song Details. The existing Sync, identity, issue, lyrics, metadata-repair,
+duplicate, verification, backup, and recovery services remain in place behind
+contextual or More / Advanced workflows. The public README continues to
+describe `v2.0.0b2` as the current published beta until a later release
+decision.
+
 ## Repository checkpoint
 
 - Repository: the current `juice-lyrics` checkout

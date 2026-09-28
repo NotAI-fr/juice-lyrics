@@ -1325,6 +1325,10 @@ class JuiceLyricsApp(App[None]):
                 invalidate()
 
     def action_refresh_active(self) -> None:
+        refresh_library = getattr(self.screen, "action_refresh_library", None)
+        if callable(refresh_library):
+            refresh_library()
+            return
         refresh = getattr(self.screen, "refresh_snapshot", None)
         if callable(refresh):
             refresh()

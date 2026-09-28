@@ -65,6 +65,8 @@ from juice_lyrics.tui.help import guide_text
 def test_help_documents_offline_lyrics_search_key():
     text = guide_text()
     assert "f                       Search local lyrics offline" in text
+    assert "m                       Start guided Maintenance" in text
+    assert "x                       More / Advanced tools" in text
     assert "Search Lyrics" in text
 
 
@@ -148,7 +150,7 @@ def test_sync_library_is_immediate_single_worker_and_navigation_stays_live(tmp_p
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            assert "s Sync Library" in _text(app, "#library-position")
+            assert "r Refresh Library" in _text(app, "#library-position")
             await pilot.press("s", "s")
             assert await asyncio.to_thread(started.wait, 2)
             assert len(calls) == 1 and calls[0][1] != ui_thread
@@ -352,7 +354,7 @@ def test_manual_match_search_navigation_lock_and_unlock_are_state_only(tmp_path)
                 await screen._snapshot_worker.wait()
                 await pilot.pause()
             assert selected == [(20, "Unknown")]
-            assert "Manual (locked)" in _text(app, "#library-details")
+            assert "✓ Matched" in _text(app, "#library-details")
             assert "saved and locked" in _text(app, "#library-status")
 
             await pilot.press("u")
@@ -365,7 +367,7 @@ def test_manual_match_search_navigation_lock_and_unlock_are_state_only(tmp_path)
                 await screen._snapshot_worker.wait()
                 await pilot.pause()
             assert unlocked == ["Unknown.flac"]
-            assert "Not identified" in _text(app, "#library-details")
+            assert "? Needs your choice" in _text(app, "#library-details")
             assert "unlocked and cleared" in _text(app, "#library-status")
 
             await pilot.press("c")
@@ -445,7 +447,7 @@ def test_issues_opens_from_snapshot_without_rescan_or_api_and_reaches_manual_mat
         app = _app(tmp_path, snapshot, catalogue_search_provider=search)
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
-            assert "s Sync Library · a Issues" in _text(app, "#library-position")
+            assert "r Refresh" in _text(app, "#library-position")
             await pilot.press("a")
             await pilot.pause()
             assert app.screen.__class__.__name__ == "LibraryIssuesDialog"
@@ -504,19 +506,19 @@ def test_issues_empty_state_and_sync_replaces_health_immediately(tmp_path):
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            assert "1 follow-ups" in _text(app, "#library-summary")
+            assert "1 need your input" in _text(app, "#library-summary")
             await pilot.press("s")
             if screen._index_sync_worker is not None:
                 await screen._index_sync_worker.wait()
             await pilot.pause()
-            assert "0 follow-ups · 0 errors" in _text(app, "#library-summary")
+            assert "0 need your input · 0 optional · 0 errors" in _text(app, "#library-summary")
             await pilot.press("a")
             assert "No library issues found" in _text(app, "#library-issues-detail")
             await pilot.press("escape", "s")
             if screen._index_sync_worker is not None:
                 await screen._index_sync_worker.wait()
             await pilot.pause()
-            assert "1 follow-ups · 0 errors" in _text(app, "#library-summary")
+            assert "0 need your input · 1 optional · 0 errors" in _text(app, "#library-summary")
             await pilot.press("a")
             assert "Optional lyrics" in _text(app, "#library-issues-detail")
 
@@ -546,7 +548,7 @@ def test_duplicates_open_from_snapshot_without_rescan_api_or_mutation(tmp_path):
         )
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
-            assert "d Duplicates" in _text(app, "#library-position")
+            assert "x More" in _text(app, "#library-position")
             await pilot.press("d")
             await pilot.pause()
             assert app.screen.__class__.__name__ == "LibraryDuplicatesDialog"
@@ -612,7 +614,7 @@ def test_missing_library_loads_in_worker_filters_and_adds_to_existing_queue(tmp_
         )
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
-            assert "g Missing" in _text(app, "#library-position")
+            assert "x More" in _text(app, "#library-position")
             await pilot.press("g")
             assert await asyncio.to_thread(loaded.wait, 2)
             await pilot.pause()
@@ -746,7 +748,7 @@ def test_metadata_preview_is_backgrounded_cached_and_read_only(tmp_path):
         )
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
-            assert "e Metadata" in _text(app, "#library-position")
+            assert "x More" in _text(app, "#library-position")
             await pilot.press("e")
             worker = screen._metadata_audit_worker
             if worker is not None:
@@ -811,7 +813,7 @@ def test_metadata_issue_opens_preview_and_help_lists_action(tmp_path):
             assert "Missing Tags" in _text(app, "#metadata-audit-content")
             await pilot.press("escape", "question_mark")
             await pilot.pause()
-            assert "Review and apply selected metadata repairs" in _text(app, "#help-content")
+            assert "Review metadata repair" in _text(app, "#help-content")
 
     asyncio.run(scenario())
 
@@ -1072,23 +1074,22 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             screen = await _open_library(app, pilot)
             assert screen.__class__.__name__ == "LibraryScreen"
             summary = _text(app, "#library-summary")
-            assert "3 tracks" in summary and "Catalogue unknown 1" in summary
-            assert "2 follow-ups" in summary and "0 errors" in summary
+            assert "3 songs" in summary and "1 need your input" in summary
+            assert "1 optional" in summary and "0 errors" in summary
             assert "MP3 3" in summary and "FLAC 0" in summary and "M4A 0" in summary
             rows = _text(app, "#library-tracks")
             assert "~" in rows and "!" not in rows
             assert rows.index("A Synced") < rows.index("B Plain") < rows.index("C Unknown")
-            assert "Synced lyrics" in rows and "Plain lyrics" in rows and "No lyrics" in rows
+            assert "Synced lyrics" in rows and "Plain lyrics" in rows and "Missing lyrics" in rows
             assert "LRC Present" in rows and "LRC Missing" in rows
 
             await pilot.press("down", "j")
             assert screen.selected_track.reference == unmatched.reference
             details = _text(app, "#library-details")
-            assert "Catalogue match Unknown" in details and "No lyrics" in details
-            assert "Library state  New" in details and "Library issue  New track" in details
+            assert "? Needs your choice" in details and "✗ Missing lyrics" in details
+            assert "Metadata       ✓ Looks good" in details
             assert "Recorded LRC is missing" in details
-            assert "Lyric maintenance preview" in details
-            assert "Press l for this song or m for the library" in details
+            assert "a Add Lyrics" in details and "c Change Match" in details
             await pilot.press("up", "k", "end", "home")
             assert screen.selected_track.reference == synced.reference
 
@@ -1142,7 +1143,7 @@ def test_loading_empty_missing_and_provider_error_states(tmp_path):
         async with app.run_test() as pilot:
             await _open_library(app, pilot)
             assert "No supported audio tracks found" in _text(app, "#library-tracks")
-            await pilot.press("r")
+            app.screen.refresh_snapshot(identify=False)
             await app.screen._snapshot_worker.wait()
             await pilot.pause()
             assert "does not exist" in _text(app, "#library-status")
@@ -1264,9 +1265,9 @@ def test_refresh_selection_stale_result_and_preview_invalidation(tmp_path):
             screen.preview = _plan(app.settings, ())
             app.query_one("#library-preview").update("old preview")
 
-            await pilot.press("r")
+            screen.refresh_snapshot(identify=False)
             await asyncio.to_thread(stale_started.wait, 2)
-            await pilot.press("r")
+            screen.refresh_snapshot(identify=False)
             current = screen._snapshot_worker
             await current.wait()
             await pilot.pause()
@@ -1276,7 +1277,7 @@ def test_refresh_selection_stale_result_and_preview_invalidation(tmp_path):
             await pilot.pause()
             assert "First.mp3" not in _text(app, "#library-tracks")
 
-            await pilot.press("r")
+            screen.refresh_snapshot(identify=False)
             await screen._snapshot_worker.wait()
             await pilot.pause()
             assert screen.selected_track.reference == replacement.reference
@@ -1314,7 +1315,7 @@ def test_refresh_backfills_unknown_identity_off_event_loop_and_updates_display(t
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            await pilot.press("r")
+            screen.refresh_snapshot(identify=True)
             await screen._snapshot_worker.wait(); await pilot.pause()
             await asyncio.to_thread(started.wait, 2)
             assert "Identifying 1 catalogue entry" in _text(app, "#library-status")
@@ -1354,16 +1355,15 @@ def test_refresh_catalogue_failure_keeps_healthy_local_coverage_visible(tmp_path
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            await pilot.press("r")
+            screen.refresh_snapshot(identify=True)
             await screen._snapshot_worker.wait(); await pilot.pause()
             identity_worker = screen._identity_worker
             if identity_worker is not None:
                 await identity_worker.wait()
             await pilot.pause()
             assert "Catalogue identification unavailable" in _text(app, "#library-status")
-            assert "Fully covered 1" in _text(app, "#library-summary")
-            assert "1 follow-ups" in _text(app, "#library-summary")
-            assert "Catalogue match Unknown" in _text(app, "#library-details")
+            assert "1 need your input" in _text(app, "#library-summary")
+            assert "? Needs your choice" in _text(app, "#library-details")
 
     asyncio.run(scenario())
 
@@ -1502,7 +1502,7 @@ def test_library_screen_never_calls_mutating_systems(tmp_path, monkeypatch):
             app.screen.generate_preview()
             await app.screen._preview_worker.wait()
             await pilot.pause()
-            await pilot.press("r")
+            app.screen.refresh_snapshot(identify=False)
             await app.screen._snapshot_worker.wait()
 
     asyncio.run(scenario())
@@ -1524,8 +1524,8 @@ def test_library_summary_is_format_aware_and_flac_m4a_can_be_fully_covered(tmp_p
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
             summary = _text(app, "#library-summary")
-            assert "Fully covered 3" in summary
-            assert "0 follow-ups" in summary and "0 errors" in summary
+            assert "3 ready" in summary
+            assert "0 need your input" in summary and "0 errors" in summary
             assert "MP3 1" in summary and "FLAC 1" in summary and "M4A 1" in summary
             await pilot.press("down")
             assert "Coverage       Fully covered" in _text(app, "#library-details")
@@ -1555,17 +1555,14 @@ def test_healthy_unmatched_flac_is_covered_without_lyric_attention(tmp_path):
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
             summary = _text(app, "#library-summary")
-            assert "Fully covered 1" in summary
-            assert "1 follow-ups" in summary
-            assert "Catalogue unknown 1" in summary
+            assert "1 need your input" in summary
             details = _text(app, "#library-details")
-            assert "Catalogue match Unknown" in details
-            assert "External LRC   Present" in details
+            assert "? Needs your choice" in details
+            assert "✓ Plain" in details
             assert "Coverage       Fully covered" in details
-            assert "Library issue  Catalogue match unknown" in details
-            assert "Automatic refresh requires a catalogue match" in details
+            assert "Change Match" in details
 
-            await pilot.press("m")
+            await pilot.press("x", "l")
             await screen._preview_worker.wait(); await pilot.pause()
             assert preview_calls == [{"protected_paths": (track.path,)}]
             assert "up to date" in _text(app, "#library-status")
@@ -1600,7 +1597,7 @@ def test_maintenance_preview_is_cancel_first_then_uses_shared_executor_with_prog
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            await pilot.press("m")
+            await pilot.press("l")
             await screen._preview_worker.wait(); await pilot.pause()
             assert app.screen.__class__.__name__ == "MaintenanceDialog"
             assert "No changes have been made" in _text(app, "#library-dialog-body")
@@ -1608,7 +1605,7 @@ def test_maintenance_preview_is_cancel_first_then_uses_shared_executor_with_prog
             assert not executions
             assert "cancelled" in _text(app, "#library-status")
 
-            await pilot.press("m")
+            await pilot.press("l")
             await screen._preview_worker.wait(); await pilot.pause()
             await pilot.press("y")
             await pilot.pause()
@@ -1616,6 +1613,53 @@ def test_maintenance_preview_is_cancel_first_then_uses_shared_executor_with_prog
             if screen._snapshot_worker is not None:
                 await screen._snapshot_worker.wait(); await pilot.pause()
             assert "Library updated · 1 song updated" in _text(app, "#library-status")
+
+    asyncio.run(scenario())
+
+
+def test_guided_maintenance_refreshes_once_then_shows_simple_health(tmp_path):
+    root = tmp_path / "music"
+    track = _track(root, "Ready.mp3")
+    calls = []
+    api_calls = []
+
+    def sync(settings, *, previous_snapshot=None):
+        calls.append(previous_snapshot)
+        return LibraryIndexSyncResult(_snapshot(root, track))
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, track),
+            library_index_sync_provider=sync,
+            catalogue_search_provider=lambda *args, **kwargs: api_calls.append(args),
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("m")
+            for _ in range(20):
+                if app.screen.__class__.__name__ == "LibraryIssuesDialog":
+                    break
+                await pilot.pause(0.05)
+            assert app.screen.__class__.__name__ == "LibraryIssuesDialog"
+            assert app.screen.maintenance is True
+            assert "need your input" in _text(app, "#library-issues-summary")
+            assert "Everything looks ready" in _text(app, "#library-issues-list")
+            assert len(calls) == 1
+            assert api_calls == []
+            await pilot.press("escape")
+            assert app.screen is screen
+            first_result_snapshot = screen.snapshot
+            await pilot.press("m")
+            for _ in range(20):
+                if app.screen.__class__.__name__ == "LibraryIssuesDialog":
+                    break
+                await pilot.pause(0.05)
+            assert app.screen.__class__.__name__ == "LibraryIssuesDialog"
+            assert len(calls) == 2
+            assert calls[1] is first_result_snapshot
+            assert api_calls == []
+            await pilot.press("escape")
 
     asyncio.run(scenario())
 

@@ -139,6 +139,16 @@ class LibraryInput(Input):
     """Local search input that preserves global section shortcuts."""
 
     def on_key(self, event: Key) -> None:
+        if not self.value and event.key in {"m", "f", "x"}:
+            action = {
+                "m": self.screen._open_maintenance,
+                "f": self.screen._open_lyrics_search,
+                "x": self.screen._open_more,
+            }[event.key]
+            action()
+            event.prevent_default()
+            event.stop()
+            return
         if event.key == "escape":
             self.screen.set_focus(None)
             event.prevent_default()
@@ -181,6 +191,16 @@ class LibrarySelect(Select[str]):
     """Local status selector that preserves global section shortcuts."""
 
     def on_key(self, event: Key) -> None:
+        if not self.expanded and event.key in {"m", "f", "x"}:
+            action = {
+                "m": self.screen._open_maintenance,
+                "f": self.screen._open_lyrics_search,
+                "x": self.screen._open_more,
+            }[event.key]
+            action()
+            event.prevent_default()
+            event.stop()
+            return
         if event.key == "question_mark":
             self.app.action_show_help()
             event.prevent_default()
@@ -601,10 +621,12 @@ class ManualMatchDialog(ModalScreen[ManualMatchChoice | None]):
 class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
     """Cheap snapshot-backed list of tracks that still need user attention."""
 
-    def __init__(self, health: LibraryHealth) -> None:
+    def __init__(self, health: LibraryHealth, *, maintenance: bool = False) -> None:
         super().__init__()
         self.health = health
         self.index = 0
+        self.maintenance = maintenance
+        self.skipped: set[int] = set()
 
     @property
     def selected_issue(self) -> LibraryIssue | None:
@@ -628,16 +650,36 @@ class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
 
     def _render_issues(self) -> None:
         issues = self.health.issues
+        if self.maintenance:
+            needs_input = sum(
+                issue.severity is LibraryIssueSeverity.ERROR
+                or LibraryIssueCategory.CATALOGUE in issue.categories
+                for issue in issues
+            )
+            optional = len(issues) - needs_input
+            self.query_one("#library-dialog-title", Static).update("Maintenance")
         self.query_one("#library-issues-summary", Static).update(
-            f"{self.health.snapshot.total_track_count} tracks · "
-            f"{self.health.healthy_count} issue-free · {self.health.issue_count} follow-ups"
+            (
+                f"{self.health.snapshot.total_track_count} songs · "
+                f"{max(0, self.health.snapshot.total_track_count - needs_input)} ready · "
+                f"{needs_input} need your input · {optional} optional improvements"
+                if self.maintenance else
+                f"{self.health.snapshot.total_track_count} tracks · "
+                f"{self.health.healthy_count} issue-free · {self.health.issue_count} follow-ups"
+            )
         )
         if not issues:
-            self.query_one("#library-issues-list", Static).update("No follow-ups")
+            self.query_one("#library-issues-list", Static).update(
+                "Everything looks ready" if self.maintenance else "No follow-ups"
+            )
             self.query_one("#library-issues-detail", Static).update(
+                "No items need your attention right now.\n\nYour songs and files are unchanged."
+                if self.maintenance else
                 "No library issues found.\n\nSync Library will keep this view current."
             )
-            self.query_one("#library-issues-help", Static).update("Esc Close · ? Help")
+            self.query_one("#library-issues-help", Static).update(
+                "Enter / Esc Done" if self.maintenance else "Esc Close · ? Help"
+            )
             return
         lines = []
         for index, issue in enumerate(issues):
@@ -650,6 +692,20 @@ class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
             Text("\n".join(lines), no_wrap=True, overflow="ellipsis")
         )
         issue = issues[self.index]
+        if self.maintenance:
+            self.query_one("#library-issues-detail", Static).update(
+                Text(
+                    f"Maintenance · {self.index + 1} of {len(issues)}\n\n"
+                    f"{issue.track.title}\n\n{_maintenance_issue_label(issue)}\n\n"
+                    f"{chr(10).join(issue.details)}\n\n"
+                    "Choose to open the safe next step. Skipping leaves it for later.",
+                    overflow="ellipsis",
+                )
+            )
+            self.query_one("#library-issues-help", Static).update(
+                "↑/↓ Choose · Enter Start · s Skip · Esc Stop"
+            )
+            return
         detail_lines = [
             issue.track.title,
             "",
@@ -695,6 +751,34 @@ class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
 
     def on_key(self, event: Key) -> None:
         issue = self.selected_issue
+        if self.maintenance:
+            if event.key in {"escape", "q"}:
+                self.dismiss(None)
+            elif event.key in {"down", "j"} and issue is not None:
+                self.index = min(len(self.health.issues) - 1, self.index + 1)
+                self._render_issues()
+            elif event.key in {"up", "k"} and issue is not None:
+                self.index = max(0, self.index - 1)
+                self._render_issues()
+            elif event.key == "s" and issue is not None:
+                self.skipped.add(self.index)
+                next_index = next(
+                    (position for position in range(self.index + 1, len(self.health.issues))
+                     if position not in self.skipped),
+                    None,
+                )
+                if next_index is None:
+                    self.dismiss(None)
+                else:
+                    self.index = next_index
+                    self._render_issues()
+            elif event.key in {"enter", "space"} and issue is not None:
+                self._dismiss_issue(issue)
+            else:
+                return
+            event.prevent_default()
+            event.stop()
+            return
         if event.key in {"escape", "a"}:
             self.dismiss(None)
         elif event.key == "question_mark":
@@ -735,6 +819,21 @@ class LibraryIssuesDialog(ModalScreen[LibraryIssueChoice | None]):
             return
         event.prevent_default()
         event.stop()
+
+    def _dismiss_issue(self, issue: LibraryIssue) -> None:
+        self.dismiss(LibraryIssueChoice(issue.track.reference, issue.action))
+
+
+def _maintenance_issue_label(issue: LibraryIssue) -> str:
+    if LibraryIssueCategory.CATALOGUE in issue.categories:
+        return "Catalogue match needs your choice."
+    if LibraryIssueCategory.METADATA in issue.categories:
+        return "Metadata can be reviewed; nothing is changed until you approve it."
+    if LibraryIssueCategory.LYRICS in issue.categories:
+        return "Lyrics are missing or could be refreshed. This is optional, not file damage."
+    if issue.severity is LibraryIssueSeverity.ERROR:
+        return "This needs a safety check before it can be marked ready."
+    return "This song may need a review."
 
 
 class LibraryDuplicatesDialog(ModalScreen[None]):
@@ -1560,10 +1659,69 @@ class RmpcDialog(ModalScreen[SettingsSnapshot | None]):
         elif self.can_setup and not self._confirmed: self._confirmed = True; self.dismiss(self.snapshot)
 
 
+class LibraryMoreDialog(ModalScreen[str | None]):
+    """Secondary tools stay available without crowding normal Library use."""
+
+    _OPTIONS = (
+        ("a", "Issues"), ("d", "Duplicates"), ("g", "Missing Library"),
+        ("e", "Metadata Repair"), ("v", "Verify Library"), ("b", "Backups"),
+        ("p", "Player integration"), ("i", "Rebuild catalogue matches"),
+        ("l", "Maintain lyrics"), ("u", "Unlock a manual catalogue choice"),
+    )
+
+    def compose(self) -> Iterable[Widget]:
+        with Container(id="library-dialog"):
+            yield Static("More / Advanced", id="library-dialog-title")
+            yield Static("Choose an occasional or recovery tool. These do not run automatically.", id="library-dialog-body", markup=False)
+            yield Static("\n".join(f"{key}  {label}" for key, label in self._OPTIONS), id="library-more-options", markup=False)
+            yield Static("Press a listed key · Esc Close", id="library-more-help", markup=False)
+
+    def on_key(self, event: Key) -> None:
+        if event.key in {"escape", "q"}:
+            self.dismiss(None)
+        elif event.key in {key for key, _ in self._OPTIONS}:
+            self.dismiss(event.key)
+        else:
+            return
+        event.prevent_default()
+        event.stop()
+
+
+class ChangeMatchConfirmation(ModalScreen[bool]):
+    """Explain replacement of an existing manual catalogue choice."""
+
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self.track_title = title
+
+    def compose(self) -> Iterable[Widget]:
+        with Container(id="library-dialog"):
+            yield Static("Change catalogue match?", id="library-dialog-title")
+            yield Static(
+                f"This will replace the saved catalogue choice for {self.track_title}. "
+                "The new choice is saved only after you select a recording.",
+                id="library-dialog-body", markup=False,
+            )
+            yield Static("Enter / y Continue · Esc Cancel", id="library-more-help", markup=False)
+
+    def on_key(self, event: Key) -> None:
+        if event.key in {"enter", "y"}:
+            self.dismiss(True)
+        elif event.key in {"escape", "n"}:
+            self.dismiss(False)
+        else:
+            return
+        event.prevent_default()
+        event.stop()
+
+
 class LibraryScreen(HubScreen):
     """Local library browser and safe maintenance centre."""
 
     BINDINGS = [Binding("/", "focus_search", "Search", show=False)]
+
+    def action_refresh_library(self) -> None:
+        self.sync_library()
 
     def __init__(
         self,
@@ -1650,6 +1808,8 @@ class LibraryScreen(HubScreen):
         self._metadata_audit_cache: dict[tuple[str, str | None, str], MetadataAudit] = {}
         self._metadata_repair_plan_worker: Worker[MetadataRepairPlanOutcome] | None = None
         self._metadata_repair_worker: Worker[MetadataRepairOutcome] | None = None
+        self._maintenance_requested = False
+        self._maintenance_active = False
 
     def compose_content(self) -> Iterable[Widget]:
         yield Static(
@@ -1676,8 +1836,8 @@ class LibraryScreen(HubScreen):
                 yield Static("Track details", classes="panel-title")
                 with VerticalScroll(id="library-details-scroll"):
                     yield Static("Select a track to inspect it.", id="library-details", markup=False)
-        yield Static("Sync Library updates the catalogue view without changing audio or lyrics.", id="library-preview", markup=False)
-        yield Static("s Sync Library · a Issues · f Search Lyrics · g Missing · d Duplicates · ↑↓ Move · Enter Details · ? Help", id="library-position", markup=False)
+        yield Static("Refresh and Maintenance never silently change audio, tags, or lyrics.", id="library-preview", markup=False)
+        yield Static("/ Search · f Search Lyrics · r Refresh Library · m Maintenance · ↑↓ Move · Enter Open Song · ? Help", id="library-position", markup=False)
 
     def action_focus_search(self) -> None:
         self.query_one("#library-query", Input).focus()
@@ -1750,8 +1910,47 @@ class LibraryScreen(HubScreen):
     def _apply_index_sync(self, result: LibraryIndexSyncResult) -> None:
         self._index_sync_worker = None
         self._identify_requested = False
+        if self._maintenance_requested:
+            self._maintenance_requested = False
+            self._maintenance_active = True
         self._apply_snapshot(SnapshotOutcome(result.snapshot))
         self._set_status(result.summary, error=bool(result.error or result.failed))
+
+    def _open_maintenance(self) -> None:
+        if self.snapshot is None:
+            self._set_status("Load the Library before starting Maintenance.", error=True)
+            return
+        self._maintenance_requested = True
+        self._set_status("Refreshing changed songs before Maintenance…")
+        self.sync_library()
+
+    def _show_maintenance(self) -> None:
+        if self.snapshot is None:
+            return
+        self._maintenance_active = True
+        self.app.push_screen(
+            LibraryIssuesDialog(get_library_health(self.snapshot), maintenance=True),
+            self._issue_action_selected,
+        )
+
+    def _open_more(self) -> None:
+        self.app.push_screen(LibraryMoreDialog(), self._more_selected)
+
+    def _more_selected(self, key: str | None) -> None:
+        if key is None:
+            return
+        if key == "a": self._open_issues()
+        elif key == "d": self._open_duplicates()
+        elif key == "g": self._open_missing_library()
+        elif key == "e" and self.selected_track is not None: self._open_metadata_audit(self.selected_track)
+        elif key == "v":
+            self._snapshot_action = "verify"
+            self.refresh_snapshot(identify=False)
+        elif key == "b": self._open_backups()
+        elif key == "p": self._check_rmpc()
+        elif key == "i": self._preview_identity_rebuild()
+        elif key == "l": self.generate_preview(action="maintain")
+        elif key == "u": self._unlock_manual_match()
 
     @work(thread=True, exclusive=True, group="library-snapshot", exit_on_error=False)
     def _load_snapshot(self) -> SnapshotOutcome:
@@ -1990,6 +2189,8 @@ class LibraryScreen(HubScreen):
                 f"Identifying {len(unknown)} catalogue entr{'y' if len(unknown) == 1 else 'ies'}…"
             )
             self._identity_worker = self._identify_unknown(unknown)
+        elif self._maintenance_active:
+            self.call_after_refresh(self._show_maintenance)
 
     @work(thread=True, exclusive=True, group="library-identity", exit_on_error=False)
     def _identify_unknown(self, tracks: tuple[LibraryTrack, ...]) -> IdentityOutcome:
@@ -2006,6 +2207,8 @@ class LibraryScreen(HubScreen):
                 "Catalogue identification unavailable · Local library health is still available",
                 error=True,
             )
+            if self._maintenance_active:
+                self.call_after_refresh(self._show_maintenance)
             return
         result = outcome.result
         if result.identified:
@@ -2031,6 +2234,8 @@ class LibraryScreen(HubScreen):
                 f"Library refreshed · {count} song{'s' if count != 1 else ''} found · "
                 f"{result.unknown} catalogue match{'es' if result.unknown != 1 else ''} remain unknown"
             )
+        if self._maintenance_active:
+            self.call_after_refresh(self._show_maintenance)
 
     def _apply_preview(self, outcome: PreviewOutcome) -> None:
         if outcome.error or outcome.plan is None:
@@ -2101,11 +2306,17 @@ class LibraryScreen(HubScreen):
         errors = sum(
             issue.severity is LibraryIssueSeverity.ERROR for issue in health.issues
         )
+        needs_input = sum(
+            issue.severity is LibraryIssueSeverity.ERROR
+            or LibraryIssueCategory.CATALOGUE in issue.categories
+            for issue in health.issues
+        )
+        optional = max(0, health.issue_count - needs_input)
+        ready = max(0, snapshot.total_track_count - health.issue_count)
+        song_word = "song" if snapshot.total_track_count == 1 else "songs"
         self.query_one("#library-summary", Static).update(
-            f"{snapshot.total_track_count} tracks · {health.issue_count} follow-ups · "
-            f"{errors} errors\nLyrics to improve {snapshot.needs_attention_count} · "
-            f"Fully covered {snapshot.fully_covered_count} · "
-            f"Catalogue unknown {snapshot.unmatched_count} · "
+            f"{snapshot.total_track_count} {song_word} · {ready} ready · "
+            f"{needs_input} need your input · {optional} optional · {errors} errors\n"
             f"MP3 {snapshot.format_count('MP3')} · "
             f"FLAC {snapshot.format_count('FLAC')} · M4A {snapshot.format_count('M4A')}"
         )
@@ -2195,28 +2406,28 @@ class LibraryScreen(HubScreen):
             f"Album          {track.album or 'Not available'}",
             f"Relative path  {track.relative_path}",
             f"Full path      {track.path}",
-            f"Catalogue match {track.matched_title or _match_label(track)}",
-            f"Match source    {'Manual (locked)' if track.identity_locked else 'Automatic' if track.match_status is LibraryMatchStatus.MATCHED else 'Not identified'}",
+            f"Catalogue      {'✓ Matched · ' + (track.matched_title or _match_label(track)) if track.match_status is LibraryMatchStatus.MATCHED else '? Needs your choice'}",
             f"Duration       {_duration(track.duration_seconds)}",
-            f"Lyrics         {_lyric_label(track.lyric_status)}",
-            f"External LRC   {_lrc_label(track.lrc_status)}",
-            f"LRC path       {track.lrc_path or 'Not recorded'}",
-            f"Library state  {_state_label(track.state_status)}",
-            f"Library issue  {issue.summary if issue is not None else 'None'}",
+            f"Lyrics         {'✓ ' + _lyric_label(track.lyric_status) if track.lyric_status is not LibraryLyricStatus.NONE else '✗ Missing lyrics'}",
+            f"Metadata       {'~ Review available' if issue is not None and LibraryIssueCategory.METADATA in issue.categories else '✓ Looks good'}",
             f"Coverage       {'Fully covered' if track.fully_covered else _coverage_label(track)}",
         ]
+        if track.lrc_status is not LibraryLrcStatus.MISSING or track.lrc_path:
+            lines.append(f"Lyrics source  {_lrc_label(track.lrc_status)} · {track.lrc_path or 'embedded'}")
         if track.warning:
             lines.extend(("", f"Warning        {track.warning}"))
         if track.match_status is LibraryMatchStatus.UNMATCHED:
-            lines.extend(("", "Automatic refresh requires a catalogue match."))
-        lines.extend(("", "Lyric maintenance preview", _track_preview_text(self.preview, track.path)))
+            lines.extend(("", "Use Change Match to choose the correct recording, or leave it unresolved."))
+        lines.extend(("", "Actions: a Add Lyrics · c Change Match · e Review Metadata · x More"))
+        if self.preview is not None:
+            lines.extend(("", "Preview · no changes until confirmed", _track_preview_text(self.preview, track.path)))
         details.update(Text("\n".join(lines), overflow="ellipsis"))
 
     def _update_position(self) -> None:
         if not self.filtered_tracks:
-            self.query_one("#library-position", Static).update("s Sync Library · a Issues · f Search Lyrics · g Missing · d Duplicates · ? Help")
+            self.query_one("#library-position", Static).update("/ Search · f Search Lyrics · r Refresh Library · m Maintenance · x More · ? Help")
             return
-        suffix = "Esc Back · f Search Lyrics · e Metadata · c Match · l Refresh · ? Help" if self._details_mode else "s Sync Library · a Issues · f Search Lyrics · g Missing · d Duplicates · e Metadata · ↑↓ Move · ? Help"
+        suffix = "Esc Back · a Add Lyrics · c Change Match · e Review Metadata · x More · ? Help" if self._details_mode else "/ Search · f Search Lyrics · r Refresh Library · m Maintenance · x More · ↑↓ Move · Enter Open Song · ? Help"
         self.query_one("#library-position", Static).update(
             f"Track {self.selected_index + 1} of {len(self.filtered_tracks)} · {suffix}"
         )
@@ -2224,12 +2435,21 @@ class LibraryScreen(HubScreen):
     def on_key(self, event: Key) -> None:
         if any(select.expanded for select in self.query(Select)):
             return
-        if isinstance(self.app.focused, (Input, Select)):
+        if isinstance(self.app.focused, Select) or (
+            isinstance(self.app.focused, Input)
+            and not (isinstance(self.app.focused, LibraryInput) and not self.app.focused.value)
+        ):
             return
-        if event.key == "s":
+        if event.key in {"r", "s"}:
             self.sync_library()
+        elif event.key == "m" and not self._details_mode:
+            self._open_maintenance()
+        elif event.key == "x":
+            self._open_more()
         elif event.key == "f":
             self._open_lyrics_search()
+        elif event.key == "a" and self._details_mode and self.selected_track is not None:
+            self.generate_preview(action="selected", selected_path=self.selected_track.path)
         elif event.key == "a":
             self._open_issues()
         elif event.key == "d":
@@ -2250,7 +2470,7 @@ class LibraryScreen(HubScreen):
         elif event.key == "i":
             self._preview_identity_rebuild()
         elif event.key == "c" and self.selected_track is not None:
-            self._open_manual_match()
+            self._change_match()
         elif event.key == "u" and self.selected_track is not None:
             self._unlock_manual_match()
         elif event.key == "l" and self.selected_track is not None:
@@ -2351,7 +2571,11 @@ class LibraryScreen(HubScreen):
 
     def _issue_action_selected(self, choice: LibraryIssueChoice | None) -> None:
         if choice is None:
-            self._set_status("Issues closed. No files were changed.")
+            if self._maintenance_active:
+                self._maintenance_active = False
+                self._set_status("Maintenance stopped. Completed work is saved.")
+            else:
+                self._set_status("Issues closed. No files were changed.")
             return
         track = next(
             (
@@ -2369,7 +2593,7 @@ class LibraryScreen(HubScreen):
         elif track is None:
             self._set_status("That track is no longer in the current Library view.", error=True)
         elif choice.action is LibraryIssueAction.MANUAL_MATCH:
-            self._open_manual_match(track)
+            self._change_match(track)
         elif choice.action is LibraryIssueAction.REFRESH_LYRICS:
             self.generate_preview(action="selected", selected_path=track.path)
         elif choice.action is LibraryIssueAction.METADATA_AUDIT:
@@ -2549,6 +2773,18 @@ class LibraryScreen(HubScreen):
             self._manual_match_closed,
         )
 
+    def _change_match(self, track: LibraryTrack | None = None) -> None:
+        track = track or self.selected_track
+        if track is None:
+            return
+        if track.identity_locked:
+            self.app.push_screen(
+                ChangeMatchConfirmation(track.title),
+                lambda confirmed: self._open_manual_match(track) if confirmed else None,
+            )
+        else:
+            self._open_manual_match(track)
+
     def _manual_match_closed(self, choice: ManualMatchChoice | None) -> None:
         track, self._manual_track = self._manual_track, None
         if choice is None:
@@ -2643,6 +2879,7 @@ class LibraryScreen(HubScreen):
 
     def _maintenance_dialog_closed(self, plan: LibrarySyncPlan | None) -> None:
         if plan is None:
+            self._maintenance_active = False
             self._set_status("Library maintenance cancelled. No files were changed.")
             return
         if self._execution_worker is not None:
@@ -2867,14 +3104,14 @@ def _matches_filter(track: LibraryTrack, selected: LibraryFilter) -> bool:
 
 
 def _match_label(track: LibraryTrack) -> str:
-    return "Matched" if track.match_status is LibraryMatchStatus.MATCHED else "Unknown"
+    return "Matched" if track.match_status is LibraryMatchStatus.MATCHED else "Needs choice"
 
 
 def _lyric_label(status: LibraryLyricStatus) -> str:
     return {
         LibraryLyricStatus.SYNCED: "Synced lyrics",
         LibraryLyricStatus.PLAIN: "Plain lyrics",
-        LibraryLyricStatus.NONE: "No lyrics",
+        LibraryLyricStatus.NONE: "Missing lyrics",
     }[status]
 
 

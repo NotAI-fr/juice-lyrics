@@ -55,31 +55,30 @@ adjacent `.lrc`.
 
 ## Manage your local library
 
-Open `999`, choose **Library**, and use:
+The Library starts with five everyday actions: `/` searches song names, `f`
+searches local lyrics, `r` refreshes the Library, `m` starts guided
+Maintenance, and Enter opens the selected song. Refresh checks for new,
+changed, unchanged, and removed MP3, FLAC, and M4A files and safely updates
+local catalogue knowledge. It does not rewrite music or silently replace a
+manual match.
 
-* **Sync Library** (`s`) for the normal update: discover MP3, FLAC, and M4A changes, retire known removed entries, and identify safe catalogue matches without changing audio or lyrics;
-* **Search Lyrics** (`f`) to find a local track from remembered lyric words, entirely offline;
-* **Issues** (`a`) to see only tracks still needing a decision or repair;
-* **Duplicates** (`d`) to review exact file copies and conservative probable recordings without changing anything;
-* **Missing Library** (`g`) to compare confirmed local recording IDs with the paginated catalogue and optionally queue one exact recording;
-* **Metadata repair** (`e`) on the selected track to compare supported tags, explicitly select fields, and review a cancel-first Apply confirmation;
-* **Maintain lyrics** to preview needed changes, then explicitly approve them;
-* **Verify** for a read-only health check and attention list;
-* **Backups** to inspect valid backups and restore one with confirmation;
-* **Player** to check rmpc and explicitly configure its sidecar indexing.
+Maintenance refreshes first, handles safe background updates, then presents
+remaining follow-ups together. Choose an item and press Enter for its existing
+guided workflow, or `s` to leave it for later. Catalogue choices remain
+explicit; lyric and metadata changes still use their preview and confirmation
+steps. Escape stops the walkthrough without undoing completed work. Lyrics
+that are missing are described as optional, not as damaged music.
 
-Press `?` in Library to see the infrequent **Rebuild catalogue matches** action.
-It previews current tracks and existing identities, then uses a cancel-first
-confirmation. The rebuild changes application identity state only; it does not
-modify audio or lyrics.
+Song Details gives the selected track's catalogue, lyrics, and metadata status.
+Use `a` to preview adding or refreshing lyrics, `c` to choose a catalogue
+recording, and `e` to preview metadata repair. Use `x` for occasional tools
+such as Issues, duplicate review, Missing Library, verification, backups,
+player integration, and advanced catalogue rebuild. These remain separate
+tools and are not run automatically during Maintenance.
 
-Sync Library keeps unchanged tracks fast and checks unknown tracks against the
-catalogue in the background. Only confident identities are saved. A recent
-empty or ambiguous search is retried after the normal catalogue cache window.
-The separate **Refresh** key remains available for a direct local rescan.
-Audio, embedded lyrics, sidecars, audio backups, and rmpc configuration are not
-changed. If the catalogue is unavailable, local health remains usable and the
-track stays **Unknown**.
+Sync keeps unchanged tracks fast and checks eligible unknown tracks against
+the catalogue. Only confident identities are saved. A catalogue outage does
+not erase trusted choices or make local Library functions unavailable.
 
 ### Search local lyrics (2.0.0b2)
 
