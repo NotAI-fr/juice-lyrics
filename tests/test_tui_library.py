@@ -1672,6 +1672,8 @@ def test_guided_maintenance_match_to_lyrics_completion_and_fast_second_run(tmp_p
     missing_path = root / "Needs Help.mp3"
     missing_path.write_bytes(b"")
     ID3().save(missing_path)
+    deferred_path = root / "Deferred.flac"
+    deferred_path.write_bytes(flac.read_bytes())
     base = _track(
         root, "Needs Help.mp3", matched=False,
         lyric=LibraryLyricStatus.NONE, lrc=LibraryLrcStatus.NONE,
@@ -1680,6 +1682,10 @@ def test_guided_maintenance_match_to_lyrics_completion_and_fast_second_run(tmp_p
         _track(root, mp3.name, catalogue_id=1),
         _track(root, flac.name, media_format="FLAC", lyric=LibraryLyricStatus.PLAIN, catalogue_id=2),
         _track(root, m4a.name, media_format="M4A", lyric=LibraryLyricStatus.PLAIN, catalogue_id=3),
+    )
+    deferred = _track(
+        root, deferred_path.name, matched=False, media_format="FLAC",
+        lyric=LibraryLyricStatus.PLAIN, lrc=LibraryLrcStatus.NONE,
     )
     current = {"matched": False}
     sync_calls = []
@@ -1699,7 +1705,7 @@ def test_guided_maintenance_match_to_lyrics_completion_and_fast_second_run(tmp_p
         )
 
     def snapshot(settings):
-        return _snapshot(root, *healthy_tracks, current_track())
+        return _snapshot(root, *healthy_tracks, current_track(), deferred)
 
     def sync(settings, *, previous_snapshot=None):
         sync_calls.append(previous_snapshot)
@@ -1753,9 +1759,9 @@ def test_guided_maintenance_match_to_lyrics_completion_and_fast_second_run(tmp_p
                 if app.screen.__class__.__name__ == "MaintenanceWizardDialog":
                     break
                 await pilot.pause(0.05)
-            assert "1 need your input" in _text(app, "#library-dialog-body")
+            assert "2 need your input" in _text(app, "#library-dialog-body")
             await pilot.press("enter")
-            assert "1 of 1" in _text(app, "#library-dialog-title")
+            assert "1 of 2" in _text(app, "#library-dialog-title")
             assert "catalogue match" in _text(app, "#library-dialog-body").casefold()
             await pilot.press("enter")
             dialog = app.screen
@@ -1794,12 +1800,15 @@ def test_guided_maintenance_match_to_lyrics_completion_and_fast_second_run(tmp_p
             for _ in range(30):
                 if (
                     app.screen.__class__.__name__ == "MaintenanceWizardDialog"
-                    and "Maintenance complete" in _text(app, "#library-dialog-title")
+                    and "Deferred" in _text(app, "#library-dialog-body")
                 ):
                     break
                 await pilot.pause(0.05)
+            assert "Deferred" in _text(app, "#library-dialog-body")
+            await pilot.press("s")
             assert "Maintenance complete" in _text(app, "#library-dialog-title")
             completion = _text(app, "#library-dialog-body")
+            assert "1 skipped for later" in completion
             assert "0 songs matched" in completion
             assert "1 lyric issue resolved" in completion
             assert any(line.text == "line" for line in read_local_lyrics(missing_path))
@@ -1815,8 +1824,12 @@ def test_guided_maintenance_match_to_lyrics_completion_and_fast_second_run(tmp_p
             assert sync_calls[2] is first_result_snapshot
             assert len(searches) == 1
             assert len(preview_calls) == 2
-            assert "0 need your input" in _text(app, "#library-dialog-body")
-            await pilot.press("escape")
+            assert "1 need your input" in _text(app, "#library-dialog-body")
+            await pilot.press("enter")
+            assert "Deferred" in _text(app, "#library-dialog-body")
+            await pilot.press("s")
+            assert "Maintenance complete" in _text(app, "#library-dialog-title")
+            await pilot.press("enter")
 
             lyrics_snapshot = _snapshot(root, *healthy_tracks, current_track())
             cache_file = tmp_path / "lyrics-index.json"
