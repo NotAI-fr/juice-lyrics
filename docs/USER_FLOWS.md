@@ -361,6 +361,8 @@ Actions:
 
 s Sync Library
 
+f Search Lyrics (offline, unreleased)
+
 a Issues
 
 g Missing Library
@@ -380,6 +382,11 @@ b Backups
 enter Details; l refresh selected lyrics
 
 c Match manually; u unlock manual match
+
+Search Lyrics accepts remembered words or a phrase, updates from the in-memory
+local index while typing, uses arrows to navigate, opens the corresponding
+Library track with Enter, and returns with Escape. It never contacts the
+catalogue or changes media, lyrics, sidecars, or state.
 
 
 ---

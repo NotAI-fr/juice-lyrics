@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from mutagen.flac import FLAC
@@ -15,6 +16,16 @@ from .sidecar import sidecar_lrc_path
 DESCRIPTION = "Juice WRLD API"
 LANGUAGE = "eng"
 LRC_RE = re.compile(r"\[(?P<m>\d+):(?P<s>\d{2})(?:[.:](?P<f>\d{1,3}))?\]\s*(?P<t>.*)")
+
+
+@dataclass(frozen=True, slots=True)
+class LocalLyricLine:
+    """One searchable local lyric line read from an existing supported source."""
+
+    text: str
+    timestamp_ms: int | None
+    source: str
+
 
 def parse_synced_lyrics(raw: str) -> list[tuple[str, int]]:
     entries = []
@@ -29,6 +40,86 @@ def parse_synced_lyrics(raw: str) -> list[tuple[str, int]]:
         if text: entries.append((text, ts))
     entries.sort(key=lambda x: x[1])
     return list(dict.fromkeys(entries))
+
+
+def _plain_lines(raw: str) -> list[str]:
+    lines: list[str] = []
+    for value in raw.splitlines():
+        text = value.strip()
+        if not text or LRC_RE.match(text) or re.match(r"^\[[A-Za-z][^]]*:.*\]$", text):
+            continue
+        lines.append(text)
+    return lines
+
+
+def read_local_lyrics(path: Path) -> tuple[LocalLyricLine, ...]:
+    """Read lyrics from the same local containers and sidecar parser used by 999.
+
+    Adjacent LRC is considered first so equivalent embedded text can be omitted
+    while preserving the timestamped representation. The operation is read-only.
+    """
+
+    path = Path(path)
+    sidecar_lines: list[LocalLyricLine] = []
+    sidecar = sidecar_lrc_path(path)
+    try:
+        raw_lrc = sidecar.read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError, UnicodeError):
+        raw_lrc = ""
+    if raw_lrc:
+        sidecar_lines.extend(
+            LocalLyricLine(text, timestamp, "lrc")
+            for text, timestamp in parse_synced_lyrics(raw_lrc)
+        )
+        sidecar_lines.extend(
+            LocalLyricLine(text, None, "lrc") for text in _plain_lines(raw_lrc)
+        )
+
+    embedded: list[LocalLyricLine] = []
+    try:
+        if is_flac(path):
+            audio = FLAC(path)
+            for key in ("lyrics", "unsyncedlyrics"):
+                for value in audio.get(key, []):
+                    embedded.extend(
+                        LocalLyricLine(text.strip(), None, "embedded")
+                        for text in str(value).splitlines() if text.strip()
+                    )
+        elif is_m4a(path):
+            audio = MP4(path)
+            for value in audio.get("\xa9lyr", []):
+                embedded.extend(
+                    LocalLyricLine(text.strip(), None, "embedded")
+                    for text in str(value).splitlines() if text.strip()
+                )
+        else:
+            tag = ID3(path)
+            for frame in tag.getall("SYLT"):
+                embedded.extend(
+                    LocalLyricLine(str(text).strip(), int(timestamp), "embedded")
+                    for text, timestamp in getattr(frame, "text", ())
+                    if str(text).strip()
+                )
+            for frame in tag.getall("USLT"):
+                embedded.extend(
+                    LocalLyricLine(text.strip(), None, "embedded")
+                    for text in str(getattr(frame, "text", "") or "").splitlines()
+                    if text.strip()
+                )
+    except Exception:
+        # A damaged/unreadable embedded source must not hide a readable
+        # adjacent sidecar from the local search index.
+        embedded = []
+
+    # The search service applies its broader punctuation normalization. A
+    # conservative local comparison is enough to suppress copies of sidecar
+    # lines while retaining repeated chorus occurrences inside one source.
+    sidecar_text = {" ".join(line.text.casefold().split()) for line in sidecar_lines}
+    embedded = [
+        line for line in embedded
+        if " ".join(line.text.casefold().split()) not in sidecar_text
+    ]
+    return tuple(sidecar_lines + embedded)
 
 def load_id3(path: Path) -> ID3:
     try: return ID3(path)

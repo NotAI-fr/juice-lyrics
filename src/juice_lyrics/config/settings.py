@@ -29,6 +29,7 @@ CACHE_HOME = xdg_dir("XDG_CACHE_HOME", Path.home() / ".cache")
 DATA_HOME = xdg_dir("XDG_DATA_HOME", Path.home() / ".local" / "share")
 CONFIG_FILE = CONFIG_HOME / STORAGE_NAMESPACE / "config.toml"
 CACHE_DIR = CACHE_HOME / STORAGE_NAMESPACE
+LYRICS_SEARCH_INDEX = CACHE_DIR / "lyrics-search-index-v1.json"
 DATA_DIR = DATA_HOME / STORAGE_NAMESPACE
 BACKUP_DIR = DATA_DIR / "backups"
 STATE_FILE = DATA_DIR / "state.json"

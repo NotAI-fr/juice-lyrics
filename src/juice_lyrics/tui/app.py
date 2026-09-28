@@ -39,6 +39,7 @@ from ..services.download_queue import (
 from ..services.library_status import LibrarySnapshot, LibraryStatus, get_library_snapshot, get_library_status
 from ..services.library_identity import IdentityBackfillResult, backfill_catalogue_identities
 from ..services.library_index_sync import LibraryIndexSyncResult, sync_library_index
+from ..services.lyrics_search import LyricsSearchIndex, build_lyrics_search_index
 from ..services.metadata_audit import MetadataAudit, audit_track_metadata
 from ..services.metadata_repair import (
     MetadataRepairPlan,
@@ -73,6 +74,7 @@ from .screens.library import (
     LibraryDuplicatesDialog,
     LibraryIssuesDialog,
     LibraryScreen,
+    LyricsSearchDialog,
     ManualMatchDialog,
     MissingLibraryDialog,
     MetadataAuditDialog,
@@ -94,6 +96,7 @@ CatalogueFiltersProvider = Callable[..., CatalogueFilterMetadata]
 LibrarySnapshotProvider = Callable[[Any], LibrarySnapshot]
 LibraryIdentityProvider = Callable[..., IdentityBackfillResult]
 LibraryIndexSyncProvider = Callable[..., LibraryIndexSyncResult]
+LyricsSearchProvider = Callable[..., LyricsSearchIndex]
 ManualIdentityProvider = Callable[..., ManualIdentityResult]
 IdentityRebuildPlanProvider = Callable[..., IdentityRebuildPlan]
 IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
@@ -489,6 +492,7 @@ class JuiceLyricsApp(App[None]):
     ManualMatchDialog,
     LibraryIssuesDialog,
     LibraryDuplicatesDialog,
+    LyricsSearchDialog,
     MissingLibraryDialog,
     MetadataAuditDialog,
     MetadataRepairConfirmationDialog {
@@ -503,6 +507,61 @@ class JuiceLyricsApp(App[None]):
         height: auto;
         padding: 1 2;
         border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #lyrics-search-dialog {
+        width: 96;
+        max-width: 96%;
+        height: 84%;
+        padding: 1 2;
+        border: round ansi_cyan;
+        background: transparent;
+    }
+
+    #lyrics-search-title {
+        height: 2;
+        text-style: bold;
+        color: ansi_blue;
+    }
+
+    #lyrics-search-status,
+    #lyrics-search-help {
+        height: 2;
+        text-style: dim;
+    }
+
+    #lyrics-search-query {
+        height: 3;
+        background: transparent;
+        border: tall ansi_cyan;
+    }
+
+    #lyrics-search-query:focus {
+        border: tall ansi_blue;
+    }
+
+    #lyrics-search-main {
+        height: 1fr;
+        layout: grid;
+        grid-size: 2 1;
+        grid-columns: 3fr 2fr;
+        grid-gutter: 0 1;
+    }
+
+    #lyrics-search-results-scroll,
+    #lyrics-search-detail-scroll {
+        height: 1fr;
+        border: round ansi_cyan;
+        padding: 0 1;
+        background: transparent;
+        scrollbar-color: ansi_blue;
+        scrollbar-background: transparent;
+    }
+
+    #lyrics-search-results,
+    #lyrics-search-detail {
+        height: auto;
         background: transparent;
     }
 
@@ -1105,6 +1164,7 @@ class JuiceLyricsApp(App[None]):
         download_all_execution_provider: Callable[..., Any] = execute_download_all,
         library_snapshot_provider: LibrarySnapshotProvider = get_library_snapshot,
         library_index_sync_provider: LibraryIndexSyncProvider = sync_library_index,
+        lyrics_search_provider: LyricsSearchProvider = build_lyrics_search_index,
         library_identity_provider: LibraryIdentityProvider = backfill_catalogue_identities,
         identity_rebuild_plan_provider: IdentityRebuildPlanProvider = plan_catalogue_identity_rebuild,
         identity_rebuild_execution_provider: IdentityRebuildExecutionProvider = execute_catalogue_identity_rebuild,
@@ -1150,6 +1210,7 @@ class JuiceLyricsApp(App[None]):
         self.download_all_execution_provider = download_all_execution_provider
         self.library_snapshot_provider = library_snapshot_provider
         self.library_index_sync_provider = library_index_sync_provider
+        self.lyrics_search_provider = lyrics_search_provider
         self.library_identity_provider = library_identity_provider
         self.identity_rebuild_plan_provider = identity_rebuild_plan_provider
         self.identity_rebuild_execution_provider = identity_rebuild_execution_provider
@@ -1210,6 +1271,7 @@ class JuiceLyricsApp(App[None]):
                 missing_library_provider=self.missing_library_provider,
                 queue_plan_provider=self.queue_plan_provider,
                 queue_add_provider=self.queue_add_provider,
+                lyrics_search_provider=self.lyrics_search_provider,
             ),
             "library",
         )

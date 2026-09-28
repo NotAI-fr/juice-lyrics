@@ -58,6 +58,7 @@ adjacent `.lrc`.
 Open `999`, choose **Library**, and use:
 
 * **Sync Library** (`s`) for the normal update: discover MP3, FLAC, and M4A changes, retire known removed entries, and identify safe catalogue matches without changing audio or lyrics;
+* **Search Lyrics** (`f`) to find a local track from remembered lyric words, entirely offline;
 * **Issues** (`a`) to see only tracks still needing a decision or repair;
 * **Duplicates** (`d`) to review exact file copies and conservative probable recordings without changing anything;
 * **Missing Library** (`g`) to compare confirmed local recording IDs with the paginated catalogue and optionally queue one exact recording;
@@ -79,6 +80,26 @@ The separate **Refresh** key remains available for a direct local rescan.
 Audio, embedded lyrics, sidecars, audio backups, and rmpc configuration are not
 changed. If the catalogue is unavailable, local health remains usable and the
 track stays **Unknown**.
+
+### Search local lyrics (unreleased development)
+
+On `feature/lyrics-search`, press `f` in Library and type remembered words or a
+phrase. Results update as you type. Use ↑/↓ to choose a track, Enter to return
+to that track's Library details, or Escape to return without selecting.
+
+Search covers embedded MP3, FLAC, and M4A lyrics plus adjacent plain or timed
+`.lrc` text. It ignores case, repeated whitespace, apostrophe differences, and
+ordinary punctuation, then performs a predictable substring match. It does not
+guess similar wording. One row is shown per track even when a chorus matches
+several times. If embedded text duplicates an adjacent LRC line, the LRC form
+is shown so its real timestamp is retained.
+
+The first search lazily refreshes a rebuildable cache. Later openings reuse
+unchanged tracks; changed audio or LRC files are re-read individually and
+removed tracks disappear. Typing never rescans media. Search makes no catalogue
+or API request and does not run Sync or modify audio, lyrics, state, backups,
+downloads, or rmpc configuration. This workflow is unreleased and is not part
+of `v2.0.0b1`.
 
 Duplicates opens immediately from the current Library snapshot. Exact groups
 share the same recorded whole-file SHA-256. Probable groups use compatible

@@ -5,11 +5,47 @@ Sync, manual catalogue locking, snapshot-backed Library Issues, read-only
 duplicate review, and safe metadata repair are integrated. Read the
 code and tests if a later working tree disagrees with this document.
 
+## Unreleased post-beta development
+
+`feature/lyrics-search` adds experimental, entirely offline local lyric phrase
+search after the immutable `v2.0.0b1` release. In Library, `f` opens **Search
+Lyrics**. Typing updates one logical result per track; arrows navigate, Enter
+opens that track's Library details, and Escape returns. Results include the
+first useful matching line, nearby context, a compact hit count, and the real
+timestamp when the chosen representation is timed.
+
+Search reads the existing MP3 ID3 USLT/SYLT, FLAC Vorbis `LYRICS`, M4A `©lyr`,
+and authoritative adjacent-LRC sources through the shared lyric readers and LRC
+parser. Matching is substring/phrase based after case, whitespace, apostrophe,
+and ordinary punctuation normalization; it is deliberately not fuzzy or
+semantic. Equivalent embedded and sidecar lines produce one track result, with
+the adjacent LRC representation preferred so timing is retained.
+
+The rebuildable `lyrics-search-index-v1.json` lives under the existing XDG
+cache namespace, never in authoritative state. It is built lazily on first
+search from the current Library snapshot. Audio and sidecar replacement-aware
+fingerprints reuse unchanged entries, re-read only new or changed tracks,
+invalidate a track after either audio or LRC changes, and discard removed
+paths. Corrupt, incompatible, or other-library cache data rebuilds safely.
+Each query runs only against the loaded in-memory index and performs no media
+read, scan, Sync, catalogue/API request, download, or mutation.
+
+The experimental milestone intentionally has no CLI command: adding a CLI
+snapshot/index lifecycle without weakening the fast TUI reuse path would add
+unnecessary scope. The TUI and reusable service are the supported development
+surface for now. This feature is unreleased and is not part of `v2.0.0b1`.
+
+Lyrics Search milestone verification: 79 focused lyrics/index/Library/TUI
+tests passed; the complete suite passed 550 tests with the expected missing-
+Fish skip. A separate explicit temporary HOME/XDG run passed all 8 lyrics-index
+and generated-media tests. Compileall and `git diff --check` passed. No real
+library or stable installation was used.
+
 ## Repository checkpoint
 
 - Repository: the current `juice-lyrics` checkout
-- Active development branch: `main`; `v2-redesign` is retained at the accepted
-  release-candidate history.
+- Active post-beta experiment branch: `feature/lyrics-search`; `main` and
+  `v2-redesign` remain at their accepted release histories.
 - Previous stable tag: `v1.4.0-backend-complete`
 - Product/primary executable: `999`
 - Compatibility executable: `juice-lyrics`

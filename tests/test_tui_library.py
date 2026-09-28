@@ -51,12 +51,80 @@ from juice_lyrics.services.library_sync import (
 )
 from juice_lyrics.backup.manager import BackupRecord
 from juice_lyrics.services.library_index_sync import LibraryIndexSyncResult
+from juice_lyrics.lyrics.engine import LocalLyricLine
+from juice_lyrics.services.lyrics_search import LyricsIndexEntry, LyricsSearchIndex
 from juice_lyrics.services.settings_snapshot import (
     IntegrationSnapshot,
     IntegrationStatus,
     SettingsSnapshot,
 )
 from juice_lyrics.tui import JuiceLyricsApp
+from juice_lyrics.tui.help import guide_text
+
+
+def test_help_documents_offline_lyrics_search_key():
+    text = guide_text()
+    assert "f                       Search local lyrics offline" in text
+    assert "Search Lyrics" in text
+
+
+def test_lyrics_search_updates_navigates_selects_and_cancels(tmp_path):
+    root = tmp_path / "music"
+    root.mkdir()
+    first_path = root / "Lucid Dreams.mp3"
+    second_path = root / "Shadows Again.mp3"
+    first_path.write_bytes(b"first")
+    second_path.write_bytes(b"second")
+    first = _track(root, first_path.name)
+    second = _track(root, second_path.name)
+    fingerprint = (1, 2, 3, 4, 5)
+    index = LyricsSearchIndex(
+        root,
+        (
+            LyricsIndexEntry(
+                first.reference, first.path, first.title, fingerprint, None,
+                (LocalLyricLine("I still see your shadows in my room", 102000, "lrc"),),
+            ),
+            LyricsIndexEntry(
+                second.reference, second.path, second.title, fingerprint, None,
+                (LocalLyricLine("Your shadows follow me", None, "embedded"),),
+            ),
+        ),
+        reused_count=2,
+    )
+
+    async def scenario():
+        app = _app(
+            tmp_path,
+            lambda settings: _snapshot(root, first, second),
+            lyrics_search_provider=lambda settings, snapshot: index,
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            assert "f Search Lyrics" in _text(app, "#library-position")
+            await pilot.press("f")
+            dialog = app.screen
+            await dialog._worker.wait()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen is screen
+            assert "No files were changed" in _text(app, "#library-status")
+
+            await pilot.press("f")
+            dialog = app.screen
+            await dialog._worker.wait()
+            dialog.query_one("#lyrics-search-query", Input).value = "SHADOWS"
+            await pilot.pause()
+            assert "01:42" in _text(app, "#lyrics-search-results")
+            assert "I still see your shadows" in _text(app, "#lyrics-search-detail")
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            assert app.screen is screen
+            assert screen.selected_track.reference == second.reference
+            assert screen._details_mode is True
+            assert "Opened Shadows Again" in _text(app, "#library-status")
+
+    asyncio.run(scenario())
 
 
 def test_sync_library_is_immediate_single_worker_and_navigation_stays_live(tmp_path):

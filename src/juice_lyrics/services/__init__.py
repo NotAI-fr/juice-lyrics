@@ -81,6 +81,12 @@ from .library_status import (
     get_library_snapshot,
     get_library_status,
 )
+from .lyrics_search import (
+    LyricsSearchIndex,
+    LyricsSearchResult,
+    build_lyrics_search_index,
+    normalize_lyric_text,
+)
 from .library_identity import (
     IdentityBackfillDependencies,
     IdentityBackfillResult,

@@ -280,6 +280,7 @@ Actions:
 
 
 s Sync Library
+f Search Lyrics
 a Issues
 g Missing Library
 d Duplicates
@@ -388,7 +389,7 @@ movement, details, and the main action for each section. Core bindings:
 | --- | --- |
 | Global | `1`–`5` sections, `?` Help, `q` Quit, `Esc` back/close, `r` refresh |
 | Browse | `↑`/`↓` move, `Enter` details, `/` search, `Space` mark, `a` add, `M` mark page, `u` clear marks |
-| Library | `↑`/`↓` move, `Enter` details, `s` Sync Library, `a` Issues, `g` Missing Library, `d` Duplicates, `e` metadata repair, `c` manual match; `u` unlock, `m`, `r`, `v`, `b`, `p` are secondary |
+| Library | `↑`/`↓` move, `Enter` details, `s` Sync Library, `f` Search Lyrics, `a` Issues, `g` Missing Library, `d` Duplicates, `e` metadata repair, `c` manual match; `u` unlock, `m`, `r`, `v`, `b`, `p` are secondary |
 | Downloads | `↑`/`↓` move, `Enter` details, `d` selected download, `t` retry, `A` whole queue |
 | Settings | `↑`/`↓` inspect, `PgUp`/`PgDn` scroll, `r` refresh |
 
