@@ -5,9 +5,9 @@ Sync, manual catalogue locking, snapshot-backed Library Issues, read-only
 duplicate review, and safe metadata repair are integrated. Read the
 code and tests if a later working tree disagrees with this document.
 
-## Current release: 2.0.0b2
+## Current published beta: 2.0.0b2
 
-`main` is the current product line. Published beta `v2.0.0b2` includes
+Published beta `v2.0.0b2` remains the current formal fallback and includes
 **Search Lyrics**, promoted from the accepted `feature/lyrics-search`
 development branch. That branch may remain temporarily for history/reference.
 The previous beta `v2.0.0b1` remains an immutable, published fallback.
@@ -40,9 +40,11 @@ previous `v2.0.0b1` fallback.
 
 ## Unreleased development: 2.0.0b3.dev0
 
-`feature/library-maintenance-ux` is experimental work based on `main`; it is
-not part of either published beta. Library is organized around Search, Search
-Lyrics, Refresh Library, Maintenance, and task-oriented Song Details.
+`main` now contains the accepted Maintenance UX for daily-driver testing. It
+remains unreleased `2.0.0b3.dev0` development and is not part of either
+published beta. `feature/library-maintenance-ux` remains available temporarily
+for history/reference. Library is organized around Search, Search Lyrics,
+Refresh Library, Maintenance, and task-oriented Song Details.
 Maintenance performs one incremental refresh, shows a compact health summary,
 then walks required decisions sequentially. A saved catalogue match immediately
 checks the same song and opens its lyric preview when lyrics are missing; the
