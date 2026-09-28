@@ -7,12 +7,13 @@ code and tests if a later working tree disagrees with this document.
 
 ## Unreleased post-beta development
 
-`feature/lyrics-search` adds experimental, entirely offline local lyric phrase
-search after the immutable `v2.0.0b1` release. In Library, `f` opens **Search
-Lyrics**. Typing updates one logical result per track; arrows navigate, Enter
-opens that track's Library details, and Escape returns. Results include the
-first useful matching line, nearby context, a compact hit count, and the real
-timestamp when the chosen representation is timed.
+`feature/lyrics-search` is unreleased `2.0.0b2.dev0` development and adds
+experimental, entirely offline local lyric phrase search. Published
+`v2.0.0b1` is the immutable fallback. In Library, `f` opens **Search Lyrics**.
+Typing updates one logical result per track; arrows navigate, Enter opens that
+track's Library details, and Escape returns. Results include the first useful
+matching line, nearby context, a compact hit count, and the real timestamp when
+the chosen representation is timed.
 
 Search reads the existing MP3 ID3 USLT/SYLT, FLAC Vorbis `LYRICS`, M4A `©lyr`,
 and authoritative adjacent-LRC sources through the shared lyric readers and LRC
@@ -479,8 +480,9 @@ The installable distribution remains `juice-wrld-lyrics`; its primary console
 script is `999`, the `juice-lyrics` console script remains a compatibility
 alias, and the import/XDG namespaces remain `juice_lyrics` and `juice-lyrics`.
 The package version has one code authority (`juice_lyrics.__version__`) and is
-resolved dynamically into wheel/sdist metadata. The current PEP 440 beta
-version is `2.0.0b1`, published from the immutable `v2.0.0b1` tag.
+resolved dynamically into wheel/sdist metadata. The feature branch is
+unreleased PEP 440 version `2.0.0b2.dev0`; published `2.0.0b1` remains the
+immutable fallback at tag `v2.0.0b1`.
 
 `python -m build` produces a platform-independent wheel and a source
 distribution containing the runtime Python packages, README, license, and
