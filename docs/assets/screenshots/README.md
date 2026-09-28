@@ -20,6 +20,8 @@ using synthetic data. The following manually captured images are still wanted:
    private download URL visible.
 6. `metadata-repair-preview.png` — A preview before confirmation, using a
    disposable file and generic metadata.
+7. `lyrics-search.png` — Offline local lyric phrase results, including a timed
+   LRC match with its real timestamp, using disposable media.
 
 Use a consistent terminal theme and crop away unrelated desktop content. Check
 each image visually and search its metadata before linking it from the main

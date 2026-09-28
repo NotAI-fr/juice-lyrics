@@ -2,7 +2,7 @@
 
 ![999 dashboard with synthetic demonstration data](docs/assets/screenshots/dashboard-synthetic.png)
 
-[![GitHub release](https://img.shields.io/github/v/release/NotAI-fr/juice-lyrics?include_prereleases&label=stable%20fallback)](https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b1)
+[![GitHub release](https://img.shields.io/github/v/release/NotAI-fr/juice-lyrics?include_prereleases&label=current%20beta)](https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b2)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A keyboard-first Linux app for browsing, understanding, and maintaining a
@@ -13,30 +13,33 @@ local Juice WRLD music library.
 Requires Linux, Python 3.11 or newer, and
 [`pipx`](https://pipx.pypa.io/) on your `PATH`.
 
-### Current version
+### Recommended: 2.0.0b2
 
-Install the unreleased `2.0.0b2.dev0` Lyrics Search development build:
+Install the current recommended beta directly from its immutable Git tag:
 
 ```bash
-pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@feature/lyrics-search"
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b2"
 ```
 
-Then run:
+You do not need to clone the repository. Check the install, then launch 999:
 
 ```bash
+999 --version
+999 doctor
 999
 ```
 
-### Having problems?
+### Previous stable fallback: 2.0.0b1
 
-Return to the immutable `v2.0.0b1` fallback release:
+If `2.0.0b2` gives you trouble, switch to the previous known-good beta. The
+published `v2.0.0b1` tag and release remain immutable:
 
 ```bash
-pipx install --force "https://github.com/NotAI-fr/juice-lyrics/releases/download/v2.0.0b1/juice_wrld_lyrics-2.0.0b1-py3-none-any.whl"
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b1"
 ```
 
-See [Troubleshooting](#troubleshooting) and [Uninstall](#uninstall) for the
-other common setup tasks.
+Use `pipx install --force` with either command to switch between versions.
+See [Troubleshooting](#troubleshooting) or [Uninstall](#uninstall) for help.
 
 ## Why 999?
 
@@ -55,9 +58,8 @@ and M4A lyrics plus adjacent plain or timed `.lrc` files; timed matches can
 show their real timestamp. Search is local, offline, and does not rescan media
 as you type.
 
-Lyrics Search is a standout feature of the current `2.0.0b2.dev0` development
-build installed above. It is **not** included in the `v2.0.0b1` fallback
-release.
+Lyrics Search is part of the current `2.0.0b2` beta. It is **not** included in
+the previous `v2.0.0b1` fallback release.
 
 **Browse and Catalogue Search** — Search and filter the Juice WRLD catalogue,
 inspect recording details, and connect local files with the correct catalogue
@@ -209,16 +211,18 @@ Confirm which build is installed, then run the read-only diagnostic:
 ```bash
 999 --version
 999 doctor
+pipx list
 ```
 
 To create a report you can inspect before sharing:
 
 ```bash
+999 doctor --support-report
 999 doctor --save-report ./999-support.json
 ```
 
-If the development build is not working for you, use the `v2.0.0b1` fallback
-command in [Quick Install](#having-problems).
+If the current beta is not working for you, use the `v2.0.0b1` fallback
+command in [Quick Install](#previous-stable-fallback-200b1).
 
 Current limitations:
 
@@ -238,8 +242,9 @@ For deeper detail, see the [user guide](docs/USER_GUIDE.md),
 pipx uninstall juice-wrld-lyrics
 ```
 
-Uninstalling the executable does not delete your music or the existing
-`juice-lyrics` XDG configuration, state, cache, or backups.
+Uninstalling the pipx app removes the command and its isolated environment. It
+does not intentionally remove your music or normal `juice-lyrics` library,
+configuration, state, cache, or backups.
 
 ## Reporting bugs
 

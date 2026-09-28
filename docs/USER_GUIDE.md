@@ -81,9 +81,9 @@ Audio, embedded lyrics, sidecars, audio backups, and rmpc configuration are not
 changed. If the catalogue is unavailable, local health remains usable and the
 track stays **Unknown**.
 
-### Search local lyrics (unreleased development)
+### Search local lyrics (2.0.0b2)
 
-On `feature/lyrics-search`, press `f` in Library and type remembered words or a
+Press `f` in Library and type remembered words or a
 phrase. Results update as you type. Use ↑/↓ to choose a track, Enter to return
 to that track's Library details, or Escape to return without selecting.
 
@@ -98,8 +98,8 @@ The first search lazily refreshes a rebuildable cache. Later openings reuse
 unchanged tracks; changed audio or LRC files are re-read individually and
 removed tracks disappear. Typing never rescans media. Search makes no catalogue
 or API request and does not run Sync or modify audio, lyrics, state, backups,
-downloads, or rmpc configuration. This workflow is unreleased and is not part
-of `v2.0.0b1`.
+downloads, or rmpc configuration. This feature is included in `v2.0.0b2`; it
+is not part of the previous `v2.0.0b1` fallback.
 
 Duplicates opens immediately from the current Library snapshot. Exact groups
 share the same recorded whole-file SHA-256. Probable groups use compatible

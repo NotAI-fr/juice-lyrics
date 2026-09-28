@@ -11,7 +11,8 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Python package: `juice_lyrics`
 - Distribution: `juice-wrld-lyrics`
 - XDG storage namespace: `juice-lyrics` (do not rename or duplicate it)
-- Current beta release: `2.0.0b1` / tag `v2.0.0b1`
+- Current beta release: `2.0.0b2` / tag `v2.0.0b2`
+- Previous immutable fallback: `2.0.0b1` / tag `v2.0.0b1`
 - Active development branch: `main`
 - Purpose: a Linux CLI/TUI for a local Juice WRLD library, catalogue browsing,
   safe lyric maintenance, downloads, backups, and optional rmpc integration.
