@@ -11,7 +11,8 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Python package: `juice_lyrics`
 - Distribution: `juice-wrld-lyrics`
 - XDG storage namespace: `juice-lyrics` (do not rename or duplicate it)
-- Current beta release: `2.0.0b1` / tag `v2.0.0b1`
+- Current beta release: `2.0.0b2` / tag `v2.0.0b2`
+- Previous immutable fallback: `2.0.0b1` / tag `v2.0.0b1`
 - Active development branch: `main`
 - Purpose: a Linux CLI/TUI for a local Juice WRLD library, catalogue browsing,
   safe lyric maintenance, downloads, backups, and optional rmpc integration.
@@ -36,6 +37,9 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
   validation, checksums, resume safety, and atomic finalization.
 - Do not make normal Sync modify audio, lyrics, backups, downloads, or rmpc
   configuration.
+- The local lyrics-search index is rebuildable cache data only. Search and
+  indexing stay offline and must never modify media, sidecars, state, backups,
+  downloads, catalogue identity, or rmpc configuration.
 
 ## Supported media and lyrics
 
@@ -58,6 +62,7 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Read-only metadata proposals: `src/juice_lyrics/services/metadata_audit.py`
 - Transactional metadata writer foundation: `src/juice_lyrics/services/metadata_repair.py`
 - Read-only diagnostics/support reports: `src/juice_lyrics/services/doctor.py`
+- Offline local lyrics search: `src/juice_lyrics/services/lyrics_search.py`
 - Shell completion generation: `src/juice_lyrics/services/shell_completion.py`
 - Matching/identity: `src/juice_lyrics/library/matching.py` and
   `src/juice_lyrics/services/library_identity.py`

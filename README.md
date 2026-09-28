@@ -1,231 +1,265 @@
 # 999
 
-[![GitHub release](https://img.shields.io/github/v/release/NotAI-fr/juice-lyrics?include_prereleases&label=release)](https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b1)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-`999` is a keyboard-first Linux CLI and TUI for managing a local Juice WRLD
-music library. It combines catalogue browsing, conservative track matching,
-lyrics maintenance, explicit downloads, backups, and optional rmpc integration
-without trying to replace your music player.
-
-> **Current release:** [`2.0.0b1`](https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b1)
-> is a beta. Keep an independent backup of valuable media and review every
-> proposed metadata or lyric change before applying it.
-
-999 is an unofficial fan-made project. It is not affiliated with or endorsed
-by Juice WRLD's estate, record labels, or the Juice WRLD API. This repository
-contains no music or lyric collection.
-
-## Screenshots
-
 ![999 dashboard with synthetic demonstration data](docs/assets/screenshots/dashboard-synthetic.png)
 
-_The image above was rendered by the real TUI using synthetic counts and a
-generic path. Additional real screenshots will be added after manual capture;
-the planned filenames are documented in
-[`docs/assets/screenshots/README.md`](docs/assets/screenshots/README.md)._
+[![GitHub release](https://img.shields.io/github/v/release/NotAI-fr/juice-lyrics?include_prereleases&label=current%20beta)](https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b2)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Highlights
+A keyboard-first Linux app for browsing, understanding, and maintaining a
+local Juice WRLD music library.
 
-- Browse and search the Juice WRLD catalogue without downloading anything.
-- Sync a local library incrementally while leaving ambiguous matches Unknown.
-- Review Issues, exact/probable Duplicates, and Missing Library recordings.
-- Manually match and lock catalogue identities when automatic matching should
-  not decide.
-- Preview selected metadata repairs before a cancel-first confirmation.
-- Maintain embedded lyrics and adjacent timed `.lrc` files without converting
-  or re-encoding audio.
-- Queue downloads explicitly; adding an item never starts a download.
-- Create backups before media metadata changes and verify every result.
-- Diagnose installation, configuration, storage, catalogue, and optional rmpc
-  integration with the read-only `999 doctor` command.
+## Quick Install
 
-## Supported media
+Requires Linux, Python 3.11 or newer, and
+[`pipx`](https://pipx.pypa.io/) on your `PATH`.
 
-| Format | Local metadata and lyrics | Synchronized lyrics |
-|---|---|---|
-| MP3 | ID3 metadata, USLT and SYLT | ID3 SYLT and adjacent `.lrc` |
-| FLAC | Vorbis metadata and plain `LYRICS` | Adjacent `.lrc` |
-| M4A | MP4 metadata and plain `©lyr` | Adjacent `.lrc` |
+### Recommended: 2.0.0b2
 
-999 never converts audio. A timed sidecar always uses the audio file's own
-basename and directory, such as `song.flac` with `song.lrc`.
-
-## Install
-
-Requirements:
-
-- a supported Linux system;
-- Python 3.11 or newer;
-- [`pipx`](https://pipx.pypa.io/) installed and on `PATH`.
-
-After this repository is public, install the immutable beta wheel directly
-from its GitHub release—no clone or GitHub account is required:
+Install the current recommended beta directly from its immutable Git tag:
 
 ```bash
-pipx install "https://github.com/NotAI-fr/juice-lyrics/releases/download/v2.0.0b1/juice_wrld_lyrics-2.0.0b1-py3-none-any.whl"
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b2"
+```
+
+You do not need to clone the repository. Check the install, then launch 999:
+
+```bash
 999 --version
 999 doctor
-```
-
-To replace an older installation with this exact beta:
-
-```bash
-pipx install --force "https://github.com/NotAI-fr/juice-lyrics/releases/download/v2.0.0b1/juice_wrld_lyrics-2.0.0b1-py3-none-any.whl"
-```
-
-An immutable Git-tag install is also available:
-
-```bash
-pipx install "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b1"
-```
-
-The legacy `juice-lyrics` command remains available. Both commands use the
-existing `juice-lyrics` XDG namespace so upgrades do not create a second state
-tree.
-
-## Quick start
-
-Launch the interface:
-
-```bash
 999
 ```
 
-The default library path can be changed with a starter configuration:
+### Previous stable fallback: 2.0.0b1
+
+If `2.0.0b2` gives you trouble, switch to the previous known-good beta. The
+published `v2.0.0b1` tag and release remain immutable:
 
 ```bash
-999 config init
-999 config show
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b1"
 ```
 
-Or override it for one command:
+Use `pipx install --force` with either command to switch between versions.
+See [Troubleshooting](#troubleshooting) or [Uninstall](#uninstall) for help.
 
-```bash
-999 --path ~/Music/Juice-WRLD status
-```
+## Why 999?
 
-Press `?` anywhere in the TUI for the complete key map. The normal routine is:
+999 brings catalogue discovery, downloads, local-library health, lyrics,
+matching, careful repairs, and diagnostics into one terminal interface. It is
+designed to replace a pile of one-off file and tagging scripts—not your music
+player.
+
+## Features
+
+### 🔎 Find and discover
+
+**Search by Lyrics** — Remember a line but not the title? Open **Library →
+Search Lyrics** and type part of the lyric. 999 searches embedded MP3, FLAC,
+and M4A lyrics plus adjacent plain or timed `.lrc` files; timed matches can
+show their real timestamp. Search is local, offline, and does not rescan media
+as you type.
+
+Lyrics Search is part of the current `2.0.0b2` beta. It is **not** included in
+the previous `v2.0.0b1` fallback release.
+
+**Browse and Catalogue Search** — Search and filter the Juice WRLD catalogue,
+inspect recording details, and connect local files with the correct catalogue
+recording. Local-library features remain useful if the catalogue service is
+offline; catalogue-backed results naturally require it to be available.
+
+**Missing Library** — Compare confirmed local catalogue identities with the
+catalogue to see recordings that appear to be missing. Unknown local tracks
+are kept separate, and a selected missing recording can be added to the normal
+download queue without starting a download.
+
+### 📚 Manage your library
+
+**Local Library** — Scan and manage a local Juice WRLD collection from one
+place. Library inspection, metadata, and lyric workflows support MP3, FLAC,
+and M4A without converting the audio.
+
+**Library Sync** — Detect new, changed, unchanged, and removed tracks, then
+update 999's local view of the collection. Sync reuses what it already knows
+about unchanged files and does not rewrite audio, embedded lyrics, sidecars,
+backups, downloads, or rmpc configuration.
+
+**Lyrics and LRC Management** — Inspect, verify, preview, and explicitly apply
+supported lyric maintenance. 999 handles embedded plain and synchronized MP3
+lyrics, plain FLAC and M4A lyrics, and adjacent timed `.lrc` files where
+supported.
+
+**Downloads and Queue** — Add one or several catalogue selections to a durable
+queue, review them, then explicitly start one download or the eligible queue.
+Failed items remain visible for retry, and adding an item never starts a
+download. Acquisition and download post-processing are currently MP3-focused.
+
+**Library Issues** — See catalogue identity, lyric, verification, metadata,
+and state follow-ups together, with one combined entry per affected track.
+Warnings and Unknown identities may simply need review; they do not
+automatically mean the audio file is damaged.
+
+**Manual Catalogue Matching** — When automatic matching is uncertain, choose
+the correct catalogue recording yourself and lock that identity to the current
+file. Normal Sync preserves a valid manual choice until you explicitly unlock
+it or the audio is replaced.
+
+**Duplicate Detection** — Review exact file copies and conservative probable
+recording matches with the evidence and paths shown. Detection is read-only:
+999 never automatically deletes, merges, moves, retags, or replaces files.
+
+### 🛡️ Repair and safety
+
+**Metadata Repair** — Preview supported title, artist, album, and track-number
+proposals for a confirmed track, then select only the fields you want to
+change. Applying a repair creates a full audio backup, writes and verifies a
+temporary copy, and preserves unrelated media data. Replacement and state
+updates use rollback safeguards; if automatic recovery cannot complete, the
+retained backup is clearly surfaced for recovery.
+
+**Backups and Restore** — Important media-mutation workflows create timestamped
+backups before changing a file. Browse valid backups in the Library and restore
+one through an explicit confirmation; scripted recovery is also available with
+`999 restore`.
+
+### 🩺 Diagnostics and integration
+
+**Doctor and Support Reports** — `999 doctor` performs bounded, read-only
+checks of the installation, configuration, local storage, one small catalogue
+request, backups, and optional player integration. It reports clear PASS,
+WARN, and FAIL results. Support reports omit song lists and state contents and
+redact home paths and common credential forms by default; always review one
+before sharing it.
+
+**Optional rmpc Integration** — 999 can check rmpc and explicitly configure it
+to use adjacent timed lyric sidecars. rmpc is not required, and normal startup
+or Library Sync does not rewrite its configuration. Plain lyrics without
+timestamps do not appear as synchronized lyrics in rmpc's Lyrics pane.
+
+### Supported local formats
+
+| Format | Embedded lyrics | Timed lyrics |
+| --- | --- | --- |
+| MP3 | ID3 USLT and SYLT | ID3 SYLT and adjacent `.lrc` |
+| FLAC | Vorbis `LYRICS` | Adjacent `.lrc` |
+| M4A | MP4 `©lyr` | Adjacent `.lrc` |
+
+An adjacent sidecar uses the audio file's basename and directory, such as
+`song.flac` with `song.lrc`.
+
+## Screenshots
+
+The dashboard at the top of this page was rendered by the real TUI using
+synthetic data and a generic path. It is the only screenshot currently checked
+into the repository, so the planned real captures below are deliberately not
+linked yet:
+
+- `dashboard.png` — overview and library health;
+- `browse-search.png` — catalogue browsing and search;
+- `library-health.png` — local collection status;
+- `issues.png` — combined follow-ups;
+- `downloads-queue.png` — explicit download queue;
+- `metadata-repair-preview.png` — review before applying a repair;
+- `lyrics-search.png` — offline lyric phrase search and timed results.
+
+Lyrics Search will be featured prominently when the real captures are added.
+See the [screenshot plan](docs/assets/screenshots/README.md) for capture rules.
+
+## Usage
+
+Press `?` anywhere in the TUI for the complete key map. The usual Library
+routine is:
 
 ```text
 Library → s Sync Library → a Issues
 ```
 
-Sync records new and changed paths, retires removed paths, and attempts only
-conservative catalogue matches. It does **not** edit audio, lyrics, backups,
-downloads, or rmpc configuration.
+To find a local track from remembered words:
 
-## Main TUI workflows
+```text
+Library → f Search Lyrics → type a phrase → Enter
+```
 
-| Area | Typical workflow |
-|---|---|
-| Browse | Search/filter → inspect details → Add to queue |
-| Downloads | Review queue → confirm one item or the eligible queue → inspect result/retry |
-| Library | Sync → filter/select → inspect health and identity |
-| Issues | Review genuine errors, lyric follow-ups, stale state, and Unknown identities |
-| Manual match | Search → select an exact recording → lock; unlock later if needed |
-| Duplicates | Review evidence and paths only; 999 never deletes or merges files |
-| Metadata repair | Preview → choose individual fields → confirm → verify backup/result |
-| Missing Library | Compare confirmed catalogue IDs → optionally add one recording to the queue |
-
-The command line remains useful for diagnostics and scripting:
+Useful read-only command-line checks:
 
 ```bash
+999 --version
 999 status
-999 search "Bandit"
-999 info "10 Feet"
+999 doctor
 999 guide
 ```
 
-Acquisition is always explicit:
+Catalogue search is also available from the command line when the service is
+available:
 
 ```bash
-999 acquire search "Rental"
-999 acquire add "Rental" --index 1
-999 acquire jobs
-999 acquire run <job-id>
+999 search "Bandit"
+999 info "10 Feet"
 ```
 
-## Safety and backups
-
-- Automatic matching prefers Unknown over a risky confident identity.
-- Normal Library Sync never modifies media or starts downloads.
-- Metadata repair changes only selected fields after a preview and confirmation.
-- Before an in-place media metadata change, 999 creates a full backup under
-  `~/.local/share/juice-lyrics/backups/`.
-- Post-write verification checks that encoded audio, artwork, lyrics,
-  unrelated tags, and adjacent sidecars were preserved. A failed write is
-  rolled back.
-- State and `.lrc` writes are atomic, and state updates detect conflicting
-  concurrent changes.
-- Duplicate results are evidence for review only—never an instruction to
-  delete, move, merge, or replace media.
-
-## Doctor and support reports
-
-Run bounded, read-only diagnostics with:
+To inspect a different library for one command:
 
 ```bash
+999 --path ~/Music/Juice-WRLD status
+```
+
+The detailed [user guide](docs/USER_GUIDE.md) covers configuration, keyboard
+controls, acquisition, recovery, and advanced commands.
+
+## Troubleshooting
+
+Confirm which build is installed, then run the read-only diagnostic:
+
+```bash
+999 --version
 999 doctor
+pipx list
 ```
 
-If an issue needs more detail, generate a sanitized report and inspect it
-before sharing:
+To create a report you can inspect before sharing:
 
 ```bash
+999 doctor --support-report
 999 doctor --save-report ./999-support.json
 ```
 
-Doctor does not run Sync, enumerate the full catalogue, modify application
-data, invoke rmpc/MPD, or inspect every audio file. Support reports redact home
-paths and common credential forms and exclude song lists and state contents.
+If the current beta is not working for you, use the `v2.0.0b1` fallback
+command in [Quick Install](#previous-stable-fallback-200b1).
 
-## Known beta limitations
+Current limitations:
 
-- Acquisition and download post-processing are currently MP3-focused; local
-  library inspection, metadata, lyrics, backup, and restore support MP3, FLAC,
-  and M4A.
+- Acquisition and download post-processing are MP3-focused; local library,
+  metadata, lyrics, backup, and restore workflows support MP3, FLAC, and M4A.
 - Active download cancellation is not implemented.
 - Configuration editing is primarily command-line based.
-- Visual polish has not been exhaustively reviewed across terminal emulators.
-- Fish completion generation is tested, but this beta did not receive a local
-  Fish runtime syntax pass.
-- Independent second-machine pipx acceptance and optional live rmpc
-  notification remain limited.
+- Appearance can vary between terminal emulators.
 
-See the [2.0.0b1 release notes](https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b1)
-for the accepted beta scope.
+For deeper detail, see the [user guide](docs/USER_GUIDE.md),
+[changelog](docs/CHANGELOG.md), and
+[development guide](docs/DEVELOPMENT.md).
 
-## Reporting issues
-
-Use the [GitHub issue tracker](https://github.com/NotAI-fr/juice-lyrics/issues)
-for reproducible bugs. Include the `999 --version` output, Linux distribution,
-installation method, steps to reproduce, expected result, and actual result.
-
-Please do **not** attach music, lyric collections, credentials, tokens, private
-configuration/state files, or unreviewed support reports. Use synthetic names
-and paths where possible.
-
-## Documentation and development
-
-- [User guide](docs/USER_GUIDE.md)
-- [Changelog](docs/CHANGELOG.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Development guide](docs/DEVELOPMENT.md)
-
-For a development checkout:
+## Uninstall
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate
-pip install -e .
-pytest -q
+pipx uninstall juice-wrld-lyrics
 ```
 
-## License
+Uninstalling the pipx app removes the command and its isolated environment. It
+does not intentionally remove your music or normal `juice-lyrics` library,
+configuration, state, cache, or backups.
 
-999 is available under the [MIT License](LICENSE).
+## Reporting bugs
 
-Users are responsible for the media, lyrics, and services they access and for
-complying with applicable law and service terms. The project does not grant
-rights to Juice WRLD recordings, artwork, or lyrics.
+Use the [GitHub issue tracker](https://github.com/NotAI-fr/juice-lyrics/issues).
+Include `999 --version`, your Linux distribution, installation method, steps
+to reproduce, expected result, and actual result.
+
+Do not attach music, lyric collections, credentials, tokens, private
+configuration/state files, or unreviewed support reports. Prefer synthetic
+names and paths.
+
+999 is an unofficial fan-made project. It is not affiliated with or endorsed
+by Juice WRLD's estate, record labels, or the Juice WRLD API. This repository
+contains no music or lyric collection.
+
+999 is available under the [MIT License](LICENSE). Users are responsible for
+the media, lyrics, and services they access and for complying with applicable
+law and service terms.

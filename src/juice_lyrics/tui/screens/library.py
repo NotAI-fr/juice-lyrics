@@ -28,6 +28,11 @@ from ...services.library_status import (
 )
 from ...services.library_identity import IdentityBackfillResult
 from ...services.library_index_sync import LibraryIndexSyncResult
+from ...services.lyrics_search import (
+    LyricsSearchIndex,
+    LyricsSearchResult,
+    build_lyrics_search_index,
+)
 from ...services.library_issues import (
     LibraryHealth,
     LibraryIssue,
@@ -89,6 +94,7 @@ from .base import HubScreen
 SnapshotProvider = Callable[[Any], LibrarySnapshot]
 IdentityProvider = Callable[..., IdentityBackfillResult]
 IndexSyncProvider = Callable[..., LibraryIndexSyncResult]
+LyricsSearchProvider = Callable[..., LyricsSearchIndex]
 IdentityRebuildPlanProvider = Callable[..., IdentityRebuildPlan]
 IdentityRebuildExecutionProvider = Callable[..., IdentityRebuildResult]
 ManualSearchProvider = Callable[..., CataloguePage]
@@ -148,6 +154,27 @@ class LibraryInput(Input):
             event.prevent_default()
             event.stop()
             return
+
+
+class LyricsSearchInput(Input):
+    """Query entry that keeps result navigation available while typing."""
+
+    def on_key(self, event: Key) -> None:
+        dialog = self.screen
+        if not isinstance(dialog, LyricsSearchDialog):
+            return
+        if event.key == "escape":
+            dialog.dismiss(None)
+        elif event.key == "down":
+            dialog.move_selection(1)
+        elif event.key == "up":
+            dialog.move_selection(-1)
+        elif event.key == "enter":
+            dialog.select_result()
+        else:
+            return
+        event.prevent_default()
+        event.stop()
 
 
 class LibrarySelect(Select[str]):
@@ -265,6 +292,156 @@ class LibraryDialogAction(Static):
 
     def on_click(self, event: Click) -> None:
         self.post_message(self.Activated(self.action))
+
+
+class LyricsSearchDialog(ModalScreen[str | None]):
+    """Offline, incrementally indexed lyric phrase search."""
+
+    def __init__(
+        self,
+        settings: Any,
+        snapshot: LibrarySnapshot,
+        *,
+        index_provider: LyricsSearchProvider = build_lyrics_search_index,
+    ) -> None:
+        super().__init__()
+        self.settings = settings
+        self.snapshot = snapshot
+        self._index_provider = index_provider
+        self.index: LyricsSearchIndex | None = None
+        self.results: tuple[LyricsSearchResult, ...] = ()
+        self.selected_index = 0
+        self._worker: Worker[LyricsSearchIndex] | None = None
+
+    def compose(self) -> Iterable[Widget]:
+        with Container(id="lyrics-search-dialog"):
+            yield Static("Search Lyrics", id="lyrics-search-title")
+            yield Static("Building local lyrics index…", id="lyrics-search-status", markup=False)
+            yield LyricsSearchInput(
+                placeholder="Type remembered words or a phrase",
+                id="lyrics-search-query",
+            )
+            with Grid(id="lyrics-search-main"):
+                with VerticalScroll(id="lyrics-search-results-scroll"):
+                    yield Static("Indexing local lyrics…", id="lyrics-search-results", markup=False)
+                with VerticalScroll(id="lyrics-search-detail-scroll"):
+                    yield Static("Matches stay entirely on this device.", id="lyrics-search-detail", markup=False)
+            yield Static(
+                "Type to search · ↑/↓ navigate · Enter open track · Esc return",
+                id="lyrics-search-help",
+                markup=False,
+            )
+
+    def on_mount(self) -> None:
+        self.query_one("#lyrics-search-query", Input).focus()
+        self._worker = self._build_index()
+
+    @work(thread=True, exclusive=True, group="lyrics-search-index", exit_on_error=False)
+    def _build_index(self) -> LyricsSearchIndex:
+        return self._index_provider(self.settings, self.snapshot)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        if event.worker is not self._worker:
+            return
+        if event.state is WorkerState.SUCCESS:
+            self.index = event.worker.result
+            index = self.index
+            message = (
+                f"Ready · {len(index.entries)} tracks · {index.indexed_count} indexed · "
+                f"{index.reused_count} reused"
+            )
+            if index.removed_count:
+                message += f" · {index.removed_count} removed"
+            if index.rebuilt:
+                message += " · cache rebuilt"
+            if index.persistence_warning:
+                message += " · cache could not be saved"
+            self.query_one("#lyrics-search-status", Static).update(message)
+            self._update_results()
+        elif event.state is WorkerState.ERROR:
+            self.query_one("#lyrics-search-status", Static).update(
+                "Lyrics index could not be loaded. No files were changed."
+            )
+            self.query_one("#lyrics-search-results", Static).update("Search unavailable.")
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "lyrics-search-query":
+            self._update_results()
+
+    def _update_results(self) -> None:
+        query = self.query_one("#lyrics-search-query", Input).value
+        self.results = self.index.search(query) if self.index is not None else ()
+        self.selected_index = 0
+        self._render_results()
+
+    def _render_results(self) -> None:
+        query = self.query_one("#lyrics-search-query", Input).value.strip()
+        listing = self.query_one("#lyrics-search-results", Static)
+        detail = self.query_one("#lyrics-search-detail", Static)
+        if self.index is None:
+            return
+        if not query:
+            listing.update("Type words from a lyric to search your local library.")
+            detail.update("Case, ordinary punctuation, and repeated whitespace are ignored.")
+            return
+        if not self.results:
+            listing.update("No local lyric matches.")
+            detail.update("Try a shorter exact phrase.")
+            return
+        lines = []
+        for index, result in enumerate(self.results):
+            marker = ">" if index == self.selected_index else " "
+            timestamp = _lyrics_timestamp(result.timestamp_ms)
+            count = f" · {result.hit_count} hits" if result.hit_count > 1 else ""
+            lines.append(
+                f"{marker} {result.title[:28]:28} · {timestamp:5} · “{result.matching_line}”{count}"
+            )
+        listing.update(Text("\n".join(lines), no_wrap=True, overflow="ellipsis"))
+        selected = self.results[self.selected_index]
+        context = []
+        if selected.context_before:
+            context.append(f"  {selected.context_before}")
+        context.append(f"> {_lyrics_timestamp(selected.timestamp_ms)}  {selected.matching_line}")
+        if selected.context_after:
+            context.append(f"  {selected.context_after}")
+        detail.update(
+            "\n".join(
+                [
+                    selected.title,
+                    str(selected.path),
+                    f"Source: {'adjacent LRC' if selected.source == 'lrc' else 'embedded lyrics'}",
+                    f"Matches in track: {selected.hit_count}",
+                    "",
+                    *context,
+                ]
+            )
+        )
+
+    def move_selection(self, amount: int) -> None:
+        if not self.results:
+            return
+        self.selected_index = max(0, min(len(self.results) - 1, self.selected_index + amount))
+        self._render_results()
+
+    def select_result(self) -> None:
+        if self.results:
+            self.dismiss(self.results[self.selected_index].reference)
+
+    def on_key(self, event: Key) -> None:
+        if isinstance(self.app.focused, Input):
+            return
+        if event.key == "escape":
+            self.dismiss(None)
+        elif event.key in {"down", "j"}:
+            self.move_selection(1)
+        elif event.key in {"up", "k"}:
+            self.move_selection(-1)
+        elif event.key == "enter":
+            self.select_result()
+        else:
+            return
+        event.prevent_default()
+        event.stop()
 
 
 class ManualMatchInput(Input):
@@ -1413,6 +1590,7 @@ class LibraryScreen(HubScreen):
         missing_library_provider: MissingLibraryProvider = get_missing_library,
         queue_plan_provider: QueuePlanProvider = plan_queue_batch_additions,
         queue_add_provider: QueueAddProvider = add_batch_to_download_queue,
+        lyrics_search_provider: LyricsSearchProvider = build_lyrics_search_index,
     ) -> None:
         super().__init__("library", "Library")
         self.settings = settings
@@ -1437,6 +1615,7 @@ class LibraryScreen(HubScreen):
         self._missing_library_provider = missing_library_provider
         self._queue_plan_provider = queue_plan_provider
         self._queue_add_provider = queue_add_provider
+        self._lyrics_search_provider = lyrics_search_provider
         self.snapshot: LibrarySnapshot | None = None
         self.filtered_tracks: tuple[LibraryTrack, ...] = ()
         self.selected_index = 0
@@ -1498,7 +1677,7 @@ class LibraryScreen(HubScreen):
                 with VerticalScroll(id="library-details-scroll"):
                     yield Static("Select a track to inspect it.", id="library-details", markup=False)
         yield Static("Sync Library updates the catalogue view without changing audio or lyrics.", id="library-preview", markup=False)
-        yield Static("s Sync Library · a Issues · g Missing · d Duplicates · ↑↓ Move · Enter Details · ? Help", id="library-position", markup=False)
+        yield Static("s Sync Library · a Issues · f Search Lyrics · g Missing · d Duplicates · ↑↓ Move · Enter Details · ? Help", id="library-position", markup=False)
 
     def action_focus_search(self) -> None:
         self.query_one("#library-query", Input).focus()
@@ -2035,9 +2214,9 @@ class LibraryScreen(HubScreen):
 
     def _update_position(self) -> None:
         if not self.filtered_tracks:
-            self.query_one("#library-position", Static).update("s Sync Library · a Issues · g Missing · d Duplicates · ? Help")
+            self.query_one("#library-position", Static).update("s Sync Library · a Issues · f Search Lyrics · g Missing · d Duplicates · ? Help")
             return
-        suffix = "Esc Back · e Metadata · c Match · l Refresh · ? Help" if self._details_mode else "s Sync Library · a Issues · g Missing · d Duplicates · e Metadata · ↑↓ Move · ? Help"
+        suffix = "Esc Back · f Search Lyrics · e Metadata · c Match · l Refresh · ? Help" if self._details_mode else "s Sync Library · a Issues · f Search Lyrics · g Missing · d Duplicates · e Metadata · ↑↓ Move · ? Help"
         self.query_one("#library-position", Static).update(
             f"Track {self.selected_index + 1} of {len(self.filtered_tracks)} · {suffix}"
         )
@@ -2049,6 +2228,8 @@ class LibraryScreen(HubScreen):
             return
         if event.key == "s":
             self.sync_library()
+        elif event.key == "f":
+            self._open_lyrics_search()
         elif event.key == "a":
             self._open_issues()
         elif event.key == "d":
@@ -2102,6 +2283,35 @@ class LibraryScreen(HubScreen):
             return
         event.prevent_default()
         event.stop()
+
+    def _open_lyrics_search(self) -> None:
+        if self.snapshot is None:
+            self._set_status("Load the library before searching lyrics.", error=True)
+            return
+        self.app.push_screen(
+            LyricsSearchDialog(
+                self.settings,
+                self.snapshot,
+                index_provider=self._lyrics_search_provider,
+            ),
+            self._lyrics_search_closed,
+        )
+
+    def _lyrics_search_closed(self, reference: str | None) -> None:
+        if reference is None:
+            self._set_status("Lyrics Search closed. No files were changed.")
+            return
+        self.query_one("#library-query", Input).value = ""
+        self.query_one("#library-filter", Select).value = LibraryFilter.ALL.value
+        self._apply_local_filter(preferred_reference=reference)
+        if self.selected_track is None or self.selected_track.reference != reference:
+            self._set_status("That track is no longer in the current Library view.", error=True)
+            return
+        self._details_mode = True
+        self.add_class("-details-mode")
+        self._render_details()
+        self._update_position()
+        self._set_status(f"Opened {self.selected_track.title} from Lyrics Search.")
 
     def _open_issues(self) -> None:
         if self.snapshot is None:
@@ -2703,6 +2913,14 @@ def _duration(seconds: float | None) -> str:
         return "Unavailable"
     minutes, remainder = divmod(max(0, int(round(seconds))), 60)
     return f"{minutes}:{remainder:02d}"
+
+
+def _lyrics_timestamp(milliseconds: int | None) -> str:
+    if milliseconds is None:
+        return ""
+    minutes, remainder = divmod(max(0, milliseconds), 60_000)
+    seconds = remainder // 1_000
+    return f"{minutes:02d}:{seconds:02d}"
 
 
 def _track_preview_text(plan: LibrarySyncPlan | None, path: Path) -> str:

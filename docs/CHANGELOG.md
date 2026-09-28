@@ -4,6 +4,26 @@ This project follows [Semantic Versioning](https://semver.org/) and uses PEP
 440-compatible Python versions. Dates are added only when a release is
 published.
 
+## [2.0.0b2] - 2026-09-28
+
+This beta promotes the offline Lyrics Search experiment into the main product.
+
+### Library and lyrics
+
+- Added local phrase search across embedded MP3, FLAC, and M4A lyrics and
+  adjacent plain or timed LRC files. Timed LRC matches retain their timestamps.
+- Added a rebuildable incremental lyrics index so unchanged tracks are reused,
+  changed audio or sidecars are refreshed individually, and removed tracks
+  disappear from results.
+- Kept Lyrics Search offline and read-only for media, lyrics, state, backups,
+  downloads, and player configuration.
+
+### Documentation and installation
+
+- Promoted `2.0.0b2` as the recommended beta with direct tag-based pipx install
+  and troubleshooting guidance.
+- Kept `v2.0.0b1` available as the previous immutable fallback.
+
 ## [2.0.0b1] - 2026-09-25
 
 This is the first beta release of the redesigned `999` product.
@@ -74,5 +94,6 @@ This is the first beta release of the redesigned `999` product.
 - Established the initial API, scanner, matching, lyrics, rmpc, backup,
   configuration, state, and acquisition service boundaries.
 
+[2.0.0b2]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b2
 [2.0.0b1]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b1
 [1.4.0]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v1.4.0-backend-complete
