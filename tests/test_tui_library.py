@@ -2,11 +2,15 @@ import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+import struct
 import sys
 from threading import Event, get_ident
 from types import SimpleNamespace
 
 import pytest
+from mutagen.flac import FLAC
+from mutagen.id3 import ID3, USLT
+from mutagen.mp4 import MP4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -52,7 +56,10 @@ from juice_lyrics.services.library_sync import (
 from juice_lyrics.backup.manager import BackupRecord
 from juice_lyrics.services.library_index_sync import LibraryIndexSyncResult
 from juice_lyrics.lyrics.engine import LocalLyricLine
-from juice_lyrics.services.lyrics_search import LyricsIndexEntry, LyricsSearchIndex
+from juice_lyrics.lyrics.engine import DESCRIPTION, read_local_lyrics
+from juice_lyrics.services.lyrics_search import (
+    LyricsIndexEntry, LyricsSearchIndex, build_lyrics_search_index,
+)
 from juice_lyrics.services.settings_snapshot import (
     IntegrationSnapshot,
     IntegrationStatus,
@@ -65,6 +72,8 @@ from juice_lyrics.tui.help import guide_text
 def test_help_documents_offline_lyrics_search_key():
     text = guide_text()
     assert "f                       Search local lyrics offline" in text
+    assert "m                       Start guided Maintenance" in text
+    assert "x                       More / Advanced tools" in text
     assert "Search Lyrics" in text
 
 
@@ -148,7 +157,7 @@ def test_sync_library_is_immediate_single_worker_and_navigation_stays_live(tmp_p
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            assert "s Sync Library" in _text(app, "#library-position")
+            assert "r Refresh Library" in _text(app, "#library-position")
             await pilot.press("s", "s")
             assert await asyncio.to_thread(started.wait, 2)
             assert len(calls) == 1 and calls[0][1] != ui_thread
@@ -213,6 +222,44 @@ def _track(
 
 def _snapshot(root: Path, *tracks: LibraryTrack, exists: bool = True, warnings=()) -> LibrarySnapshot:
     return LibrarySnapshot(root, exists, tracks, tuple(warnings))
+
+
+def _atom(name: bytes, payload: bytes) -> bytes:
+    return struct.pack(">I4s", len(payload) + 8, name) + payload
+
+
+def _real_media_set(root: Path) -> tuple[Path, Path, Path]:
+    root.mkdir(parents=True, exist_ok=True)
+    mp3 = root / "Embedded.mp3"
+    mp3.write_bytes(b"")
+    tags = ID3()
+    tags.add(USLT(encoding=3, lang="eng", desc=DESCRIPTION, text="embedded mp3 line"))
+    tags.save(mp3)
+    mp3.with_suffix(".lrc").write_text("[00:12.00] timed sidecar line\n", encoding="utf-8")
+
+    flac = root / "Embedded.flac"
+    sample_rate = 44_100
+    packed = (sample_rate << 44) | (1 << 41) | (15 << 36) | sample_rate
+    stream_info = struct.pack(">HH", 4096, 4096) + b"\0" * 6 + packed.to_bytes(8, "big") + b"\0" * 16
+    flac.write_bytes(b"fLaC" + b"\x80" + len(stream_info).to_bytes(3, "big") + stream_info)
+    flac_tags = FLAC(flac)
+    flac_tags["TITLE"] = ["Embedded FLAC"]
+    flac_tags["LYRICS"] = ["embedded flac line"]
+    flac_tags.save()
+
+    m4a = root / "Embedded.m4a"
+    movie_header = _atom(b"mvhd", b"\0\0\0\0" + struct.pack(">IIII", 0, 0, 44_100, 44_100))
+    m4a.write_bytes(
+        _atom(b"ftyp", b"M4A \0\0\0\0M4A mp42")
+        + _atom(b"moov", movie_header)
+        + _atom(b"mdat", b"synthetic payload")
+    )
+    m4a_tags = MP4(m4a)
+    m4a_tags.add_tags()
+    m4a_tags["\xa9nam"] = ["Embedded M4A"]
+    m4a_tags["\xa9lyr"] = ["embedded m4a line"]
+    m4a_tags.save()
+    return mp3, flac, m4a
 
 
 def _plan(settings: Settings, tracks: tuple[TrackSyncPlan, ...]) -> LibrarySyncPlan:
@@ -352,7 +399,7 @@ def test_manual_match_search_navigation_lock_and_unlock_are_state_only(tmp_path)
                 await screen._snapshot_worker.wait()
                 await pilot.pause()
             assert selected == [(20, "Unknown")]
-            assert "Manual (locked)" in _text(app, "#library-details")
+            assert "✓ Matched" in _text(app, "#library-details")
             assert "saved and locked" in _text(app, "#library-status")
 
             await pilot.press("u")
@@ -365,7 +412,7 @@ def test_manual_match_search_navigation_lock_and_unlock_are_state_only(tmp_path)
                 await screen._snapshot_worker.wait()
                 await pilot.pause()
             assert unlocked == ["Unknown.flac"]
-            assert "Not identified" in _text(app, "#library-details")
+            assert "? Needs your choice" in _text(app, "#library-details")
             assert "unlocked and cleared" in _text(app, "#library-status")
 
             await pilot.press("c")
@@ -445,7 +492,7 @@ def test_issues_opens_from_snapshot_without_rescan_or_api_and_reaches_manual_mat
         app = _app(tmp_path, snapshot, catalogue_search_provider=search)
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
-            assert "s Sync Library · a Issues" in _text(app, "#library-position")
+            assert "r Refresh" in _text(app, "#library-position")
             await pilot.press("a")
             await pilot.pause()
             assert app.screen.__class__.__name__ == "LibraryIssuesDialog"
@@ -504,19 +551,19 @@ def test_issues_empty_state_and_sync_replaces_health_immediately(tmp_path):
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            assert "1 follow-ups" in _text(app, "#library-summary")
+            assert "1 need your input" in _text(app, "#library-summary")
             await pilot.press("s")
             if screen._index_sync_worker is not None:
                 await screen._index_sync_worker.wait()
             await pilot.pause()
-            assert "0 follow-ups · 0 errors" in _text(app, "#library-summary")
+            assert "0 need your input · 0 optional · 0 errors" in _text(app, "#library-summary")
             await pilot.press("a")
             assert "No library issues found" in _text(app, "#library-issues-detail")
             await pilot.press("escape", "s")
             if screen._index_sync_worker is not None:
                 await screen._index_sync_worker.wait()
             await pilot.pause()
-            assert "1 follow-ups · 0 errors" in _text(app, "#library-summary")
+            assert "0 need your input · 1 optional · 0 errors" in _text(app, "#library-summary")
             await pilot.press("a")
             assert "Optional lyrics" in _text(app, "#library-issues-detail")
 
@@ -546,7 +593,7 @@ def test_duplicates_open_from_snapshot_without_rescan_api_or_mutation(tmp_path):
         )
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
-            assert "d Duplicates" in _text(app, "#library-position")
+            assert "x More" in _text(app, "#library-position")
             await pilot.press("d")
             await pilot.pause()
             assert app.screen.__class__.__name__ == "LibraryDuplicatesDialog"
@@ -612,7 +659,7 @@ def test_missing_library_loads_in_worker_filters_and_adds_to_existing_queue(tmp_
         )
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
-            assert "g Missing" in _text(app, "#library-position")
+            assert "x More" in _text(app, "#library-position")
             await pilot.press("g")
             assert await asyncio.to_thread(loaded.wait, 2)
             await pilot.pause()
@@ -746,7 +793,7 @@ def test_metadata_preview_is_backgrounded_cached_and_read_only(tmp_path):
         )
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
-            assert "e Metadata" in _text(app, "#library-position")
+            assert "x More" in _text(app, "#library-position")
             await pilot.press("e")
             worker = screen._metadata_audit_worker
             if worker is not None:
@@ -811,7 +858,7 @@ def test_metadata_issue_opens_preview_and_help_lists_action(tmp_path):
             assert "Missing Tags" in _text(app, "#metadata-audit-content")
             await pilot.press("escape", "question_mark")
             await pilot.pause()
-            assert "Review and apply selected metadata repairs" in _text(app, "#help-content")
+            assert "Review metadata repair" in _text(app, "#help-content")
 
     asyncio.run(scenario())
 
@@ -1072,23 +1119,22 @@ def test_library_replaces_placeholder_and_renders_summary_details_and_states(tmp
             screen = await _open_library(app, pilot)
             assert screen.__class__.__name__ == "LibraryScreen"
             summary = _text(app, "#library-summary")
-            assert "3 tracks" in summary and "Catalogue unknown 1" in summary
-            assert "2 follow-ups" in summary and "0 errors" in summary
+            assert "3 songs" in summary and "1 need your input" in summary
+            assert "1 optional" in summary and "0 errors" in summary
             assert "MP3 3" in summary and "FLAC 0" in summary and "M4A 0" in summary
             rows = _text(app, "#library-tracks")
             assert "~" in rows and "!" not in rows
             assert rows.index("A Synced") < rows.index("B Plain") < rows.index("C Unknown")
-            assert "Synced lyrics" in rows and "Plain lyrics" in rows and "No lyrics" in rows
+            assert "Synced lyrics" in rows and "Plain lyrics" in rows and "Missing lyrics" in rows
             assert "LRC Present" in rows and "LRC Missing" in rows
 
             await pilot.press("down", "j")
             assert screen.selected_track.reference == unmatched.reference
             details = _text(app, "#library-details")
-            assert "Catalogue match Unknown" in details and "No lyrics" in details
-            assert "Library state  New" in details and "Library issue  New track" in details
+            assert "? Needs your choice" in details and "✗ Missing lyrics" in details
+            assert "Metadata\n  ✓ Good" in details
             assert "Recorded LRC is missing" in details
-            assert "Lyric maintenance preview" in details
-            assert "Press l for this song or m for the library" in details
+            assert "[Add Lyrics]" in details and "[Change Match]" in details
             await pilot.press("up", "k", "end", "home")
             assert screen.selected_track.reference == synced.reference
 
@@ -1142,7 +1188,7 @@ def test_loading_empty_missing_and_provider_error_states(tmp_path):
         async with app.run_test() as pilot:
             await _open_library(app, pilot)
             assert "No supported audio tracks found" in _text(app, "#library-tracks")
-            await pilot.press("r")
+            app.screen.refresh_snapshot(identify=False)
             await app.screen._snapshot_worker.wait()
             await pilot.pause()
             assert "does not exist" in _text(app, "#library-status")
@@ -1264,9 +1310,9 @@ def test_refresh_selection_stale_result_and_preview_invalidation(tmp_path):
             screen.preview = _plan(app.settings, ())
             app.query_one("#library-preview").update("old preview")
 
-            await pilot.press("r")
+            screen.refresh_snapshot(identify=False)
             await asyncio.to_thread(stale_started.wait, 2)
-            await pilot.press("r")
+            screen.refresh_snapshot(identify=False)
             current = screen._snapshot_worker
             await current.wait()
             await pilot.pause()
@@ -1276,7 +1322,7 @@ def test_refresh_selection_stale_result_and_preview_invalidation(tmp_path):
             await pilot.pause()
             assert "First.mp3" not in _text(app, "#library-tracks")
 
-            await pilot.press("r")
+            screen.refresh_snapshot(identify=False)
             await screen._snapshot_worker.wait()
             await pilot.pause()
             assert screen.selected_track.reference == replacement.reference
@@ -1314,7 +1360,7 @@ def test_refresh_backfills_unknown_identity_off_event_loop_and_updates_display(t
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            await pilot.press("r")
+            screen.refresh_snapshot(identify=True)
             await screen._snapshot_worker.wait(); await pilot.pause()
             await asyncio.to_thread(started.wait, 2)
             assert "Identifying 1 catalogue entry" in _text(app, "#library-status")
@@ -1354,16 +1400,15 @@ def test_refresh_catalogue_failure_keeps_healthy_local_coverage_visible(tmp_path
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            await pilot.press("r")
+            screen.refresh_snapshot(identify=True)
             await screen._snapshot_worker.wait(); await pilot.pause()
             identity_worker = screen._identity_worker
             if identity_worker is not None:
                 await identity_worker.wait()
             await pilot.pause()
             assert "Catalogue identification unavailable" in _text(app, "#library-status")
-            assert "Fully covered 1" in _text(app, "#library-summary")
-            assert "1 follow-ups" in _text(app, "#library-summary")
-            assert "Catalogue match Unknown" in _text(app, "#library-details")
+            assert "1 need your input" in _text(app, "#library-summary")
+            assert "? Needs your choice" in _text(app, "#library-details")
 
     asyncio.run(scenario())
 
@@ -1502,7 +1547,7 @@ def test_library_screen_never_calls_mutating_systems(tmp_path, monkeypatch):
             app.screen.generate_preview()
             await app.screen._preview_worker.wait()
             await pilot.pause()
-            await pilot.press("r")
+            app.screen.refresh_snapshot(identify=False)
             await app.screen._snapshot_worker.wait()
 
     asyncio.run(scenario())
@@ -1524,8 +1569,8 @@ def test_library_summary_is_format_aware_and_flac_m4a_can_be_fully_covered(tmp_p
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
             summary = _text(app, "#library-summary")
-            assert "Fully covered 3" in summary
-            assert "0 follow-ups" in summary and "0 errors" in summary
+            assert "3 ready" in summary
+            assert "0 need your input" in summary and "0 errors" in summary
             assert "MP3 1" in summary and "FLAC 1" in summary and "M4A 1" in summary
             await pilot.press("down")
             assert "Coverage       Fully covered" in _text(app, "#library-details")
@@ -1555,17 +1600,14 @@ def test_healthy_unmatched_flac_is_covered_without_lyric_attention(tmp_path):
         async with app.run_test(size=(120, 40)) as pilot:
             screen = await _open_library(app, pilot)
             summary = _text(app, "#library-summary")
-            assert "Fully covered 1" in summary
-            assert "1 follow-ups" in summary
-            assert "Catalogue unknown 1" in summary
+            assert "1 need your input" in summary
             details = _text(app, "#library-details")
-            assert "Catalogue match Unknown" in details
-            assert "External LRC   Present" in details
+            assert "? Needs your choice" in details
+            assert "✓ Plain" in details
             assert "Coverage       Fully covered" in details
-            assert "Library issue  Catalogue match unknown" in details
-            assert "Automatic refresh requires a catalogue match" in details
+            assert "Change Match" in details
 
-            await pilot.press("m")
+            await pilot.press("x", "l")
             await screen._preview_worker.wait(); await pilot.pause()
             assert preview_calls == [{"protected_paths": (track.path,)}]
             assert "up to date" in _text(app, "#library-status")
@@ -1600,7 +1642,7 @@ def test_maintenance_preview_is_cancel_first_then_uses_shared_executor_with_prog
         )
         async with app.run_test() as pilot:
             screen = await _open_library(app, pilot)
-            await pilot.press("m")
+            await pilot.press("l")
             await screen._preview_worker.wait(); await pilot.pause()
             assert app.screen.__class__.__name__ == "MaintenanceDialog"
             assert "No changes have been made" in _text(app, "#library-dialog-body")
@@ -1608,7 +1650,7 @@ def test_maintenance_preview_is_cancel_first_then_uses_shared_executor_with_prog
             assert not executions
             assert "cancelled" in _text(app, "#library-status")
 
-            await pilot.press("m")
+            await pilot.press("l")
             await screen._preview_worker.wait(); await pilot.pause()
             await pilot.press("y")
             await pilot.pause()
@@ -1616,6 +1658,362 @@ def test_maintenance_preview_is_cancel_first_then_uses_shared_executor_with_prog
             if screen._snapshot_worker is not None:
                 await screen._snapshot_worker.wait(); await pilot.pause()
             assert "Library updated · 1 song updated" in _text(app, "#library-status")
+
+    asyncio.run(scenario())
+
+
+def test_guided_maintenance_match_to_lyrics_completion_and_fast_second_run(tmp_path):
+    root = tmp_path / "music"
+    mp3, flac, m4a = _real_media_set(root)
+    untouched_bytes = {path: path.read_bytes() for path in (mp3, flac, m4a)}
+    assert any(line.timestamp_ms == 12000 for line in read_local_lyrics(mp3))
+    assert any(line.text == "embedded flac line" for line in read_local_lyrics(flac))
+    assert any(line.text == "embedded m4a line" for line in read_local_lyrics(m4a))
+    missing_path = root / "Needs Help.mp3"
+    missing_path.write_bytes(b"")
+    ID3().save(missing_path)
+    deferred_path = root / "Deferred.flac"
+    deferred_path.write_bytes(flac.read_bytes())
+    base = _track(
+        root, "Needs Help.mp3", matched=False,
+        lyric=LibraryLyricStatus.NONE, lrc=LibraryLrcStatus.NONE,
+    )
+    healthy_tracks = (
+        _track(root, mp3.name, catalogue_id=1),
+        _track(root, flac.name, media_format="FLAC", lyric=LibraryLyricStatus.PLAIN, catalogue_id=2),
+        _track(root, m4a.name, media_format="M4A", lyric=LibraryLyricStatus.PLAIN, catalogue_id=3),
+    )
+    deferred = _track(
+        root, deferred_path.name, matched=False, media_format="FLAC",
+        lyric=LibraryLyricStatus.PLAIN, lrc=LibraryLrcStatus.NONE,
+    )
+    current = {"matched": False}
+    sync_calls = []
+    searches = []
+    preview_calls = []
+
+    def current_track():
+        has_lyrics = bool(read_local_lyrics(missing_path))
+        return replace(
+            base,
+            match_status=(LibraryMatchStatus.MATCHED if current["matched"] else LibraryMatchStatus.UNMATCHED),
+            matched_title="Needs Help" if current["matched"] else None,
+            identity_locked=current["matched"],
+            catalogue_id=91 if current["matched"] else None,
+            lyric_status=(LibraryLyricStatus.SYNCED if has_lyrics else LibraryLyricStatus.NONE),
+            lrc_status=(LibraryLrcStatus.PRESENT if has_lyrics else LibraryLrcStatus.NONE),
+        )
+
+    def snapshot(settings):
+        return _snapshot(root, *healthy_tracks, current_track(), deferred)
+
+    def sync(settings, *, previous_snapshot=None):
+        sync_calls.append(previous_snapshot)
+        return LibraryIndexSyncResult(snapshot(settings))
+
+    candidates = (
+        CatalogueSearchResult(
+            1, 91, "Needs Help", "released", "DRFL", "3:03",
+            ("Juice WRLD",), (), None, LyricAvailability.SYNCED, False,
+        ),
+        CatalogueSearchResult(
+            2, 92, "Needs Help - Studio Session", "unreleased", "DRFL", "3:08",
+            ("Juice WRLD",), (), None, LyricAvailability.SYNCED, False,
+        ),
+        CatalogueSearchResult(
+            3, 93, "Needs Help - Demo", "unreleased", "DRFL", "2:54",
+            ("Juice WRLD",), (), None, LyricAvailability.PLAIN, False,
+        ),
+    )
+
+    def search(settings, query, **kwargs):
+        searches.append(query)
+        return CataloguePage(candidates, 1, 50, len(candidates), None, None)
+
+    def save(settings, track, *, song_id, api_name):
+        current["matched"] = True
+        return ManualIdentityResult(track.reference, song_id, api_name, True, True)
+
+    def preview(settings, **kwargs):
+        preview_calls.append(kwargs)
+        track = current_track()
+        return _plan(
+            settings,
+            (TrackSyncPlan(
+                track.path, MatchOutcome.MATCHED, SyncLyricType.SYNCED,
+                {"id": 91, "name": "Needs Help"}, (("line", 1000),), "line",
+            ),),
+        )
+
+    async def scenario():
+        app = _app(
+            tmp_path, snapshot, preview,
+            library_index_sync_provider=sync,
+            catalogue_search_provider=search,
+            manual_identity_provider=save,
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("m")
+            for _ in range(20):
+                if app.screen.__class__.__name__ == "MaintenanceWizardDialog":
+                    break
+                await pilot.pause(0.05)
+            assert "2 need your input" in _text(app, "#library-dialog-body")
+            await pilot.press("enter")
+            assert "1 of 2" in _text(app, "#library-dialog-title")
+            assert "catalogue match" in _text(app, "#library-dialog-body").casefold()
+            await pilot.press("enter")
+            dialog = app.screen
+            if dialog._search_worker is not None:
+                await dialog._search_worker.wait(); await pilot.pause()
+            candidates_text = _text(app, "#manual-match-results")
+            assert "Studio Session" in candidates_text and "Demo" in candidates_text
+            await pilot.press("enter")
+            if screen._manual_identity_worker is not None:
+                await screen._manual_identity_worker.wait(); await pilot.pause()
+            if screen._snapshot_worker is not None:
+                await screen._snapshot_worker.wait(); await pilot.pause()
+            if screen._preview_worker is not None:
+                await screen._preview_worker.wait(); await pilot.pause()
+            assert app.screen.__class__.__name__ == "MaintenanceDialog"
+            assert "✓ Match saved" in _text(app, "#library-dialog-body")
+            assert "Lyrics are available for this song" in _text(app, "#library-dialog-body")
+            assert screen._maintenance_matched == 1
+            await pilot.press("escape")
+            assert app.screen.__class__.__name__ == "MaintenanceWizardDialog"
+            await pilot.press("escape")
+            assert app.screen is screen
+            await pilot.press("m")
+            for _ in range(20):
+                if app.screen.__class__.__name__ == "MaintenanceWizardDialog": break
+                await pilot.pause(0.05)
+            await pilot.press("enter")
+            assert "Lyrics are missing" in _text(app, "#library-dialog-body")
+            assert "catalogue match" not in _text(app, "#library-dialog-body").casefold()
+            assert len(searches) == 1
+            await pilot.press("enter")
+            await screen._preview_worker.wait(); await pilot.pause()
+            assert app.screen.__class__.__name__ == "MaintenanceDialog"
+            assert "Synced lyrics available" in _text(app, "#library-dialog-body")
+            await pilot.press("y")
+            for _ in range(30):
+                if (
+                    app.screen.__class__.__name__ == "MaintenanceWizardDialog"
+                    and "Deferred" in _text(app, "#library-dialog-body")
+                ):
+                    break
+                await pilot.pause(0.05)
+            assert "Deferred" in _text(app, "#library-dialog-body")
+            await pilot.press("s")
+            assert "Maintenance complete" in _text(app, "#library-dialog-title")
+            completion = _text(app, "#library-dialog-body")
+            assert "1 skipped for later" in completion
+            assert "0 songs matched" in completion
+            assert "1 lyric issue resolved" in completion
+            assert any(line.text == "line" for line in read_local_lyrics(missing_path))
+            assert missing_path.with_suffix(".lrc").is_file()
+            assert all(path.read_bytes() == data for path, data in untouched_bytes.items())
+            await pilot.press("enter")
+            first_result_snapshot = screen.snapshot
+            await pilot.press("m")
+            for _ in range(20):
+                if app.screen.__class__.__name__ == "MaintenanceWizardDialog": break
+                await pilot.pause(0.05)
+            assert len(sync_calls) == 3
+            assert sync_calls[2] is first_result_snapshot
+            assert len(searches) == 1
+            assert len(preview_calls) == 2
+            assert "1 need your input" in _text(app, "#library-dialog-body")
+            await pilot.press("enter")
+            assert "Deferred" in _text(app, "#library-dialog-body")
+            await pilot.press("s")
+            assert "Maintenance complete" in _text(app, "#library-dialog-title")
+            await pilot.press("enter")
+
+            lyrics_snapshot = _snapshot(root, *healthy_tracks, current_track())
+            cache_file = tmp_path / "lyrics-index.json"
+            first_index = build_lyrics_search_index(app.settings, lyrics_snapshot, cache_file=cache_file)
+            second_index = build_lyrics_search_index(app.settings, lyrics_snapshot, cache_file=cache_file)
+            assert first_index.indexed_count == 4
+            assert second_index.reused_count == 4
+
+    asyncio.run(scenario())
+
+
+def test_guided_maintenance_skip_escape_and_resume_recompute(tmp_path):
+    root = tmp_path / "music"
+    first = _track(root, "First.mp3", matched=False)
+    second = _track(root, "Second.flac", matched=False, media_format="FLAC")
+
+    async def scenario():
+        app = _app(
+            tmp_path, lambda settings: _snapshot(root, first, second),
+            library_index_sync_provider=lambda settings, **kwargs: LibraryIndexSyncResult(
+                _snapshot(root, first, second)
+            ),
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("m")
+            for _ in range(20):
+                if app.screen.__class__.__name__ == "MaintenanceWizardDialog": break
+                await pilot.pause(0.05)
+            await pilot.press("enter")
+            assert "First" in _text(app, "#library-dialog-body")
+            await pilot.press("s")
+            assert "Second" in _text(app, "#library-dialog-body")
+            await pilot.press("escape")
+            assert app.screen is screen
+            assert "Completed work is saved" in _text(app, "#library-status")
+            await pilot.press("m")
+            for _ in range(20):
+                if app.screen.__class__.__name__ == "MaintenanceWizardDialog": break
+                await pilot.pause(0.05)
+            await pilot.press("enter")
+            assert "First" in _text(app, "#library-dialog-body")
+
+    asyncio.run(scenario())
+
+
+def test_more_advanced_supports_arrow_and_enter_navigation(tmp_path):
+    root = tmp_path / "music"
+    track = _track(root, "Song.mp3")
+
+    async def scenario():
+        app = _app(tmp_path, lambda settings: _snapshot(root, track))
+        async with app.run_test() as pilot:
+            await _open_library(app, pilot)
+            await pilot.press("x")
+            assert "> Issues" in _text(app, "#library-more-options")
+            await pilot.press("down")
+            assert "> Duplicates" in _text(app, "#library-more-options")
+            await pilot.press("enter")
+            assert app.screen.__class__.__name__ == "LibraryDuplicatesDialog"
+
+    asyncio.run(scenario())
+
+
+def test_song_details_supports_contextual_arrow_and_enter_actions(tmp_path):
+    root = tmp_path / "music"
+    track = _track(
+        root, "Song.mp3", lyric=LibraryLyricStatus.NONE,
+        lrc=LibraryLrcStatus.NONE,
+    )
+
+    async def scenario():
+        app = _app(tmp_path, lambda settings: _snapshot(root, track))
+        async with app.run_test() as pilot:
+            await _open_library(app, pilot)
+            await pilot.press("enter")
+            assert "> [Change Match]" in _text(app, "#library-details")
+            assert "↑↓ Choose · Enter Open" in _text(app, "#library-position")
+            await pilot.press("down")
+            assert "> [Add Lyrics]" in _text(app, "#library-details")
+            await pilot.press("down")
+            assert "> [Review Metadata]" in _text(app, "#library-details")
+            await pilot.press("down", "enter")
+            assert app.screen.__class__.__name__ == "LibraryMoreDialog"
+
+    asyncio.run(scenario())
+
+
+def test_maintenance_catalogue_outage_is_one_human_message_and_keeps_lock(tmp_path):
+    root = tmp_path / "music"
+    locked = _track(
+        root, "Trusted.m4a", media_format="M4A", identity_locked=True,
+        identity_source="manual", catalogue_id=55,
+        lyric=LibraryLyricStatus.NONE, lrc=LibraryLrcStatus.NONE,
+    )
+    calls = []
+
+    def sync(settings, *, previous_snapshot=None):
+        calls.append(previous_snapshot)
+        return LibraryIndexSyncResult(
+            _snapshot(root, locked), failed=1,
+            error="HTTP 503 Cloudflare unavailable",
+        )
+
+    async def scenario():
+        app = _app(tmp_path, lambda settings: _snapshot(root, locked), library_index_sync_provider=sync)
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("m")
+            for _ in range(20):
+                if app.screen.__class__.__name__ == "MaintenanceWizardDialog": break
+                await pilot.pause(0.05)
+            body = _text(app, "#library-dialog-body")
+            assert "Catalogue is temporarily unavailable" in body
+            assert "Existing matches are safe" in body
+            assert "Cloudflare" not in body
+            assert screen.snapshot.tracks[0].catalogue_id == 55
+            assert screen.snapshot.tracks[0].identity_locked is True
+            assert len(calls) == 1
+            await pilot.press("enter")
+            assert "Lyrics are missing" in _text(app, "#library-dialog-body")
+
+    asyncio.run(scenario())
+
+
+def test_maintenance_no_lyrics_advances_to_real_completion(tmp_path):
+    root = tmp_path / "music"
+    track = _track(
+        root, "Unavailable.mp3", lyric=LibraryLyricStatus.NONE,
+        lrc=LibraryLrcStatus.NONE,
+    )
+    no_lyrics = _plan(
+        Settings(music_dir=root),
+        (TrackSyncPlan(track.path, MatchOutcome.NO_LYRICS, SyncLyricType.NONE),),
+    )
+
+    async def scenario():
+        app = _app(
+            tmp_path, lambda settings: _snapshot(root, track),
+            lambda settings, **kwargs: no_lyrics,
+            library_index_sync_provider=lambda settings, **kwargs: LibraryIndexSyncResult(
+                _snapshot(root, track)
+            ),
+        )
+        async with app.run_test() as pilot:
+            screen = await _open_library(app, pilot)
+            await pilot.press("m")
+            for _ in range(20):
+                if app.screen.__class__.__name__ == "MaintenanceWizardDialog": break
+                await pilot.pause(0.05)
+            await pilot.press("enter", "enter")
+            await screen._preview_worker.wait(); await pilot.pause()
+            assert "Maintenance complete" in _text(app, "#library-dialog-title")
+            assert "No lyrics were found" in _text(app, "#library-dialog-body") or "1 skipped" in _text(app, "#library-dialog-body")
+            assert "1 skipped for later" in _text(app, "#library-dialog-body")
+
+    asyncio.run(scenario())
+
+
+def test_optional_metadata_does_not_block_maintenance_completion(tmp_path):
+    root = tmp_path / "music"
+    track = _track(
+        root, "Review.mp3",
+        warning="MP3 metadata is missing album; review is available.",
+    )
+
+    async def scenario():
+        app = _app(
+            tmp_path, lambda settings: _snapshot(root, track),
+            library_index_sync_provider=lambda settings, **kwargs: LibraryIndexSyncResult(
+                _snapshot(root, track)
+            ),
+        )
+        async with app.run_test() as pilot:
+            await _open_library(app, pilot)
+            await pilot.press("m")
+            for _ in range(20):
+                if app.screen.__class__.__name__ == "MaintenanceWizardDialog": break
+                await pilot.pause(0.05)
+            assert "0 need your input" in _text(app, "#library-dialog-body")
+            assert "1 optional improvements" in _text(app, "#library-dialog-body")
+            await pilot.press("enter")
+            assert "Maintenance complete" in _text(app, "#library-dialog-title")
+            assert "1 optional improvements" in _text(app, "#library-dialog-body")
 
     asyncio.run(scenario())
 

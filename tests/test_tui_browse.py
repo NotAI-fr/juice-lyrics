@@ -884,10 +884,8 @@ def test_help_inventories_app_bindings_and_focus_palette():
     guide = guide_text()
     for label in ("Switch sections", "Refresh current section", "Open Help", "Quit",
                   "Mark or unmark", "Download entire queue", "Preview and maintain",
-                  "Open Library Issues",
-                  "Review duplicate recordings",
-                  "Review and apply selected metadata repairs",
-                  "Choose and lock a catalogue match", "Unlock and clear a manual match",
+                  "Search local lyrics offline", "Start guided Maintenance",
+                  "More / Advanced tools", "Review duplicate recordings",
                   "Inspect setting", "Confirm immediately"):
         assert label in guide
     assert "#browse-controls Input:focus" in JuiceLyricsApp.CSS
