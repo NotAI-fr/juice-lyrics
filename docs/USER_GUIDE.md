@@ -62,19 +62,27 @@ changed, unchanged, and removed MP3, FLAC, and M4A files and safely updates
 local catalogue knowledge. It does not rewrite music or silently replace a
 manual match.
 
-Maintenance refreshes first, handles safe background updates, then presents
-remaining follow-ups together. Choose an item and press Enter for its existing
-guided workflow, or `s` to leave it for later. Catalogue choices remain
-explicit; lyric and metadata changes still use their preview and confirmation
-steps. Escape stops the walkthrough without undoing completed work. Lyrics
-that are missing are described as optional, not as damaged music.
+Maintenance refreshes first, shows a short health summary, then starts with the
+first song that needs a decision. Each choice advances directly to the next
+step; `s` leaves the current item for later, and Escape stops without undoing
+completed work. Reopening Maintenance recomputes what remains.
+
+When a catalogue choice is saved for a song with missing lyrics, Maintenance
+immediately checks that song and opens its lyric preview. The preview identifies
+whether synced or plain lyrics are available before explicit confirmation;
+backup, verification, and the rollback-safe writer remain unchanged. If no
+lyrics are available, the song is left unchanged and the walkthrough continues.
+The completion screen reports
+real ready, skipped, optional, and error counts plus matches and lyric updates
+from that run. Optional improvements never block completion.
 
 Song Details gives the selected track's catalogue, lyrics, and metadata status.
 Use `a` to preview adding or refreshing lyrics, `c` to choose a catalogue
 recording, and `e` to preview metadata repair. Use `x` for occasional tools
 such as Issues, duplicate review, Missing Library, verification, backups,
-player integration, and advanced catalogue rebuild. These remain separate
-tools and are not run automatically during Maintenance.
+player integration, and advanced catalogue rebuild. More / Advanced supports
+arrow-key navigation and Enter; letter shortcuts are optional accelerators.
+These tools are not run automatically during Maintenance.
 
 Sync keeps unchanged tracks fast and checks eligible unknown tracks against
 the catalogue. Only confident identities are saved. A catalogue outage does

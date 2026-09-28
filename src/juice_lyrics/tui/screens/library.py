@@ -267,6 +267,12 @@ class ManualMatchChoice:
 
 
 @dataclass(frozen=True, slots=True)
+class MaintenanceWizardChoice:
+    action: str
+    issue: LibraryIssue | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ManualIdentityOutcome:
     result: ManualIdentityResult | None = None
     error: str | None = None
@@ -836,6 +842,130 @@ def _maintenance_issue_label(issue: LibraryIssue) -> str:
     return "This song may need a review."
 
 
+class MaintenanceWizardDialog(ModalScreen[MaintenanceWizardChoice | None]):
+    """One-step-at-a-time Library maintenance workflow."""
+
+    def __init__(
+        self,
+        health: LibraryHealth,
+        *,
+        phase: str,
+        issue: LibraryIssue | None = None,
+        position: int = 0,
+        total: int = 0,
+        skipped: int = 0,
+        matched: int = 0,
+        lyrics_resolved: int = 0,
+        message: str | None = None,
+    ) -> None:
+        super().__init__()
+        self.health = health
+        self.phase = phase
+        self.issue = issue
+        self.position = position
+        self.total = total
+        self.skipped = skipped
+        self.matched = matched
+        self.lyrics_resolved = lyrics_resolved
+        self.message = message
+
+    def compose(self) -> Iterable[Widget]:
+        with Container(id="library-dialog"):
+            yield Static("", id="library-dialog-title")
+            yield Static("", id="library-dialog-body", markup=False)
+            yield Static("", id="library-more-help", markup=False)
+
+    def on_mount(self) -> None:
+        health = self.health
+        errors = sum(
+            item.severity is LibraryIssueSeverity.ERROR for item in health.issues
+        )
+        optional = sum(_maintenance_optional(item) for item in health.issues)
+        required = len(health.issues) - optional
+        title = self.query_one("#library-dialog-title", Static)
+        body = self.query_one("#library-dialog-body", Static)
+        help_text = self.query_one("#library-more-help", Static)
+        if self.phase == "summary":
+            title.update("Maintenance")
+            notice = f"{self.message}\n\n" if self.message else ""
+            body.update(
+                f"{notice}✓ {health.healthy_count} ready\n"
+                f"? {required} need your input\n"
+                f"~ {optional} optional improvements\n"
+                f"! {errors} errors\n\n"
+                "Maintenance refreshes safely first, then walks through one item at a time."
+            )
+            help_text.update("Enter Start Maintenance · Esc Stop for now")
+        elif self.phase == "item" and self.issue is not None:
+            title.update(f"Maintenance — {self.position} of {self.total}")
+            prefix = f"{self.message}\n\n" if self.message else ""
+            body.update(
+                f"{prefix}{self.issue.track.title}\n\n"
+                f"{_maintenance_issue_label(self.issue)}\n\n"
+                f"{chr(10).join(self.issue.details)}"
+            )
+            verb = {
+                LibraryIssueAction.MANUAL_MATCH: "Choose Match",
+                LibraryIssueAction.REFRESH_LYRICS: "Add Lyrics",
+                LibraryIssueAction.METADATA_AUDIT: "Review Metadata",
+                LibraryIssueAction.VERIFY: "Verify",
+                LibraryIssueAction.SYNC: "Refresh",
+            }[self.issue.action]
+            help_text.update(f"Enter {verb} · s Skip · Esc Stop for now")
+        else:
+            ready = max(
+                0, health.snapshot.total_track_count - len(health.issues) - self.skipped
+            )
+            title.update("Maintenance complete")
+            notice = f"{self.message}\n\n" if self.message else ""
+            body.update(
+                f"{notice}{health.snapshot.total_track_count} tracks\n\n"
+                f"✓ {ready} ready\n"
+                f"? {self.skipped} skipped for later\n"
+                f"~ {optional} optional improvements\n"
+                f"! {errors} errors\n\n"
+                "This run:\n"
+                f"{self.matched} {'song' if self.matched == 1 else 'songs'} matched\n"
+                f"{self.lyrics_resolved} lyric {'issue' if self.lyrics_resolved == 1 else 'issues'} resolved"
+            )
+            help_text.update(
+                "o Review optional improvements · Enter Done"
+                if optional else "Enter Done"
+            )
+
+    def on_key(self, event: Key) -> None:
+        if event.key in {"escape", "q"}:
+            self.dismiss(None)
+        elif self.phase == "summary" and event.key in {"enter", "space"}:
+            self.dismiss(MaintenanceWizardChoice("start"))
+        elif self.phase == "item" and self.issue is not None:
+            if event.key in {"enter", "space"}:
+                self.dismiss(MaintenanceWizardChoice("act", self.issue))
+            elif event.key == "s":
+                self.dismiss(MaintenanceWizardChoice("skip", self.issue))
+            else:
+                return
+        elif self.phase == "complete":
+            if event.key in {"enter", "space"}:
+                self.dismiss(MaintenanceWizardChoice("done"))
+            elif event.key == "o":
+                self.dismiss(MaintenanceWizardChoice("optional"))
+            else:
+                return
+        else:
+            return
+        event.prevent_default()
+        event.stop()
+
+
+def _maintenance_optional(issue: LibraryIssue) -> bool:
+    return (
+        issue.severity is not LibraryIssueSeverity.ERROR
+        and LibraryIssueCategory.CATALOGUE not in issue.categories
+        and LibraryIssueCategory.LYRICS not in issue.categories
+    )
+
+
 class LibraryDuplicatesDialog(ModalScreen[None]):
     """Read-only duplicate groups derived from the current Library snapshot."""
 
@@ -1369,17 +1499,27 @@ class MetadataRepairConfirmationDialog(ModalScreen[bool]):
 class MaintenanceDialog(ModalScreen[LibrarySyncPlan | None]):
     """Cancel-first confirmation for an already non-mutating maintenance preview."""
 
-    def __init__(self, plan: LibrarySyncPlan) -> None:
+    def __init__(
+        self,
+        plan: LibrarySyncPlan,
+        *,
+        lyrics_offer: bool = False,
+        message: str | None = None,
+    ) -> None:
         super().__init__()
         self.plan = plan
+        self.lyrics_offer = lyrics_offer
+        self.message = message
         self._choice = "cancel"
         self._confirmed = False
 
     def compose(self) -> Iterable[Widget]:
         problems = self.plan.unresolved_files + self.plan.no_lyrics_files + self.plan.analysis_failures
         count = self.plan.ready_files
+        notice = f"{self.message}\n\n" if self.message else ""
+        offer = "Lyrics are available for this song.\n\n" if self.lyrics_offer and count else ""
         body = (
-            f"{count} song{'s' if count != 1 else ''} can be updated · "
+            f"{notice}{offer}{count} song{'s' if count != 1 else ''} can be updated · "
             f"{problems} cannot be updated now\n\n"
             f"{self.plan.synced_files:2}  Synced lyrics available\n"
             f"{self.plan.plain_files:2}  Plain lyrics available\n"
@@ -1669,16 +1809,39 @@ class LibraryMoreDialog(ModalScreen[str | None]):
         ("l", "Maintain lyrics"), ("u", "Unlock a manual catalogue choice"),
     )
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.index = 0
+
     def compose(self) -> Iterable[Widget]:
         with Container(id="library-dialog"):
             yield Static("More / Advanced", id="library-dialog-title")
             yield Static("Choose an occasional or recovery tool. These do not run automatically.", id="library-dialog-body", markup=False)
-            yield Static("\n".join(f"{key}  {label}" for key, label in self._OPTIONS), id="library-more-options", markup=False)
-            yield Static("Press a listed key · Esc Close", id="library-more-help", markup=False)
+            yield Static("", id="library-more-options", markup=False)
+            yield Static("↑/↓ Choose · Enter Open · Esc Close", id="library-more-help", markup=False)
+
+    def on_mount(self) -> None:
+        self._render_options()
+
+    def _render_options(self) -> None:
+        self.query_one("#library-more-options", Static).update(
+            "\n".join(
+                f"{'>' if position == self.index else ' '} {label}  ({key})"
+                for position, (key, label) in enumerate(self._OPTIONS)
+            )
+        )
 
     def on_key(self, event: Key) -> None:
         if event.key in {"escape", "q"}:
             self.dismiss(None)
+        elif event.key in {"down", "j"}:
+            self.index = min(len(self._OPTIONS) - 1, self.index + 1)
+            self._render_options()
+        elif event.key in {"up", "k"}:
+            self.index = max(0, self.index - 1)
+            self._render_options()
+        elif event.key == "enter":
+            self.dismiss(self._OPTIONS[self.index][0])
         elif event.key in {key for key, _ in self._OPTIONS}:
             self.dismiss(event.key)
         else:
@@ -1810,6 +1973,14 @@ class LibraryScreen(HubScreen):
         self._metadata_repair_worker: Worker[MetadataRepairOutcome] | None = None
         self._maintenance_requested = False
         self._maintenance_active = False
+        self._maintenance_started = False
+        self._maintenance_skipped: set[str] = set()
+        self._maintenance_initial_total = 0
+        self._maintenance_matched = 0
+        self._maintenance_lyrics_resolved = 0
+        self._maintenance_last_message: str | None = None
+        self._maintenance_current_reference: str | None = None
+        self._maintenance_lyrics_offer_reference: str | None = None
 
     def compose_content(self) -> Iterable[Widget]:
         yield Static(
@@ -1913,6 +2084,16 @@ class LibraryScreen(HubScreen):
         if self._maintenance_requested:
             self._maintenance_requested = False
             self._maintenance_active = True
+            if result.error or result.failed:
+                self._maintenance_last_message = (
+                    "Catalogue is temporarily unavailable. Existing matches are safe. "
+                    "Online matching was skipped."
+                )
+                self._maintenance_skipped.update(
+                    track.reference
+                    for track in result.snapshot.tracks
+                    if track.match_status is LibraryMatchStatus.UNMATCHED
+                )
         self._apply_snapshot(SnapshotOutcome(result.snapshot))
         self._set_status(result.summary, error=bool(result.error or result.failed))
 
@@ -1921,6 +2102,15 @@ class LibraryScreen(HubScreen):
             self._set_status("Load the Library before starting Maintenance.", error=True)
             return
         self._maintenance_requested = True
+        self._maintenance_active = False
+        self._maintenance_started = False
+        self._maintenance_skipped.clear()
+        self._maintenance_initial_total = 0
+        self._maintenance_matched = 0
+        self._maintenance_lyrics_resolved = 0
+        self._maintenance_last_message = None
+        self._maintenance_current_reference = None
+        self._maintenance_lyrics_offer_reference = None
         self._set_status("Refreshing changed songs before Maintenance…")
         self.sync_library()
 
@@ -1928,9 +2118,97 @@ class LibraryScreen(HubScreen):
         if self.snapshot is None:
             return
         self._maintenance_active = True
+        full_health = get_library_health(self.snapshot)
+        health = LibraryHealth(
+            full_health.snapshot,
+            tuple(
+                issue for issue in full_health.issues
+                if issue.track.reference not in self._maintenance_skipped
+            ),
+        )
+        required = tuple(
+            issue for issue in health.issues
+            if not _maintenance_optional(issue)
+        )
+        if not self._maintenance_started:
+            self._maintenance_initial_total = len(required)
+            phase = "summary"
+            issue = None
+        elif required:
+            phase = "item"
+            issue = required[0]
+            self._maintenance_current_reference = issue.track.reference
+        else:
+            phase = "complete"
+            issue = None
         self.app.push_screen(
-            LibraryIssuesDialog(get_library_health(self.snapshot), maintenance=True),
-            self._issue_action_selected,
+            MaintenanceWizardDialog(
+                health,
+                phase=phase,
+                issue=issue,
+                position=(
+                    self._maintenance_initial_total - len(required) + 1
+                    if issue is not None else 0
+                ),
+                total=self._maintenance_initial_total,
+                skipped=len(self._maintenance_skipped),
+                matched=self._maintenance_matched,
+                lyrics_resolved=self._maintenance_lyrics_resolved,
+                message=self._maintenance_last_message,
+            ),
+            self._maintenance_wizard_closed,
+        )
+        self._maintenance_last_message = None
+
+    def _offer_lyrics_after_match(self) -> None:
+        reference, self._maintenance_lyrics_offer_reference = (
+            self._maintenance_lyrics_offer_reference,
+            None,
+        )
+        track = next(
+            (
+                item for item in self.snapshot.tracks
+                if item.reference == reference
+            ),
+            None,
+        ) if self.snapshot is not None else None
+        if track is not None and track.lyric_status is LibraryLyricStatus.NONE:
+            self._maintenance_current_reference = track.reference
+            self.generate_preview(action="selected", selected_path=track.path)
+            return
+        self._show_maintenance()
+
+    def _maintenance_wizard_closed(
+        self, choice: MaintenanceWizardChoice | None
+    ) -> None:
+        if choice is None or choice.action == "done":
+            self._maintenance_active = False
+            self._maintenance_started = False
+            self._set_status(
+                "Maintenance complete."
+                if choice is not None and choice.action == "done"
+                else "Maintenance stopped. Completed work is saved."
+            )
+            return
+        if choice.action == "start":
+            self._maintenance_started = True
+            self._show_maintenance()
+            return
+        if choice.action == "optional":
+            self._maintenance_active = False
+            self._maintenance_started = False
+            self._open_issues()
+            return
+        issue = choice.issue
+        if issue is None:
+            return
+        if choice.action == "skip":
+            self._maintenance_skipped.add(issue.track.reference)
+            self._maintenance_last_message = f"Skipped {issue.track.title} for later."
+            self._show_maintenance()
+            return
+        self._issue_action_selected(
+            LibraryIssueChoice(issue.track.reference, issue.action)
         )
 
     def _open_more(self) -> None:
@@ -2190,7 +2468,12 @@ class LibraryScreen(HubScreen):
             )
             self._identity_worker = self._identify_unknown(unknown)
         elif self._maintenance_active:
-            self.call_after_refresh(self._show_maintenance)
+            callback = (
+                self._offer_lyrics_after_match
+                if self._maintenance_lyrics_offer_reference is not None
+                else self._show_maintenance
+            )
+            self.call_after_refresh(callback)
 
     @work(thread=True, exclusive=True, group="library-identity", exit_on_error=False)
     def _identify_unknown(self, tracks: tuple[LibraryTrack, ...]) -> IdentityOutcome:
@@ -2245,6 +2528,9 @@ class LibraryScreen(HubScreen):
             )
             self._set_status("Maintenance preview unavailable.", error=True)
             self._render_details()
+            if self._maintenance_active:
+                self._maintenance_last_message = "Lyrics could not be checked. No files were changed."
+                self.call_after_refresh(self._show_maintenance)
             return
         self.preview = outcome.plan
         plan = outcome.plan
@@ -2287,8 +2573,32 @@ class LibraryScreen(HubScreen):
         self._render_details()
         action, self._preview_action = self._preview_action, None
         if action in {"maintain", "selected"} and self.app.screen is self:
+            if self._maintenance_active and action == "selected" and not plan.ready_files:
+                if self._maintenance_current_reference:
+                    self._maintenance_skipped.add(self._maintenance_current_reference)
+                result_message = (
+                    "No lyrics were found. The song was left unchanged."
+                    if plan.no_lyrics_files or plan.unresolved_files else
+                    "This song is already up to date."
+                )
+                self._maintenance_last_message = "\n".join(
+                    message for message in (self._maintenance_last_message, result_message)
+                    if message
+                )
+                self.call_after_refresh(self._show_maintenance)
+                return
             if plan.ready_files or plan.unresolved_files or plan.no_lyrics_files or plan.analysis_failures:
-                self.app.push_screen(MaintenanceDialog(plan), self._maintenance_dialog_closed)
+                message = self._maintenance_last_message if self._maintenance_active else None
+                if self._maintenance_active:
+                    self._maintenance_last_message = None
+                self.app.push_screen(
+                    MaintenanceDialog(
+                        plan,
+                        lyrics_offer=self._maintenance_active and action == "selected",
+                        message=message,
+                    ),
+                    self._maintenance_dialog_closed,
+                )
             else:
                 self._set_status("Your library is up to date." if action == "maintain" else "This song is up to date.")
 
@@ -2406,11 +2716,20 @@ class LibraryScreen(HubScreen):
             f"Album          {track.album or 'Not available'}",
             f"Relative path  {track.relative_path}",
             f"Full path      {track.path}",
-            f"Catalogue      {'✓ Matched · ' + (track.matched_title or _match_label(track)) if track.match_status is LibraryMatchStatus.MATCHED else '? Needs your choice'}",
             f"Duration       {_duration(track.duration_seconds)}",
-            f"Lyrics         {'✓ ' + _lyric_label(track.lyric_status) if track.lyric_status is not LibraryLyricStatus.NONE else '✗ Missing lyrics'}",
-            f"Metadata       {'~ Review available' if issue is not None and LibraryIssueCategory.METADATA in issue.categories else '✓ Looks good'}",
             f"Coverage       {'Fully covered' if track.fully_covered else _coverage_label(track)}",
+            "",
+            "Catalogue",
+            f"  {'✓ Matched · ' + (track.matched_title or _match_label(track)) if track.match_status is LibraryMatchStatus.MATCHED else '? Needs your choice'}",
+            "  [Change Match]",
+            "",
+            "Lyrics",
+            f"  {'✓ ' + _lyric_label(track.lyric_status) if track.lyric_status is not LibraryLyricStatus.NONE else '✗ Missing lyrics'}",
+            "  [View / Replace Lyrics]" if track.lyric_status is not LibraryLyricStatus.NONE else "  [Add Lyrics]",
+            "",
+            "Metadata",
+            f"  {'~ Review available' if issue is not None and LibraryIssueCategory.METADATA in issue.categories else '✓ Good'}",
+            "  [Review Metadata]",
         ]
         if track.lrc_status is not LibraryLrcStatus.MISSING or track.lrc_path:
             lines.append(f"Lyrics source  {_lrc_label(track.lrc_status)} · {track.lrc_path or 'embedded'}")
@@ -2418,7 +2737,7 @@ class LibraryScreen(HubScreen):
             lines.extend(("", f"Warning        {track.warning}"))
         if track.match_status is LibraryMatchStatus.UNMATCHED:
             lines.extend(("", "Use Change Match to choose the correct recording, or leave it unresolved."))
-        lines.extend(("", "Actions: a Add Lyrics · c Change Match · e Review Metadata · x More"))
+        lines.extend(("", "Enter an action with a Add Lyrics · c Change Match · e Review Metadata · x More"))
         if self.preview is not None:
             lines.extend(("", "Preview · no changes until confirmed", _track_preview_text(self.preview, track.path)))
         details.update(Text("\n".join(lines), overflow="ellipsis"))
@@ -2789,6 +3108,8 @@ class LibraryScreen(HubScreen):
         track, self._manual_track = self._manual_track, None
         if choice is None:
             self._set_status("Manual catalogue matching cancelled. No changes were made.")
+            if self._maintenance_active:
+                self.call_after_refresh(self._show_maintenance)
             return
         if track is None:
             self._set_status("The selected track is no longer available.", error=True)
@@ -2849,6 +3170,10 @@ class LibraryScreen(HubScreen):
             message = "Manual catalogue match unlocked and cleared · Sync Library may identify it again"
         else:
             message = f"Manual catalogue match saved and locked · {outcome.result.api_name}"
+            if self._maintenance_active:
+                self._maintenance_matched += 1
+                self._maintenance_last_message = "✓ Match saved"
+                self._maintenance_lyrics_offer_reference = outcome.result.reference
         self._completion_message = (message, False)
         self.refresh_snapshot(identify=False)
 
@@ -2879,8 +3204,9 @@ class LibraryScreen(HubScreen):
 
     def _maintenance_dialog_closed(self, plan: LibrarySyncPlan | None) -> None:
         if plan is None:
-            self._maintenance_active = False
             self._set_status("Library maintenance cancelled. No files were changed.")
+            if self._maintenance_active:
+                self.call_after_refresh(self._show_maintenance)
             return
         if self._execution_worker is not None:
             return
@@ -3004,6 +3330,9 @@ class LibraryScreen(HubScreen):
         if result.warnings:
             message += f" · {result.warnings[0]}"
         self._completion_message = (message, bool(result.failed_files))
+        if self._maintenance_active and result.updated_files:
+            self._maintenance_lyrics_resolved += result.updated_files
+            self._maintenance_last_message = "✓ Lyrics added"
         self.snapshot = None
         self.preview = None
         self._snapshot_action = "scan"

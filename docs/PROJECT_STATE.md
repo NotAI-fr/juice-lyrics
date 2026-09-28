@@ -41,13 +41,18 @@ previous `v2.0.0b1` fallback.
 ## Unreleased development: 2.0.0b3.dev0
 
 `feature/library-maintenance-ux` is experimental work based on `main`; it is
-not part of either published beta. This milestone is reorganizing the Library
-around Search, Search Lyrics, Refresh Library, Maintenance, and task-oriented
-Song Details. The existing Sync, identity, issue, lyrics, metadata-repair,
-duplicate, verification, backup, and recovery services remain in place behind
-contextual or More / Advanced workflows. The public README continues to
-describe `v2.0.0b2` as the current published beta until a later release
-decision.
+not part of either published beta. Library is organized around Search, Search
+Lyrics, Refresh Library, Maintenance, and task-oriented Song Details.
+Maintenance performs one incremental refresh, shows a compact health summary,
+then walks required decisions sequentially. A saved catalogue match immediately
+checks the same song and opens its lyric preview when lyrics are missing; the
+existing preview/confirmation/backup writer remains authoritative. Skip and Escape keep
+completed work, reopening recomputes unresolved state, and a real completion
+screen separates skipped work, optional improvements, and errors. More /
+Advanced retains Issues, duplicates, Missing Library, verification, backups,
+rmpc, and recovery tooling with arrow/Enter navigation. The public README
+continues to describe `v2.0.0b2` as the current published beta until a later
+release decision.
 
 ## Repository checkpoint
 
