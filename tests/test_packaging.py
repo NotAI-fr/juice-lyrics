@@ -25,7 +25,7 @@ def test_distribution_metadata_has_one_version_authority_and_current_entry_point
     assert project["tool"]["setuptools"]["dynamic"]["version"] == {
         "attr": "juice_lyrics.__version__"
     }
-    assert __version__ == "2.0.0b3.dev0"
+    assert __version__ == "2.0.0b3"
     assert project["project"]["scripts"] == {
         "999": "juice_lyrics.cli:main",
         "juice-lyrics": "juice_lyrics.cli:main",

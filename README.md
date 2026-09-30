@@ -2,7 +2,7 @@
 
 ![999 dashboard with synthetic demonstration data](docs/assets/screenshots/dashboard-synthetic.png)
 
-[![GitHub release](https://img.shields.io/github/v/release/NotAI-fr/juice-lyrics?include_prereleases&label=current%20beta)](https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b2)
+[![GitHub release](https://img.shields.io/github/v/release/NotAI-fr/juice-lyrics?include_prereleases&label=current%20beta)](https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b3)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A keyboard-first Linux app for browsing, understanding, and maintaining a
@@ -13,15 +13,17 @@ local Juice WRLD music library.
 Requires Linux, Python 3.11 or newer, and
 [`pipx`](https://pipx.pypa.io/) on your `PATH`.
 
-### Recommended: 2.0.0b2
+### Recommended: GitHub Release v2.0.0b3
 
-Install the current recommended beta directly from its immutable Git tag:
+GitHub Releases are the recommended version for normal users. Install the
+latest prerelease directly by its immutable tag; you do not need to clone the
+repository:
 
 ```bash
-pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b2"
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b3"
 ```
 
-You do not need to clone the repository. Check the install, then launch 999:
+Check the install, then launch 999:
 
 ```bash
 999 --version
@@ -29,10 +31,15 @@ You do not need to clone the repository. Check the install, then launch 999:
 999
 ```
 
-### Previous stable fallback: 2.0.0b1
+### Earlier fallback releases: v2.0.0b2 and v2.0.0b1
 
-If `2.0.0b2` gives you trouble, switch to the previous known-good beta. The
-published `v2.0.0b1` tag and release remain immutable:
+If you need an earlier build, both published releases remain available:
+
+```bash
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b2"
+```
+
+Or use the older fallback:
 
 ```bash
 pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b1"
@@ -42,7 +49,16 @@ Use `pipx install --force` with either command to switch between versions.
 Some pipx versions that use the `uv` backend do not replace an existing Git
 tag install in place. If pipx reports that it cannot switch, run
 `pipx uninstall juice-wrld-lyrics`, then install the other tag command.
-See [Troubleshooting](#troubleshooting) or [Uninstall](#uninstall) for help.
+For the newest unreleased code, install the moving `main` branch instead:
+
+```bash
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@main"
+```
+
+`main` is the development version and may change before the next release. See
+[GitHub Releases](https://github.com/NotAI-fr/juice-lyrics/releases) for the
+recommended published build. See [Troubleshooting](#troubleshooting) or
+[Uninstall](#uninstall) for help.
 
 ## Why 999?
 
@@ -61,8 +77,8 @@ and M4A lyrics plus adjacent plain or timed `.lrc` files; timed matches can
 show their real timestamp. Search is local, offline, and does not rescan media
 as you type.
 
-Lyrics Search is part of the current `2.0.0b2` beta. It is **not** included in
-the previous `v2.0.0b1` fallback release.
+Lyrics Search arrived in `v2.0.0b2` and is included in `v2.0.0b3`; it is
+**not** included in the older `v2.0.0b1` fallback release.
 
 **Browse and Catalogue Search** — Search and filter the Juice WRLD catalogue,
 inspect recording details, and connect local files with the correct catalogue
@@ -84,6 +100,11 @@ and M4A without converting the audio.
 update 999's local view of the collection. Sync reuses what it already knows
 about unchanged files and does not rewrite audio, embedded lyrics, sidecars,
 backups, downloads, or rmpc configuration.
+
+**Guided Maintenance** — Start one workflow to refresh the Library and handle
+unfinished work step by step. 999 takes you through uncertain matches, then
+checks for available lyrics and offers the existing safe preview before any
+write. Skip an item or stop and return later; completed work stays saved.
 
 **Lyrics and LRC Management** — Inspect, verify, preview, and explicitly apply
 supported lyric maintenance. 999 handles embedded plain and synchronized MP3
@@ -172,7 +193,7 @@ Press `?` anywhere in the TUI for the complete key map. The usual Library
 routine is:
 
 ```text
-Library → s Sync Library → a Issues
+Library → m Maintenance
 ```
 
 To find a local track from remembered words:
@@ -224,8 +245,8 @@ To create a report you can inspect before sharing:
 999 doctor --save-report ./999-support.json
 ```
 
-If the current beta is not working for you, use the `v2.0.0b1` fallback
-command in [Quick Install](#previous-stable-fallback-200b1).
+If the current beta is not working for you, install `v2.0.0b2` or `v2.0.0b1`
+using the fallback commands in [Quick Install](#earlier-fallback-releases-v200b2-and-v200b1).
 
 Current limitations:
 

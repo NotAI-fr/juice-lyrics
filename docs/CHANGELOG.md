@@ -4,6 +4,44 @@ This project follows [Semantic Versioning](https://semver.org/) and uses PEP
 440-compatible Python versions. Dates are added only when a release is
 published.
 
+## [2.0.0b3] - 2026-09-30
+
+This beta makes routine local-library care easier to follow while keeping
+catalogue choices and file changes explicit.
+
+### Library and maintenance
+
+- Added guided Maintenance that refreshes incrementally, summarizes library
+  health, then walks through required decisions one song at a time.
+- Simplified matching: existing matches are reused, uncertain recordings stay
+  a human choice, and saved manual choices are preserved.
+- Connected matching directly to lyric availability. After a match, Maintenance
+  checks for lyrics and opens the existing preview and confirmation before a
+  write. Missing lyrics can also be handled directly from Song Details.
+- Added arrow-key and Enter actions in Song Details and More / Advanced, with
+  clearer catalogue, lyric, and metadata status.
+- Added skip, stop, and resume-by-rechecking behavior plus a completion summary;
+  optional improvements do not block required work.
+- Kept catalogue outages understandable and bounded. Existing trusted matches
+  remain safe while online matching is skipped.
+
+### Lyrics and reliability
+
+- Included offline Local Lyrics Search from `v2.0.0b2`, covering embedded
+  MP3/FLAC/M4A lyrics and adjacent plain or timed LRC files, with timestamps for
+  timed matches and an incremental local index.
+- Reused unchanged library and lyrics-index data across refreshes and searches;
+  follow-up actions primarily refresh the affected song.
+- Expanded isolated acceptance coverage with generated MP3, FLAC, and M4A
+  fixtures, timed LRC, guided matching, protected lyric writes, skip/resume,
+  and repeat-Maintenance checks.
+
+### Installation
+
+- Made the GitHub release and immutable tag the recommended installation path.
+  `v2.0.0b2` and `v2.0.0b1` remain available as fallback releases; `main` is
+  the moving development version.
+
 ## [2.0.0b2] - 2026-09-28
 
 This beta promotes the offline Lyrics Search experiment into the main product.
@@ -96,4 +134,5 @@ This is the first beta release of the redesigned `999` product.
 
 [2.0.0b2]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b2
 [2.0.0b1]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b1
+[2.0.0b3]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v2.0.0b3
 [1.4.0]: https://github.com/NotAI-fr/juice-lyrics/releases/tag/v1.4.0-backend-complete

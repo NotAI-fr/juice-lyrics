@@ -11,8 +11,8 @@ the other `docs/` files for architecture, decisions, workflows, and UI detail.
 - Python package: `juice_lyrics`
 - Distribution: `juice-wrld-lyrics`
 - XDG storage namespace: `juice-lyrics` (do not rename or duplicate it)
-- Current beta release: `2.0.0b2` / tag `v2.0.0b2`
-- Previous immutable fallback: `2.0.0b1` / tag `v2.0.0b1`
+- Current beta release: `2.0.0b3` / tag `v2.0.0b3`
+- Previous fallback releases: `2.0.0b2` and `2.0.0b1`
 - Active development branch: `main`
 - Purpose: a Linux CLI/TUI for a local Juice WRLD library, catalogue browsing,
   safe lyric maintenance, downloads, backups, and optional rmpc integration.
@@ -88,8 +88,9 @@ installation by replacing the user's real pipx environment.
 For release preparation, follow `docs/BETA_RELEASE_CHECKLIST.md`. Do not merge
 to `main`, create a tag/release, or publish a package without explicit approval.
 
-Normal Library use is `999` → Library → `s` (**Sync Library**). Press `?` for
-the implemented key map. Common safe routine work should be automatic/simple;
+Normal Library use is `999` → Library. Use `/` to search songs, `f` to search
+lyrics, `r` to refresh, `m` to start guided Maintenance, Enter to open Song
+Details, and `?` for Help. Common safe routine work should be automatic/simple;
 ambiguous or destructive work requires an explicit user decision.
 Duplicate findings are evidence for review only; never auto-delete, merge,
 move, retag, or replace media.
@@ -100,6 +101,6 @@ writes or weaken its backup, preservation, conflict, rollback, and lock checks.
 ## Roadmap discipline
 
 The current roadmap is in `docs/PROJECT_STATE.md` and `docs/ROADMAP.md`. Keep
-normal Library UX centered on **Sync Library** and **Issues**; keep
+normal Library UX centered on search, refresh, and guided Maintenance; keep
 repair/recovery tools secondary. After substantial milestones, update
 `docs/PROJECT_STATE.md` and any directly affected design/user documentation.

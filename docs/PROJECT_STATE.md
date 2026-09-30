@@ -5,12 +5,12 @@ Sync, manual catalogue locking, snapshot-backed Library Issues, read-only
 duplicate review, and safe metadata repair are integrated. Read the
 code and tests if a later working tree disagrees with this document.
 
-## Current published beta: 2.0.0b2
+## Current published beta: 2.0.0b3
 
-Published beta `v2.0.0b2` remains the current formal fallback and includes
-**Search Lyrics**, promoted from the accepted `feature/lyrics-search`
-development branch. That branch may remain temporarily for history/reference.
-The previous beta `v2.0.0b1` remains an immutable, published fallback.
+Published beta `v2.0.0b3` is the current recommended GitHub prerelease. It
+includes the guided Maintenance UX and all features from `v2.0.0b2`. The
+previous beta `v2.0.0b2` remains available as a fallback; `v2.0.0b1` is the
+older immutable fallback. The `main` branch is the moving development version.
 
 In Library, `f` opens **Search Lyrics**. Typing updates one logical result per
 track; arrows navigate, Enter opens that track's Library details, and Escape
@@ -35,16 +35,14 @@ Each query runs only against the loaded in-memory index and performs no media
 read, scan, Sync, catalogue/API request, download, or mutation.
 
 Lyrics Search has no CLI command; it is available in the TUI and through the
-shared search service. It is included in `v2.0.0b2` and is not part of the
-previous `v2.0.0b1` fallback.
+shared search service. It was introduced in `v2.0.0b2` and remains included in
+`v2.0.0b3`; it is not part of the older `v2.0.0b1` fallback.
 
-## Unreleased development: 2.0.0b3.dev0
+## Library Maintenance UX in 2.0.0b3
 
-`main` now contains the accepted Maintenance UX for daily-driver testing. It
-remains unreleased `2.0.0b3.dev0` development and is not part of either
-published beta. `feature/library-maintenance-ux` remains available temporarily
-for history/reference. Library is organized around Search, Search Lyrics,
-Refresh Library, Maintenance, and task-oriented Song Details.
+Library is organized around Search, Search Lyrics, Refresh Library,
+Maintenance, and task-oriented Song Details. `main` remains the moving branch
+for development after this tagged release.
 Maintenance performs one incremental refresh, shows a compact health summary,
 then walks required decisions sequentially. A saved catalogue match immediately
 checks the same song and opens its lyric preview when lyrics are missing; the
@@ -52,9 +50,7 @@ existing preview/confirmation/backup writer remains authoritative. Skip and Esca
 completed work, reopening recomputes unresolved state, and a real completion
 screen separates skipped work, optional improvements, and errors. More /
 Advanced retains Issues, duplicates, Missing Library, verification, backups,
-rmpc, and recovery tooling with arrow/Enter navigation. The public README
-continues to describe `v2.0.0b2` as the current published beta until a later
-release decision.
+rmpc, and recovery tooling with arrow/Enter navigation.
 
 ## Repository checkpoint
 
@@ -68,9 +64,11 @@ release decision.
 - Python package: `juice_lyrics`
 - Distribution: `juice-wrld-lyrics`
 - XDG storage namespace: `juice-lyrics`
-- Current recommended beta: `2.0.0b2`, annotated tag `v2.0.0b2` on the
+- Current recommended beta: `2.0.0b3`, annotated tag `v2.0.0b3` on the
   accepted `main` release commit, published as a GitHub pre-release.
-- Previous immutable fallback: `2.0.0b1`, annotated tag `v2.0.0b1`, release
+- Previous fallback: `2.0.0b2`, annotated tag `v2.0.0b2`, published as a
+  GitHub pre-release on 2026-09-28.
+- Older immutable fallback: `2.0.0b1`, annotated tag `v2.0.0b1`, release
   commit `1d56661`, published as a GitHub pre-release on 2026-09-25.
 - Public-launch preparation on 2026-09-26 audited the current tree and all
   reachable Git history for credential signatures, private URLs, host-specific
@@ -208,14 +206,15 @@ and immediate queue addition. Adding never starts a download. Downloads exposes
 individual download/retry plus a confirmed whole-queue action while keeping
 durable acquisition-job IDs out of the normal UI.
 
-Library is the maintenance centre. The primary routine action is:
+Library is the maintenance centre. Primary actions are:
 
 ```text
-s → Sync Library
-a → Issues
-d → Duplicates
-g → Missing Library
-e → Metadata repair preview for the selected track
+/  Search songs
+f  Search Lyrics
+r  Refresh Library
+m  Maintenance
+Enter  Open Song
+?  Help
 ```
 
 `?` opens the complete scrollable key guide globally. Common actions remain in
@@ -497,9 +496,9 @@ The installable distribution remains `juice-wrld-lyrics`; its primary console
 script is `999`, the `juice-lyrics` console script remains a compatibility
 alias, and the import/XDG namespaces remain `juice_lyrics` and `juice-lyrics`.
 The package version has one code authority (`juice_lyrics.__version__`) and is
-resolved dynamically into wheel/sdist metadata. Current version `2.0.0b2` is
-published from `main` at tag `v2.0.0b2`; `2.0.0b1` remains the immutable
-fallback at tag `v2.0.0b1`.
+resolved dynamically into wheel/sdist metadata. Current version `2.0.0b3` is
+published from `main` at tag `v2.0.0b3`; `v2.0.0b2` and `v2.0.0b1` remain
+available as fallback releases.
 
 `python -m build` produces a platform-independent wheel and a source
 distribution containing the runtime Python packages, README, license, and
@@ -508,11 +507,12 @@ generated bytecode are excluded. Runtime UI styling and completion templates
 are Python resources, so there are no separate package-data files or checkout
 paths required after installation.
 
-The recommended beta pipx install uses the immutable `v2.0.0b2` Git tag; the
-previous `v2.0.0b1` tag remains available as fallback. Repeat either command
-with `--force` to switch an installed snapshot. Editable installation is a
-development workflow only. Installing or uninstalling the distribution does
-not rename or intentionally delete existing `juice-lyrics` XDG user data.
+The recommended beta pipx install uses the immutable `v2.0.0b3` Git tag;
+`v2.0.0b2` and `v2.0.0b1` remain available as fallbacks. The moving `main`
+branch is for users who want unreleased development code. Repeat an install
+command with `--force` to switch an installed snapshot. Editable installation
+is a development workflow only. Installing or uninstalling the distribution
+does not rename or intentionally delete existing `juice-lyrics` XDG user data.
 
 Acceptance also corrected Doctor's executable-location probe: an explicitly
 invoked isolated `999`/`juice-lyrics` script is now reported instead of a stale
@@ -522,8 +522,8 @@ the acceptance host does not have Fish installed for an external syntax pass.
 
 ## GitHub and beta readiness
 
-The main README now recommends `2.0.0b2` by immutable tag, identifies
-`v2.0.0b1` as the previous fallback, explains the major user-facing features,
+The main README recommends `2.0.0b3` by immutable tag, identifies `v2.0.0b2`
+and `v2.0.0b1` as fallback releases, explains the major user-facing features,
 and includes troubleshooting, uninstall, reporting, and screenshot guidance.
 Its linked TUI image uses synthetic data and contains no real user information.
 
@@ -532,11 +532,9 @@ Its linked TUI image uses synthetic data and contains no real user information.
 artifacts, isolated installs, manual media safety acceptance, privacy review,
 release notes/checksums, and explicit stop conditions.
 
-GitHub's default branch is `main`, which contains the accepted Lyrics Search
-product and the `v2.0.0b2` release. Both beta releases are pre-releases with
-their wheel, sdist, and `SHA256SUMS` attached. The `v2.0.0b1` tag and release
-remain unchanged. The repository description/topics are populated, Issues are
-enabled, and GitHub detects the MIT license. No package-index publication
+GitHub's default branch is `main`, which contains the current product. The
+`v2.0.0b3`, `v2.0.0b2`, and `v2.0.0b1` beta releases are pre-releases with
+their wheel, sdist, and `SHA256SUMS` attached. No package-index publication
 occurred.
 
 The public-facing README installs directly from immutable beta tags through
@@ -603,7 +601,7 @@ common safe routine work → automatic/simple
 ambiguous/destructive work → explicit user decision
 ```
 
-Keep normal Library UX centered on **Sync Library** and **Issues**;
+Keep normal Library UX centered on Search, Refresh Library, and Maintenance;
 advanced repair/recovery must not overwhelm normal use.
 
 1. Make the repository public only after the explicit final visibility action.

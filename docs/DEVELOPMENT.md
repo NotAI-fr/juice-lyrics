@@ -2,8 +2,9 @@
 
 ## Baseline
 
-The `main` branch contains the current product. `v2.0.0b2` is the current
-recommended beta release; `v2.0.0b1` remains the previous immutable fallback.
+The `main` branch contains the current product and moving development version.
+`v2.0.0b3` is the current recommended beta release; `v2.0.0b2` and `v2.0.0b1`
+remain available as fallbacks.
 `v1.4.0-backend-complete` is an older stable tag.
 
 Run:
@@ -76,7 +77,7 @@ For a deterministic pipx installation that does not depend on the checkout
 after installation:
 
 ```bash
-pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b2"
+pipx install --force "git+https://github.com/NotAI-fr/juice-lyrics.git@v2.0.0b3"
 hash -r
 command -v 999
 999 --version
